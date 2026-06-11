@@ -138,3 +138,14 @@ input[type='number']::-webkit-inner-spin-button {
 .check-pop {
   animation: check-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* selo "🔥 PR!" — entra estourando, em cascata */
+@keyframes pr-pop {
+  0%   { transform: scale(0) rotate(-6deg); opacity: 0; }
+  65%  { transform: scale(1.18) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.pr-pop {
+  animation: pr-pop 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

@@ -359,8 +359,12 @@ export default function TreinoPage() {
           )}
           {prCelebrations.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {prCelebrations.map((pr) => (
-                <span key={pr} className="inline-flex items-center gap-1 rounded bg-ember px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-coal">
+              {prCelebrations.map((pr, i) => (
+                <span
+                  key={pr}
+                  className="pr-pop inline-flex items-center gap-1 rounded bg-ember px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-coal"
+                  style={{ animationDelay: `${0.25 + i * 0.15}s` }}
+                >
                   🔥 PR! {pr}
                 </span>
               ))}
@@ -530,6 +534,7 @@ export default function TreinoPage() {
                           id={`weight-${ex.id}-${i}`}
                           type="number"
                           inputMode="decimal"
+                          enterKeyHint="next"
                           step="0.5"
                           placeholder="–"
                           value={row.weight}
@@ -553,6 +558,7 @@ export default function TreinoPage() {
                         id={`reps-${ex.id}-${i}`}
                         type="number"
                         inputMode="numeric"
+                        enterKeyHint={i + 1 < (rows[ex.id]?.length ?? 0) ? "next" : "done"}
                         placeholder="–"
                         value={row.reps}
                         onChange={(e) => updateRow(ex.id, i, { reps: e.target.value })}
