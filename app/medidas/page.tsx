@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react"
 import { Check, Plus } from "lucide-react"
-import { WeightChart, WaistChart } from "@/components/charts"
+import { HydrationChart, WeightChart, WaistChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
+import { waterGoalMl } from "@/lib/insights"
 import { useGymData } from "@/lib/store"
 import { cn, fromDateKey, toDateKey } from "@/lib/utils"
 
@@ -37,7 +38,19 @@ export default function MedidasPage() {
     const waistChart = waists.map((b) => ({ label: shortDate(b.date), cintura: b.waistCm! }))
     // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
     const kg = current?.weightKg ?? 93
+    // água dos últimos 7 dias (dias sem registro = 0, sinceridade > vaidade)
+    const now = new Date()
+    const hydration7 = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
+      const key = toDateKey(d)
+      return {
+        label: shortDate(key),
+        ml: data.hydration.find((h) => h.date === key)?.ml ?? 0,
+      }
+    })
     return {
+      hydration7,
+      waterGoal: waterGoalMl(body),
       current,
       weightDelta,
       currentWaist,
@@ -212,6 +225,14 @@ export default function MedidasPage() {
           accent="zone"
         />
       </div>
+
+      <SectionTitle accent="zone">Água — últimos 7 dias</SectionTitle>
+      <Card className="rise rise-4 mb-6 border-l-4 border-l-[#38bdf8]">
+        <HydrationChart data={view.hydration7} target={view.waterGoal} />
+        <p className="mt-2 font-mono text-[10px] text-steel-dim">
+          registre no painel com os botões rápidos · meta ~37 ml/kg
+        </p>
+      </Card>
 
       <SectionTitle accent="steel">Últimos registros</SectionTitle>
       <Card className="rise rise-5 p-0">

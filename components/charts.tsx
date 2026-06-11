@@ -259,6 +259,50 @@ export function WeightChart({
   )
 }
 
+const WATER = "#38bdf8"
+
+/** Água dos últimos dias (ml) contra a meta diária */
+export function HydrationChart({
+  data,
+  target,
+}: {
+  data: { label: string; ml: number }[]
+  target: number
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={150}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -16, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => `${(v / 1000).toFixed(1).replace(".", ",")}L`}
+        />
+        <Tooltip
+          content={<Tip suffix=" ml" />}
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        <ReferenceLine
+          y={target}
+          stroke={WATER}
+          strokeDasharray="4 4"
+          strokeOpacity={0.7}
+          label={{
+            value: `meta ${(target / 1000).toFixed(1).replace(".", ",")}L`,
+            position: "insideTopRight",
+            fill: WATER,
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono Variable', monospace",
+          }}
+        />
+        <Bar dataKey="ml" fill={WATER} fillOpacity={0.75} radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
 export function WaistChart({
   data,
 }: {

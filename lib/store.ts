@@ -1,9 +1,18 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { getSupabaseBrowserClient } from "./supabase/client"
 import { enqueue, flushQueue, queueCount } from "./sync-queue"
-import { BodyLog, CardioLog, ExerciseLog, GymData, SessionId, WorkoutLog } from "./types"
+import { toDateKey } from "./utils"
+import {
+  BodyLog,
+  CardioLog,
+  ExerciseLog,
+  GymData,
+  HydrationLog,
+  SessionId,
+  WorkoutLog,
+} from "./types"
 
 interface WorkoutRow {
   id: string
@@ -13,12 +22,19 @@ interface WorkoutRow {
   entries: ExerciseLog[]
   cardio: CardioLog | null
   notes: string | null
+  srpe?: number | null
+  started_at?: string | null
 }
 
 interface BodyRow {
   date: string
   weight_kg: number
   waist_cm: number | null
+}
+
+interface HydrationRow {
+  date: string
+  ml: number
 }
 
 function rowToWorkout(r: WorkoutRow): WorkoutLog {
@@ -30,6 +46,8 @@ function rowToWorkout(r: WorkoutRow): WorkoutLog {
     entries: r.entries ?? [],
     cardio: r.cardio ?? undefined,
     notes: r.notes ?? undefined,
+    srpe: r.srpe ?? undefined,
+    startedAt: r.started_at ?? undefined,
   }
 }
 
@@ -62,6 +80,15 @@ export function useGymData() {
   const [data, setData] = useState<GymData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  /** total de água por dia, espelho síncrono do estado (ver addWater) */
+  const waterRef = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    if (!data) return
+    const map: Record<string, number> = {}
+    for (const h of data.hydration) map[h.date] = h.ml
+    waterRef.current = map
+  }, [data])
 
   const refreshPending = useCallback(() => {
     setPendingCount(queueCount())
@@ -78,18 +105,25 @@ export function useGymData() {
     let cancelled = false
     async function load() {
       const supabase = getSupabaseBrowserClient()
-      const [w, b] = await Promise.all([
+      const [w, b, h] = await Promise.all([
         supabase.from("workouts").select("*").order("date", { ascending: true }),
         supabase.from("body_logs").select("*").order("date", { ascending: true }),
+        supabase.from("hydration_logs").select("*").order("date", { ascending: true }),
       ])
       if (cancelled) return
       if (w.error || b.error) {
         setError(w.error?.message ?? b.error?.message ?? "Erro ao carregar dados")
         return
       }
+      // hidratação é não-fatal: app continua se a migration ainda não rodou
+      if (h.error) console.warn("hydration_logs indisponível:", h.error.message)
       setData({
         workouts: ((w.data ?? []) as WorkoutRow[]).map(rowToWorkout),
         body: ((b.data ?? []) as BodyRow[]).map(rowToBody),
+        hydration: ((h.data ?? []) as HydrationRow[]).map((r) => ({
+          date: r.date,
+          ml: Number(r.ml),
+        })),
       })
     }
     load()
@@ -107,7 +141,7 @@ export function useGymData() {
   const addWorkout = useCallback(async (log: WorkoutLog) => {
     // 1) atualização otimista na tela
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [] }
+      const base = prev ?? { workouts: [], body: [], hydration: [] }
       const workouts = [
         ...base.workouts.filter(
           (w) => !(w.date === log.date && w.sessionId === log.sessionId)
@@ -117,13 +151,17 @@ export function useGymData() {
       return { ...base, workouts }
     })
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       date: log.date,
       session_id: log.sessionId,
       duration_min: log.durationMin ?? null,
       entries: log.entries,
       cardio: log.cardio ?? null,
       notes: log.notes ?? null,
+      // colunas novas só entram quando preenchidas — salvar sem sRPE/início
+      // continua funcionando mesmo antes da migration 0002 rodar
+      ...(log.srpe !== undefined ? { srpe: log.srpe } : {}),
+      ...(log.startedAt !== undefined ? { started_at: log.startedAt } : {}),
     }
     const enqueueIt = () => {
       enqueue({
@@ -168,7 +206,7 @@ export function useGymData() {
 
   const addBodyLog = useCallback(async (log: BodyLog) => {
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [] }
+      const base = prev ?? { workouts: [], body: [], hydration: [] }
       const body = [...base.body.filter((b) => b.date !== log.date), log].sort((a, b) =>
         a.date.localeCompare(b.date)
       )
@@ -209,6 +247,57 @@ export function useGymData() {
         )
         return { ...prev, body }
       })
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      throw e
+    }
+  }, [])
+
+  /**
+   * Soma (ou subtrai, p/ desfazer) ml ao total de água do dia.
+   * Upsert do TOTAL acumulado — idempotente na fila offline: vários taps
+   * do mesmo dia colapsam na última gravação com o total certo.
+   * O total corrente vive num ref (waterRef) para que taps em sequência
+   * rápida não leiam estado React ainda não re-renderizado.
+   */
+  const addWater = useCallback(async (deltaMl: number, date?: string) => {
+    const day = date ?? toDateKey(new Date())
+    const current = waterRef.current[day] ?? 0
+    const total = Math.max(0, current + deltaMl)
+    waterRef.current[day] = total
+    setData((prev) => {
+      const base = prev ?? { workouts: [], body: [], hydration: [] }
+      const hydration = [
+        ...base.hydration.filter((x) => x.date !== day),
+        { date: day, ml: total },
+      ].sort((a, b) => a.date.localeCompare(b.date))
+      return { ...base, hydration }
+    })
+
+    const payload = { date: day, ml: total }
+    const enqueueIt = () => {
+      enqueue({
+        table: "hydration_logs",
+        onConflict: "user_id,date",
+        logicalKey: day,
+        payload,
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const { error } = await supabase
+        .from("hydration_logs")
+        .upsert(payload, { onConflict: "user_id,date" })
+      if (error) throw new Error(error.message)
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
@@ -261,5 +350,5 @@ export function useGymData() {
     }
   }, [])
 
-  return { data, error, pendingCount, addWorkout, addBodyLog, deleteWorkout, signOut }
+  return { data, error, pendingCount, addWorkout, addBodyLog, addWater, deleteWorkout, signOut }
 }

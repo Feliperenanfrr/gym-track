@@ -11,6 +11,7 @@ import { ExercisePrescription, ExerciseLog, SessionId, SetRow, WorkoutLog } from
 import { bestE1RM, cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
+import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
 import { tapFeedback } from "@/lib/haptics"
 
@@ -38,8 +39,15 @@ export default function TreinoPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draftRestored, setDraftRestored] = useState(false)
   const [prCelebrations, setPrCelebrations] = useState<string[]>([])
+  const [savedLog, setSavedLog] = useState<WorkoutLog | null>(null)
+  const [cycleSug, setCycleSug] = useState<CycleSuggestion | null>(null)
+  const [regressionApplied, setRegressionApplied] = useState(false)
   const dirtyRef = useRef(false)
   const popRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  /** epoch ms da primeira série marcada (duração real da sessão) */
+  const startedAtRef = useRef<number | null>(null)
+  const sessionPickedRef = useRef(false)
+  const cycleInitRef = useRef(false)
 
   const setPopRef = useCallback((key: string) => (el: HTMLButtonElement | null) => {
     if (el) popRefs.current.set(key, el)
@@ -53,6 +61,17 @@ export default function TreinoPage() {
     const planned = PLAN.find((s) => s.weekday === isoWeekday(now))
     setSessionId(planned && planned.kind !== "rest" ? planned.id : "upperA")
   }, [])
+
+  // modo ciclo: quando os dados chegam, o default vira o próximo da fila
+  // (uma vez por visita; a escolha manual no seletor tem prioridade)
+  useEffect(() => {
+    if (!data || !today || cycleInitRef.current || sessionPickedRef.current) return
+    if (getScheduleMode() !== "ciclo") return
+    cycleInitRef.current = true
+    const sug = nextInCycle(data.workouts, today)
+    setCycleSug(sug)
+    setSessionId(sug.sessionId)
+  }, [data, today])
 
   const session = sessionId ? PLAN_BY_ID[sessionId] : null
 
@@ -73,8 +92,12 @@ export default function TreinoPage() {
     )
   }, [data, session, today])
 
-  /** Pré-preenchimento a partir do último treino desta sessão */
-  const buildPrefill = (s: typeof session, ll: typeof lastLog) => {
+  /**
+   * Pré-preenchimento a partir do último treino desta sessão.
+   * factor < 1 = volta de pausa (regressão do ciclo): cargas reduzidas e
+   * arredondadas a 2,5 kg, sem auto-progressão.
+   */
+  const buildPrefill = (s: typeof session, ll: typeof lastLog, factor = 1) => {
     const rows: Record<string, SetRow[]> = {}
     for (const ex of s!.exercises) {
       const lastEntry = ll?.entries.find((e) => e.exerciseId === ex.id)
@@ -83,7 +106,11 @@ export default function TreinoPage() {
         let suggestedWeight = lastSet ? String(lastSet.weight) : ""
         let suggestedReps = lastSet ? String(lastSet.reps) : ""
 
-        if (lastSet && lastSet.reps >= ex.repsMax) {
+        if (lastSet && factor < 1) {
+          suggestedWeight = String(
+            Math.max(0, Math.round((lastSet.weight * factor) / 2.5) * 2.5)
+          )
+        } else if (lastSet && lastSet.reps >= ex.repsMax) {
           suggestedWeight = String(lastSet.weight + 2.5)
           suggestedReps = String(ex.repsMin)
         }
@@ -92,6 +119,7 @@ export default function TreinoPage() {
           weight: suggestedWeight,
           reps: suggestedReps,
           done: false,
+          rir: "",
         }
       })
     }
@@ -120,6 +148,12 @@ export default function TreinoPage() {
     setFinisherMin(p.finisherMin)
   }
 
+  /** fator de carga do ciclo para a sessão atual (0.9 ao voltar de pausa) */
+  const currentFactor = () =>
+    cycleSug && cycleSug.reason === "regression" && cycleSug.sessionId === session?.id
+      ? cycleSug.loadFactor
+      : 1
+
   // ao trocar de sessão: restaura rascunho do dia se houver, senão pré-preenche
   useEffect(() => {
     if (!session || !today) return
@@ -133,13 +167,18 @@ export default function TreinoPage() {
       setCardioBpm(draft.cardioBpm)
       setCardioMode(draft.cardioMode)
       setFinisherMin(draft.finisherMin)
+      startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
+      setRegressionApplied(false)
     } else {
-      applyPrefill(buildPrefill(session, lastLog))
+      const factor = currentFactor()
+      applyPrefill(buildPrefill(session, lastLog, factor))
+      startedAtRef.current = null
       setDraftRestored(false)
+      setRegressionApplied(factor < 1)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, lastLog, today])
+  }, [session, lastLog, today, cycleSug])
 
   // autosave do rascunho a cada edição do usuário
   useEffect(() => {
@@ -151,6 +190,7 @@ export default function TreinoPage() {
       cardioMode,
       finisherMin,
       savedAt: Date.now(),
+      startedAt: startedAtRef.current ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, cardioMin, cardioBpm, cardioMode, finisherMin])
@@ -217,6 +257,8 @@ export default function TreinoPage() {
     }
 
     if (nowDone) {
+      // primeira série marcada = início real da sessão
+      if (!startedAtRef.current) startedAtRef.current = Date.now()
       tapFeedback()
       restTimer.start(parseRestSeconds(ex.rest), ex.name)
     }
@@ -231,8 +273,11 @@ export default function TreinoPage() {
     if (!session || !today) return
     clearDraft(toDateKey(today), session.id)
     dirtyRef.current = false
-    applyPrefill(buildPrefill(session, lastLog))
+    startedAtRef.current = null
+    const factor = currentFactor()
+    applyPrefill(buildPrefill(session, lastLog, factor))
     setDraftRestored(false)
+    setRegressionApplied(factor < 1)
   }
 
   const handleSave = async () => {
@@ -243,6 +288,7 @@ export default function TreinoPage() {
           .map((r) => ({
             weight: parseFloat(r.weight.replace(",", ".")) || 0,
             reps: parseInt(r.reps) || 0,
+            ...(r.rir !== undefined && r.rir !== "" ? { rir: parseInt(r.rir) } : {}),
           }))
           .filter((s) => s.reps > 0),
       }))
@@ -253,6 +299,15 @@ export default function TreinoPage() {
       date: toDateKey(today),
       sessionId: session.id,
       entries,
+    }
+
+    // duração real da musculação: 1ª série marcada → salvar
+    if (session.kind === "lift" && startedAtRef.current) {
+      log.startedAt = new Date(startedAtRef.current).toISOString()
+      log.durationMin = Math.min(
+        480,
+        Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60_000))
+      )
     }
 
     if (session.kind === "cardio" || session.kind === "sport") {
@@ -302,6 +357,7 @@ export default function TreinoPage() {
       dirtyRef.current = false
       setDraftRestored(false)
       setSavedOffline(offline)
+      setSavedLog(log)
       setSaved(true)
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (e) {
@@ -309,6 +365,17 @@ export default function TreinoPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  /** sRPE pós-treino: 1 tap regrava o mesmo log (upsert por data+sessão) */
+  const rateSrpe = (n: number) => {
+    if (!savedLog) return
+    const updated = { ...savedLog, srpe: n }
+    setSavedLog(updated)
+    tapFeedback()
+    addWorkout(updated).catch(() => {
+      /* upsert de retentativa acontece pela fila offline */
+    })
   }
 
   const progressPct =
@@ -324,7 +391,10 @@ export default function TreinoPage() {
         {PLAN.filter((s) => s.kind !== "rest").map((s) => (
           <button
             key={s.id}
-            onClick={() => setSessionId(s.id)}
+            onClick={() => {
+              sessionPickedRef.current = true
+              setSessionId(s.id)
+            }}
             className={cn(
               "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-wider transition-colors",
               sessionId === s.id
@@ -370,6 +440,36 @@ export default function TreinoPage() {
               ))}
             </div>
           )}
+          {savedLog && (
+            <div className="mt-4 border-t border-seam pt-3">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                Como foi o treino? (sRPE)
+                {savedLog.durationMin !== undefined &&
+                  savedLog.startedAt !== undefined &&
+                  ` · ${savedLog.durationMin} min de sessão`}
+              </p>
+              <div className="mt-2 flex gap-1">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => rateSrpe(n)}
+                    className={cn(
+                      "h-9 flex-1 rounded border font-mono text-xs transition-colors",
+                      savedLog.srpe === n
+                        ? "border-ember bg-ember font-bold text-coal"
+                        : "border-seam text-steel hover:text-bone"
+                    )}
+                    aria-label={`Esforço ${n} de 10`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 font-mono text-[9px] text-steel-dim">
+                1 = muito leve · 10 = esforço máximo — calibra o sinal de fadiga
+              </p>
+            </div>
+          )}
           <Link
             href="/"
             className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-bone hover:text-ember"
@@ -377,6 +477,16 @@ export default function TreinoPage() {
             <ArrowLeft size={14} /> Voltar ao painel
           </Link>
         </Card>
+      )}
+
+      {regressionApplied && !saved && !draftRestored && (
+        <div className="rise mb-4 flex items-center gap-2 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">
+          <RotateCcw size={14} className="shrink-0" />
+          <span>
+            Voltando de pausa ({cycleSug?.daysSinceLastLift} dias) — cargas sugeridas a
+            ~90% da última vez. Sem heroísmo hoje.
+          </span>
+        </div>
       )}
 
       {draftRestored && !saved && (
@@ -512,10 +622,11 @@ export default function TreinoPage() {
                   <div
                     key={i}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-lg border p-2 transition-colors",
+                      "rounded-lg border p-2 transition-colors",
                       row.done ? "border-ember/40 bg-ember/5" : "border-seam bg-coal"
                     )}
                   >
+                  <div className="flex items-center gap-2.5">
                     <div className="flex flex-col items-center gap-1 w-7 shrink-0">
                       <span
                         className={cn(
@@ -592,6 +703,35 @@ export default function TreinoPage() {
                   >
                     <Check size={22} strokeWidth={3} />
                   </button>
+                  </div>
+
+                  {/* RIR — reps em reserva, 1 tap depois de concluir a série */}
+                  {row.done && ex.unit === "reps" && (
+                    <div className="mt-2 flex items-center gap-1.5 border-t border-seam pt-2">
+                      <span className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+                        RIR
+                      </span>
+                      {["0", "1", "2", "3", "4"].map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => updateRow(ex.id, i, { rir: row.rir === v ? "" : v })}
+                          className={cn(
+                            "h-6 min-w-8 rounded border px-1.5 font-mono text-[10px] font-semibold transition-colors",
+                            row.rir === v
+                              ? "border-ember bg-ember/15 text-ember"
+                              : "border-seam text-steel-dim hover:text-bone"
+                          )}
+                          aria-pressed={row.rir === v}
+                          aria-label={`${v} repetições em reserva`}
+                        >
+                          {v === "4" ? "4+" : v}
+                        </button>
+                      ))}
+                      <span className="ml-auto font-mono text-[8px] text-steel-dim">
+                        quantas sobraram?
+                      </span>
+                    </div>
+                  )}
                 </div>
               )})}
             </div>
