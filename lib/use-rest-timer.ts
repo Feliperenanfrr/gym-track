@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { alertFeedback } from "./haptics"
 
 export interface RestTimerApi {
   active: boolean
@@ -12,37 +13,6 @@ export interface RestTimerApi {
   toggle: () => void
   addTime: (delta: number) => void
   dismiss: () => void
-}
-
-/** Vibração + bipe curto ao terminar o descanso (ambos com fallback silencioso) */
-function notifyDone() {
-  try {
-    navigator.vibrate?.([120, 60, 120])
-  } catch {
-    /* ignore */
-  }
-  try {
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext
-    if (!Ctx) return
-    const ctx = new Ctx()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = "sine"
-    osc.frequency.value = 880
-    gain.gain.setValueAtTime(0.001, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.5)
-    osc.onended = () => ctx.close()
-  } catch {
-    /* ignore */
-  }
 }
 
 /**
@@ -76,7 +46,7 @@ export function useRestTimer(): RestTimerApi {
       firedRef.current = true
       setRunning(false)
       stopInterval()
-      notifyDone()
+      alertFeedback()
       autoDismissRef.current = setTimeout(() => setActive(false), 6000)
     }
   }, [])
