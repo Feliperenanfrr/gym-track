@@ -214,40 +214,65 @@ export default function Dashboard() {
       </Card>
 
       {/* Fita da semana */}
-      <div className="rise rise-2 mt-4 grid grid-cols-7 gap-1.5">
-        {view.days.map((d) => (
-          <div key={d.label} className="flex flex-col items-center gap-1.5">
-            <span className="font-mono text-[9px] text-steel-dim">{d.label}</span>
-            <div
-              className={cn(
-                "flex h-9 w-full items-center justify-center rounded border text-[10px] font-semibold",
-                d.done
-                  ? "border-ember/0 bg-ember text-coal"
-                  : d.isToday
-                    ? "today-pulse border-ember text-ember"
-                    : d.session.kind === "rest"
-                      ? "border-seam text-steel-dim"
-                      : d.isPast
-                        ? "border-seam bg-iron text-steel-dim line-through"
-                        : "border-seam bg-iron text-steel"
-              )}
-              style={{ fontFamily: "var(--font-condensed)" }}
-              title={d.session.title}
-            >
-              {d.done ? (
-                <Check size={14} strokeWidth={3} />
-              ) : d.session.kind === "rest" ? (
-                "—"
-              ) : d.session.kind === "cardio" ? (
-                "Z2"
-              ) : d.session.kind === "sport" ? (
-                "ESP"
-              ) : (
-                d.session.title.replace("Upper ", "U").replace("Lower ", "L")
-              )}
-            </div>
+      <div className="rise rise-2 mt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            Sua semana
+          </p>
+          <div className="flex items-center gap-3 font-mono text-[9px] text-steel-dim">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm bg-ember" /> feito
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm border border-ember" /> hoje
+            </span>
           </div>
-        ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {view.days.map((d) => (
+            <div key={d.label} className="flex flex-col items-center gap-1.5">
+              <span
+                className={cn(
+                  "font-mono text-[9px]",
+                  d.isToday ? "font-bold text-ember" : "text-steel-dim"
+                )}
+              >
+                {d.label}
+              </span>
+              <div
+                className={cn(
+                  "flex h-10 w-full items-center justify-center rounded border text-[10px] font-semibold",
+                  d.done
+                    ? "border-ember/0 bg-ember text-coal"
+                    : d.isToday
+                      ? "today-pulse border-ember text-ember"
+                      : d.session.kind === "rest"
+                        ? "border-seam text-steel-dim"
+                        : d.isPast
+                          ? "border-seam bg-iron text-steel-dim line-through"
+                          : "border-seam bg-iron text-steel"
+                )}
+                style={{ fontFamily: "var(--font-condensed)" }}
+                title={d.session.title}
+              >
+                {d.done ? (
+                  <Check size={14} strokeWidth={3} />
+                ) : d.session.kind === "rest" ? (
+                  "—"
+                ) : d.session.kind === "cardio" ? (
+                  "Z2"
+                ) : d.session.kind === "sport" ? (
+                  "ESP"
+                ) : (
+                  d.session.title.replace("Upper ", "U").replace("Lower ", "L")
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {data && data.workouts.length === 0 && (
