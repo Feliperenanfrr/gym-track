@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, CloudOff, LogOut } from "lucide-react"
+import { ArrowRight, Check, CloudOff, LogOut, History } from "lucide-react"
 import { StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
@@ -11,6 +11,7 @@ import { GymData, SessionId, WorkoutLog } from "@/lib/types"
 import {
   bestE1RM,
   cn,
+  daysSince,
   formatKg,
   fromDateKey,
   isoWeekday,
@@ -123,6 +124,29 @@ export default function Dashboard() {
         }
       })
 
+    // streak e dias ativos
+    const firstWorkout = data.workouts.length > 0 ? fromDateKey(data.workouts[0].date) : null
+    const daysActive = firstWorkout ? daysSince(firstWorkout, today) + 1 : 0
+
+    let streak = 0
+    if (data.workouts.length > 0) {
+      const startMonday = mondayOf(firstWorkout!)
+      let m = new Date(monday) // current monday
+      let counted = 0
+      while (m >= startMonday) {
+        const start = toDateKey(m)
+        const end = toDateKey(new Date(m.getFullYear(), m.getMonth(), m.getDate() + 6))
+        const hasWorkout = data.workouts.some((w) => w.date >= start && w.date <= end)
+        if (hasWorkout) {
+          counted++
+        } else if (m.getTime() !== monday.getTime()) {
+          break
+        }
+        m.setDate(m.getDate() - 7)
+      }
+      streak = counted
+    }
+
     return {
       todaySession,
       todayDone,
@@ -133,6 +157,8 @@ export default function Dashboard() {
       currentWeight,
       weightDelta,
       strength,
+      daysActive,
+      streak,
     }
   }, [data, today, lift])
 
@@ -186,9 +212,16 @@ export default function Dashboard() {
                 <CloudOff size={11} /> {pendingCount}
               </span>
             )}
+            <Link
+              href="/historico"
+              className="flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-bone"
+              title="Histórico de Treinos"
+            >
+              <History size={12} /> histórico
+            </Link>
             <button
               onClick={signOut}
-              className="flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-steel"
+              className="flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-bone"
               title="Sair"
             >
               <LogOut size={12} /> sair
@@ -199,12 +232,19 @@ export default function Dashboard() {
 
       {/* Treino de hoje */}
       <Card className="rise rise-1 relative overflow-hidden border-l-4 border-l-ember">
-        <p
-          className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
-          style={{ fontFamily: "var(--font-condensed)" }}
-        >
-          Treino de hoje
-        </p>
+        <div className="flex justify-between items-center">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            Treino de hoje
+          </p>
+          {view.daysActive > 0 && (
+            <span className="font-mono text-[9px] text-steel-dim" title="Dias desde o primeiro treino">
+              Dia {view.daysActive}
+            </span>
+          )}
+        </div>
         <h2 className="stencil mt-1 text-3xl text-bone">{view.todaySession.title}</h2>
         <p className="mt-0.5 text-sm text-steel">{view.todaySession.subtitle}</p>
         <p className="mt-2 font-mono text-xs text-steel-dim">
@@ -314,7 +354,7 @@ export default function Dashboard() {
               <span className="text-lg text-steel-dim">/5</span>
             </>
           }
-          detail="meta: 4 musculação + 1 cardio"
+          detail={`meta: 4 musc + 1 cardio${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"

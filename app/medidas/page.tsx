@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Check, Plus } from "lucide-react"
-import { WeightChart } from "@/components/charts"
+import { WeightChart, WaistChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { useGymData } from "@/lib/store"
 import { cn, fromDateKey, toDateKey } from "@/lib/utils"
@@ -34,6 +34,7 @@ export default function MedidasPage() {
         ? currentWaist - firstWaist
         : null
     const chart = body.map((b) => ({ label: shortDate(b.date), peso: b.weightKg }))
+    const waistChart = waists.map((b) => ({ label: shortDate(b.date), cintura: b.waistCm! }))
     // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
     const kg = current?.weightKg ?? 93
     return {
@@ -42,6 +43,7 @@ export default function MedidasPage() {
       currentWaist,
       waistDelta,
       chart,
+      waistChart,
       protein: [Math.round(kg * 1.8), Math.round(kg * 2.2)],
       water: [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)],
       recent: [...body].reverse().slice(0, 8),
@@ -115,12 +117,24 @@ export default function MedidasPage() {
       </div>
 
       <SectionTitle accent="steel">Tendência de peso</SectionTitle>
-      <Card className="rise rise-2">
+      <Card className="rise rise-2 mb-6">
         <WeightChart data={view.chart} />
         <p className="mt-2 font-mono text-[10px] text-steel-dim">
           alvo do plano: −0,4 a −0,7 kg/semana · lento e sustentável preserva músculo
         </p>
       </Card>
+
+      {view.waistChart.length > 0 && (
+        <>
+          <SectionTitle accent="steel">Evolução de cintura</SectionTitle>
+          <Card className="rise rise-2 mb-6 border-l-4 border-l-[#818cf8]">
+            <WaistChart data={view.waistChart} />
+            <p className="mt-2 font-mono text-[10px] text-steel-dim">
+              redução na cintura é um forte indicativo de perda de gordura
+            </p>
+          </Card>
+        </>
+      )}
 
       <SectionTitle>Registrar hoje</SectionTitle>
       <Card className="rise rise-3">

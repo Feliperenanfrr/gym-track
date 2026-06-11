@@ -65,3 +65,9 @@ export function formatKg(n: number): string {
 }
 
 export const WEEKDAY_SHORT = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]
+
+export function daysSince(d: Date, now = new Date()): number {
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)))
+}

@@ -4,23 +4,28 @@ import { cn } from "@/lib/utils"
 export function PageHeader({
   kicker,
   title,
+  left,
   right,
 }: {
   kicker: string
   title: string
+  left?: React.ReactNode
   right?: React.ReactNode
 }) {
   return (
     <header className="rise mb-5">
       <div className="flex items-end justify-between gap-3">
-        <div>
-          <p
-            className="mb-1 text-[11px] font-semibold tracking-[0.35em] text-ember"
-            style={{ fontFamily: "var(--font-condensed)" }}
-          >
-            {kicker}
-          </p>
-          <h1 className="stencil text-4xl text-bone md:text-5xl">{title}</h1>
+        <div className="flex items-center gap-3">
+          {left}
+          <div>
+            <p
+              className="mb-1 text-[11px] font-semibold tracking-[0.35em] text-ember"
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              {kicker}
+            </p>
+            <h1 className="stencil text-4xl text-bone md:text-5xl">{title}</h1>
+          </div>
         </div>
         {right}
       </div>

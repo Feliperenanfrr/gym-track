@@ -7,12 +7,13 @@ import type { SupabaseClient } from "@supabase/supabase-js"
  * múltiplas edições da mesma sessão/dia colapsem na última.
  */
 export interface PendingMutation {
+  action?: "upsert" | "delete"
   table: "workouts" | "body_logs"
   onConflict: string
   /** chave lógica para deduplicar (date+session ou date) */
   logicalKey: string
   payload: Record<string, unknown>
-  queuedAt: number
+  queuedAt?: number
 }
 
 const KEY = "gym-track:sync-queue:v1"
@@ -58,14 +59,22 @@ export async function flushQueue(supabase: SupabaseClient): Promise<number> {
 
   for (const item of [...items]) {
     try {
-      const { error } = await supabase
-        .from(item.table)
-        .upsert(item.payload, { onConflict: item.onConflict })
-      if (error) {
-        // erro de servidor (RLS, validação): descarta para não travar a fila
-        items = items.filter((m) => m !== item)
-        write(items)
-        continue
+      if (item.action === "delete") {
+        const { error } = await supabase.from(item.table).delete().eq("id", item.payload.id)
+        if (error) {
+          items = items.filter((m) => m !== item)
+          write(items)
+          continue
+        }
+      } else {
+        const { error } = await supabase
+          .from(item.table)
+          .upsert(item.payload, { onConflict: item.onConflict })
+        if (error) {
+          items = items.filter((m) => m !== item)
+          write(items)
+          continue
+        }
       }
       items = items.filter((m) => m !== item)
       write(items)

@@ -80,9 +80,17 @@ export default function TreinoPage() {
       const lastEntry = ll?.entries.find((e) => e.exerciseId === ex.id)
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
+        let suggestedWeight = lastSet ? String(lastSet.weight) : ""
+        let suggestedReps = lastSet ? String(lastSet.reps) : ""
+
+        if (lastSet && lastSet.reps >= ex.repsMax) {
+          suggestedWeight = String(lastSet.weight + 2.5)
+          suggestedReps = String(ex.repsMin)
+        }
+
         return {
-          weight: lastSet ? String(lastSet.weight) : "",
-          reps: lastSet ? String(lastSet.reps) : "",
+          weight: suggestedWeight,
+          reps: suggestedReps,
           done: false,
         }
       })
@@ -476,33 +484,56 @@ export default function TreinoPage() {
 
             {/* séries — alvos de toque grandes */}
             <div className="mt-3 space-y-2">
-              {(rows[ex.id] ?? []).map((row, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg border p-2 transition-colors",
-                    row.done ? "border-ember/40 bg-ember/5" : "border-seam bg-coal"
-                  )}
-                >
-                  <span
+              {(rows[ex.id] ?? []).map((row, i) => {
+                const lastEntry = lastLog?.entries.find((e) => e.exerciseId === ex.id)
+                const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
+                let indicator = null
+                if (lastSet && row.weight) {
+                  const currentW = parseFloat(row.weight)
+                  if (!isNaN(currentW)) {
+                    if (currentW > lastSet.weight) indicator = "🔼"
+                    else if (currentW < lastSet.weight) indicator = "🔽"
+                    else {
+                      const currentR = parseInt(row.reps)
+                      if (!isNaN(currentR)) {
+                        if (currentR > lastSet.reps) indicator = "🔼"
+                        else if (currentR < lastSet.reps) indicator = "🔽"
+                        else indicator = "▶️"
+                      }
+                    }
+                  }
+                }
+
+                return (
+                  <div
+                    key={i}
                     className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold",
-                      row.done ? "bg-ember text-coal" : "bg-iron-2 text-steel"
+                      "flex items-center gap-2.5 rounded-lg border p-2 transition-colors",
+                      row.done ? "border-ember/40 bg-ember/5" : "border-seam bg-coal"
                     )}
                   >
-                    {i + 1}
-                  </span>
+                    <div className="flex flex-col items-center gap-1 w-7 shrink-0">
+                      <span
+                        className={cn(
+                          "flex h-7 w-7 items-center justify-center rounded-full font-mono text-xs font-bold",
+                          row.done ? "bg-ember text-coal" : "bg-iron-2 text-steel"
+                        )}
+                      >
+                        {i + 1}
+                      </span>
+                      {indicator && <span className="text-[10px] text-steel-dim">{indicator}</span>}
+                    </div>
 
-                  <div className="flex min-w-0 flex-1 items-end gap-2">
-                    <label className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <input
-                        id={`weight-${ex.id}-${i}`}
-                        type="number"
-                        inputMode="decimal"
-                        step="0.5"
-                        placeholder="–"
-                        value={row.weight}
-                        onChange={(e) => updateRow(ex.id, i, { weight: e.target.value })}
+                    <div className="flex min-w-0 flex-1 items-end gap-2">
+                      <label className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <input
+                          id={`weight-${ex.id}-${i}`}
+                          type="number"
+                          inputMode="decimal"
+                          step="0.5"
+                          placeholder="–"
+                          value={row.weight}
+                          onChange={(e) => updateRow(ex.id, i, { weight: e.target.value })}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault()
@@ -556,7 +587,7 @@ export default function TreinoPage() {
                     <Check size={22} strokeWidth={3} />
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           </Card>
         )
