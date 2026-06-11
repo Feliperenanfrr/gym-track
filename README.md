@@ -12,6 +12,13 @@ pnpm dev        # http://localhost:3000
 
 Build de produção: `pnpm build && pnpm start`.
 
+Requer `.env.local` (e as mesmas variáveis na Vercel):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+```
+
 ## O que tem
 
 | Aba | O que faz |
@@ -21,27 +28,29 @@ Build de produção: `pnpm build && pnpm start`.
 | **Plano** | O plano completo do preparador: estrutura da semana, exercícios, regras de ouro, nutrição e linha do tempo |
 | **Medidas** | Peso e cintura com tendência, metas diárias de proteína/água calculadas pelo peso atual |
 
-## Dados
+## Dados & Auth
 
-- **MVP sem backend**: tudo em `localStorage` (`gym-track:data:v1`).
-- Na primeira visita, o app semeia **5 semanas de histórico mockado** com progressão
-  realista de cargas (determinístico, relativo à data atual).
-- "Regenerar dados mockados" no rodapé do painel apaga tudo e re-semeia.
-- Treinos reais que você salvar substituem/conviven com o mock no mesmo storage.
+- **Supabase** (Postgres + Auth). Tabelas `workouts` e `body_logs`, ambas com RLS
+  por usuário (`auth.uid() = user_id`) e upsert por dia/sessão.
+- Login por e-mail/senha; **cadastro desabilitado** no projeto (acesso restrito).
+- O middleware redireciona qualquer rota para `/login` sem sessão.
+- `workouts.entries` é JSONB com as séries (`[{ exerciseId, sets: [{weight, reps}] }]`);
+  `cardio` é JSONB (`{ minutes, avgBpm?, mode }`).
 
 ## Stack
 
-Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Recharts · TypeScript ·
-fontes Anton / Barlow / JetBrains Mono via Fontsource. Sem variáveis de ambiente.
+Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Recharts · Supabase
+(`@supabase/ssr`) · TypeScript · fontes Anton / Barlow / JetBrains Mono via Fontsource.
 
 ## Estrutura
 
 ```
-app/            páginas (painel, treino, plano, medidas)
+app/            páginas (painel, treino, plano, medidas, login)
 components/     bottom-nav, cards/ui, gráficos recharts
 lib/plan.ts     o plano do PDF como dados tipados
-lib/mock-data.ts gerador determinístico do histórico
-lib/store.ts    hook useGymData (localStorage + seed)
+lib/store.ts    hook useGymData (Supabase: fetch + upsert)
+lib/supabase/   browser client (@supabase/ssr)
+middleware.ts   proteção de rotas via sessão
 ```
 
 > Plano educativo — não substitui avaliação médica. Antes de intensificar o aeróbico:

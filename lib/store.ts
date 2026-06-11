@@ -1,68 +1,136 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { generateMockData } from "./mock-data"
-import { BodyLog, GymData, WorkoutLog } from "./types"
+import { getSupabaseBrowserClient } from "./supabase/client"
+import { BodyLog, CardioLog, ExerciseLog, GymData, SessionId, WorkoutLog } from "./types"
 
-const STORAGE_KEY = "gym-track:data:v1"
-
-function loadData(): GymData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as GymData
-  } catch {
-    // dado corrompido → re-seed
-  }
-  const seed = generateMockData(new Date())
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-  return seed
+interface WorkoutRow {
+  id: string
+  date: string
+  session_id: string
+  duration_min: number | null
+  entries: ExerciseLog[]
+  cardio: CardioLog | null
+  notes: string | null
 }
 
-function persist(data: GymData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+interface BodyRow {
+  date: string
+  weight_kg: number
+  waist_cm: number | null
+}
+
+function rowToWorkout(r: WorkoutRow): WorkoutLog {
+  return {
+    id: r.id,
+    date: r.date,
+    sessionId: r.session_id as SessionId,
+    durationMin: r.duration_min ?? undefined,
+    entries: r.entries ?? [],
+    cardio: r.cardio ?? undefined,
+    notes: r.notes ?? undefined,
+  }
+}
+
+function rowToBody(r: BodyRow): BodyLog {
+  return {
+    date: r.date,
+    weightKg: Number(r.weight_kg),
+    waistCm: r.waist_cm !== null ? Number(r.waist_cm) : undefined,
+  }
 }
 
 /**
- * Estado global simples em localStorage. Carrega no client (evita mismatch
- * de hidratação) e semeia com 5 semanas de histórico mockado na primeira vez.
+ * Dados no Supabase (tabelas `workouts` e `body_logs`, RLS por usuário).
+ * Carrega no client após o login; gravações fazem upsert por dia/sessão.
  */
 export function useGymData() {
   const [data, setData] = useState<GymData | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setData(loadData())
+    let cancelled = false
+    async function load() {
+      const supabase = getSupabaseBrowserClient()
+      const [w, b] = await Promise.all([
+        supabase.from("workouts").select("*").order("date", { ascending: true }),
+        supabase.from("body_logs").select("*").order("date", { ascending: true }),
+      ])
+      if (cancelled) return
+      if (w.error || b.error) {
+        setError(w.error?.message ?? b.error?.message ?? "Erro ao carregar dados")
+        return
+      }
+      setData({
+        workouts: ((w.data ?? []) as WorkoutRow[]).map(rowToWorkout),
+        body: ((b.data ?? []) as BodyRow[]).map(rowToBody),
+      })
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  const addWorkout = useCallback((log: WorkoutLog) => {
-    setData((prev) => {
-      if (!prev) return prev
-      // substitui registro do mesmo dia/sessão (re-salvar treino)
-      const workouts = [
-        ...prev.workouts.filter((w) => !(w.date === log.date && w.sessionId === log.sessionId)),
-        log,
-      ].sort((a, b) => a.date.localeCompare(b.date))
-      const next = { ...prev, workouts }
-      persist(next)
-      return next
-    })
-  }, [])
-
-  const addBodyLog = useCallback((log: BodyLog) => {
-    setData((prev) => {
-      if (!prev) return prev
-      const body = [...prev.body.filter((b) => b.date !== log.date), log].sort((a, b) =>
-        a.date.localeCompare(b.date)
+  const addWorkout = useCallback(async (log: WorkoutLog) => {
+    const supabase = getSupabaseBrowserClient()
+    const { data: rows, error } = await supabase
+      .from("workouts")
+      .upsert(
+        {
+          date: log.date,
+          session_id: log.sessionId,
+          duration_min: log.durationMin ?? null,
+          entries: log.entries,
+          cardio: log.cardio ?? null,
+          notes: log.notes ?? null,
+        },
+        { onConflict: "user_id,date,session_id" }
       )
-      const next = { ...prev, body }
-      persist(next)
-      return next
+      .select()
+    if (error) throw new Error(error.message)
+    const saved = rowToWorkout(rows![0] as WorkoutRow)
+    setData((prev) => {
+      if (!prev) return prev
+      const workouts = [
+        ...prev.workouts.filter(
+          (w) => !(w.date === saved.date && w.sessionId === saved.sessionId)
+        ),
+        saved,
+      ].sort((a, b) => a.date.localeCompare(b.date))
+      return { ...prev, workouts }
     })
   }, [])
 
-  const resetData = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY)
-    setData(loadData())
+  const addBodyLog = useCallback(async (log: BodyLog) => {
+    const supabase = getSupabaseBrowserClient()
+    const { data: rows, error } = await supabase
+      .from("body_logs")
+      .upsert(
+        {
+          date: log.date,
+          weight_kg: log.weightKg,
+          waist_cm: log.waistCm ?? null,
+        },
+        { onConflict: "user_id,date" }
+      )
+      .select()
+    if (error) throw new Error(error.message)
+    const saved = rowToBody(rows![0] as BodyRow)
+    setData((prev) => {
+      if (!prev) return prev
+      const body = [...prev.body.filter((b) => b.date !== saved.date), saved].sort(
+        (a, b) => a.date.localeCompare(b.date)
+      )
+      return { ...prev, body }
+    })
   }, [])
 
-  return { data, addWorkout, addBodyLog, resetData }
+  const signOut = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient()
+    await supabase.auth.signOut()
+    window.location.href = "/login"
+  }, [])
+
+  return { data, error, addWorkout, addBodyLog, signOut }
 }

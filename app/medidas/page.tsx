@@ -17,6 +17,8 @@ export default function MedidasPage() {
   const [weight, setWeight] = useState("")
   const [waist, setWaist] = useState("")
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const view = useMemo(() => {
     if (!data) return null
@@ -55,19 +57,27 @@ export default function MedidasPage() {
     )
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const w = parseFloat(weight.replace(",", "."))
     if (isNaN(w) || w <= 0) return
     const wa = parseFloat(waist.replace(",", "."))
-    addBodyLog({
-      date: toDateKey(new Date()),
-      weightKg: Math.round(w * 10) / 10,
-      waistCm: !isNaN(wa) && wa > 0 ? Math.round(wa * 10) / 10 : undefined,
-    })
-    setWeight("")
-    setWaist("")
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await addBodyLog({
+        date: toDateKey(new Date()),
+        weightKg: Math.round(w * 10) / 10,
+        waistCm: !isNaN(wa) && wa > 0 ? Math.round(wa * 10) / 10 : undefined,
+      })
+      setWeight("")
+      setWaist("")
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Erro ao salvar no banco")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const fmtDelta = (d: number | null, unit: string) =>
@@ -139,16 +149,22 @@ export default function MedidasPage() {
           </label>
           <button
             onClick={handleSave}
+            disabled={saving}
             className={cn(
-              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors",
+              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
               saved ? "bg-zone text-coal" : "bg-gold text-coal hover:bg-gold/85"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}
           >
             {saved ? <Check size={15} /> : <Plus size={15} />}
-            {saved ? "Salvo" : "Salvar"}
+            {saving ? "Salvando…" : saved ? "Salvo" : "Salvar"}
           </button>
         </div>
+        {saveError && (
+          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            {saveError}
+          </p>
+        )}
         <p className="mt-2.5 text-[11px] text-steel-dim">
           Pese-se sempre na mesma condição: de manhã, em jejum, depois do banheiro.
         </p>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, RotateCcw } from "lucide-react"
+import { ArrowRight, Check, LogOut } from "lucide-react"
 import { StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, StatCard } from "@/components/ui"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
@@ -61,7 +61,7 @@ function buildWeeks(data: GymData, today: Date) {
 }
 
 export default function Dashboard() {
-  const { data, resetData } = useGymData()
+  const { data, error, signOut } = useGymData()
   const [today, setToday] = useState<Date | null>(null)
   const [lift, setLift] = useState("bench")
 
@@ -136,6 +136,17 @@ export default function Dashboard() {
     }
   }, [data, today, lift])
 
+  if (error) {
+    return (
+      <main>
+        <PageHeader kicker="GYM//TRACK" title="Painel" />
+        <Card className="border-l-4 border-l-ember text-sm text-steel">
+          Erro ao carregar do banco: {error}. Recarregue a página ou faça login de novo.
+        </Card>
+      </main>
+    )
+  }
+
   if (!view || !today) {
     return (
       <main>
@@ -153,7 +164,19 @@ export default function Dashboard() {
 
   return (
     <main>
-      <PageHeader kicker={`GYM//TRACK · ${dateFmt}`} title="Painel" />
+      <PageHeader
+        kicker={`GYM//TRACK · ${dateFmt}`}
+        title="Painel"
+        right={
+          <button
+            onClick={signOut}
+            className="mb-1 flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-steel"
+            title="Sair"
+          >
+            <LogOut size={12} /> sair
+          </button>
+        }
+      />
 
       {/* Treino de hoje */}
       <Card className="rise rise-1 relative overflow-hidden border-l-4 border-l-ember">
@@ -227,6 +250,16 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {data && data.workouts.length === 0 && (
+        <p className="mt-4 rounded border border-seam bg-iron px-3 py-2.5 text-xs text-steel">
+          Banco zerado e pronto: registre seu primeiro treino na aba{" "}
+          <Link href="/treino" className="font-semibold text-ember">
+            Treino
+          </Link>{" "}
+          e os gráficos ganham vida.
+        </p>
+      )}
+
       {/* Stats da semana */}
       <div className="rise rise-3 mt-4 grid grid-cols-2 gap-3">
         <StatCard
@@ -298,7 +331,13 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-        <StrengthChart data={view.strength} />
+        {view.strength.length > 0 ? (
+          <StrengthChart data={view.strength} />
+        ) : (
+          <p className="py-10 text-center text-xs text-steel-dim">
+            Sem registros deste exercício ainda — salve um treino na aba Treino.
+          </p>
+        )}
         <p className="mt-2 font-mono text-[10px] text-steel-dim">
           Epley: carga × (1 + reps/30) da melhor série · queda leve no déficit é esperada
         </p>
@@ -316,12 +355,6 @@ export default function Dashboard() {
         </p>
       </Card>
 
-      <button
-        onClick={resetData}
-        className="mt-8 flex items-center gap-2 font-mono text-[10px] text-steel-dim transition-colors hover:text-steel"
-      >
-        <RotateCcw size={11} /> regenerar dados mockados
-      </button>
     </main>
   )
 }
