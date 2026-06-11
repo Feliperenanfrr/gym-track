@@ -25,6 +25,12 @@ Este documento consolida todas as ideias de melhorias pensadas para o sistema, u
 - [x] **14. Dias de Jornada:** Contador do número de dias treinando desde o início.
 - [x] **15. Evolução de Cintura:** Gráfico específico da recomposição corporal ao lado do de peso.
 
+### Inteligência e Gamificação
+- [x] **19. Volume por Grupo Muscular:** Gráfico de "Tons Levantados" com barras empilhadas por parte do corpo (Perna, Costas, Peito, Ombro, Braço, Core) + % de distribuição das últimas 4 semanas para enxergar deficiências do shape. Toggle Total/Por grupo no painel.
+- [x] **20. Estimativa de Fadiga / Readiness:** Sinal 🟢🟡🔴 no painel via razão carga aguda:crônica (ACWR) — volume dos últimos 7 dias contra a média semanal das 3 semanas anteriores (≤110% verde, ≤140% amarelo, acima vermelho).
+- [x] **21. Resumo Semanal Automático:** Card dourado no painel todo domingo com sessões/5, PRs batidos na semana, volume total e calorias estimadas por METs.
+- [x] **22. Badges de Conquistas Xbox-style:** 16 selos derivados do histórico (séries 100/500/1000, toneladas 50/250/1000, streaks 4/12 semanas, PRs, Zona 2, Atleta Bronze/Prata/Ouro) com barra de progresso nos bloqueados.
+
 ---
 
 ## ⏳ O Que Falta Implementar (Roadmap Futuro)
@@ -35,12 +41,6 @@ Estas melhorias estão organizadas pela relação entre o retorno de valor (impa
 - [ ] **16. Preview do próximo treino no painel:** O dashboard se torna prescritivo, passando um spoiler do dia: ("Supino: Último 65kg x 8 - tente 67.5kg").
 - [ ] **17. Timer de Zona 2 Embutido:** O timer existente no app é focado na musculação. Será criado um painel de cardio contínuo visível e com referencial de target (ex: 120-140 BPM).
 - [ ] **18. Reordenar Exercícios da Sessão:** Botões ou drag-and-drop nos cards de exercícios para reorganizar as telas quando o equipamento titular na academia estiver ocupado.
-
-### Funcionalidades de Inteligência e Gamificação
-- [ ] **19. Volume por Grupo Muscular:** Separar e classificar o gráfico analítico de "Tons Levantados" por partes do corpo (Peito, Costas, Perna, etc.) para enxergar deficiências do shape.
-- [ ] **20. Estimativa de Fadiga / Readiness:** Um status colorido (Sinal 🟢🟡🔴) que deduz sua fadiga baseando-se no volume de carga que você acumulou nas últimas 2~4 semanas de atividade.
-- [ ] **21. Resumo Semanal Automático:** Geração de um report ou badge no final do domingo com o resumo de PRs batidos, frequência e calorias.
-- [ ] **22. Badges de Conquistas Xbox-style:** Liberar "selos" para o usuário ao completar marcos como ("1000 séries registradas", "Atleta Ouro").
 
 ### Funcionalidades Especiais de Recomposição Corporal (Alto Esforço)
 - [ ] **23. Registro de Fotos Diário/Semanal:** Galeria visual de transição de shape para o usuário conseguir ver o próprio antes/depois no longo prazo. (Requer implementação com Supabase Storage API).
