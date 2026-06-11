@@ -188,3 +188,40 @@ export function WeightChart({
     </ResponsiveContainer>
   )
 }
+
+export function WaistChart({
+  data,
+}: {
+  data: { label: string; cintura: number }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="waistFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#818cf8" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#818cf8" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={["dataMin - 2", "dataMax + 2"]}
+          tickFormatter={(v: number) => v.toFixed(1)}
+        />
+        <Tooltip content={<Tip suffix=" cm" />} cursor={{ stroke: GRID }} />
+        <Area
+          type="monotone"
+          dataKey="cintura"
+          stroke="#818cf8"
+          strokeWidth={2}
+          fill="url(#waistFill)"
+          dot={{ r: 2.5, fill: "#818cf8", strokeWidth: 0 }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}

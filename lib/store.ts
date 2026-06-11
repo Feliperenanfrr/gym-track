@@ -224,5 +224,42 @@ export function useGymData() {
     window.location.href = "/login"
   }, [])
 
-  return { data, error, pendingCount, addWorkout, addBodyLog, signOut }
+  const deleteWorkout = useCallback(async (id: string, date: string, sessionId: string) => {
+    setData((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        workouts: prev.workouts.filter((w) => w.id !== id),
+      }
+    })
+
+    const enqueueIt = () => {
+      enqueue({
+        action: "delete",
+        table: "workouts",
+        onConflict: "user_id,date,session_id",
+        logicalKey: `delete-${id}`,
+        payload: { id },
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const { error } = await supabase.from("workouts").delete().eq("id", id)
+      if (error) throw new Error(error.message)
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      throw e
+    }
+  }, [])
+
+  return { data, error, pendingCount, addWorkout, addBodyLog, deleteWorkout, signOut }
 }
