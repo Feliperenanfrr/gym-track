@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Check, ChevronUp, History, Save } from "lucide-react"
+import { ArrowLeft, Check, ChevronUp, CloudOff, History, RotateCcw, Save } from "lucide-react"
 import { Card, PageHeader } from "@/components/ui"
+import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { ExerciseLog, SessionId, WorkoutLog } from "@/lib/types"
+import { ExercisePrescription, ExerciseLog, SessionId, SetRow, WorkoutLog } from "@/lib/types"
 import { cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/lib/utils"
-
-type SetRow = { weight: string; reps: string; done: boolean }
+import { parseRestSeconds } from "@/lib/rest"
+import { useRestTimer } from "@/lib/use-rest-timer"
+import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
 
 const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida leve", "Remo"]
 const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu"]
@@ -20,7 +22,8 @@ function shortDate(key: string): string {
 }
 
 export default function TreinoPage() {
-  const { data, addWorkout } = useGymData()
+  const { data, addWorkout, pendingCount } = useGymData()
+  const restTimer = useRestTimer()
   const [today, setToday] = useState<Date | null>(null)
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
   const [rows, setRows] = useState<Record<string, SetRow[]>>({})
@@ -29,8 +32,11 @@ export default function TreinoPage() {
   const [cardioMode, setCardioMode] = useState(CARDIO_MODES[0])
   const [finisherMin, setFinisherMin] = useState("20")
   const [saved, setSaved] = useState(false)
+  const [savedOffline, setSavedOffline] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [draftRestored, setDraftRestored] = useState(false)
+  const dirtyRef = useRef(false)
 
   useEffect(() => {
     const now = new Date()
@@ -59,14 +65,12 @@ export default function TreinoPage() {
     )
   }, [data, session, today])
 
-  // monta linhas de séries quando muda a sessão
-  useEffect(() => {
-    if (!session) return
-    setSaved(false)
-    const next: Record<string, SetRow[]> = {}
-    for (const ex of session.exercises) {
-      const lastEntry = lastLog?.entries.find((e) => e.exerciseId === ex.id)
-      next[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
+  /** Pré-preenchimento a partir do último treino desta sessão */
+  const buildPrefill = (s: typeof session, ll: typeof lastLog) => {
+    const rows: Record<string, SetRow[]> = {}
+    for (const ex of s!.exercises) {
+      const lastEntry = ll?.entries.find((e) => e.exerciseId === ex.id)
+      rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
         return {
           weight: lastSet ? String(lastSet.weight) : "",
@@ -75,18 +79,65 @@ export default function TreinoPage() {
         }
       })
     }
-    setRows(next)
-    if (session.kind === "cardio") {
-      setCardioMin(lastLog?.cardio ? String(Math.min(50, lastLog.cardio.minutes + 2)) : "45")
-      setCardioBpm(lastLog?.cardio?.avgBpm ? String(lastLog.cardio.avgBpm) : "130")
-      setCardioMode(lastLog?.cardio?.mode ?? CARDIO_MODES[0])
-    } else if (session.kind === "sport") {
-      setCardioMin("60")
-      setCardioMode(SPORT_MODES[0])
-    } else if (session.cardioAfter) {
-      setFinisherMin(String(session.cardioAfter.minutes))
+    return {
+      rows,
+      cardioMin:
+        s!.kind === "cardio"
+          ? ll?.cardio
+            ? String(Math.min(50, ll.cardio.minutes + 2))
+            : "45"
+          : s!.kind === "sport"
+            ? "60"
+            : "",
+      cardioBpm: ll?.cardio?.avgBpm ? String(ll.cardio.avgBpm) : "130",
+      cardioMode:
+        s!.kind === "sport" ? SPORT_MODES[0] : ll?.cardio?.mode ?? CARDIO_MODES[0],
+      finisherMin: s!.cardioAfter ? String(s!.cardioAfter.minutes) : "20",
     }
-  }, [session, lastLog])
+  }
+
+  const applyPrefill = (p: ReturnType<typeof buildPrefill>) => {
+    setRows(p.rows)
+    setCardioMin(p.cardioMin)
+    setCardioBpm(p.cardioBpm)
+    setCardioMode(p.cardioMode)
+    setFinisherMin(p.finisherMin)
+  }
+
+  // ao trocar de sessão: restaura rascunho do dia se houver, senão pré-preenche
+  useEffect(() => {
+    if (!session || !today) return
+    setSaved(false)
+    dirtyRef.current = false
+    const dateKey = toDateKey(today)
+    const draft = loadDraft(dateKey, session.id)
+    if (draft && draftHasContent(draft)) {
+      setRows(draft.rows)
+      setCardioMin(draft.cardioMin)
+      setCardioBpm(draft.cardioBpm)
+      setCardioMode(draft.cardioMode)
+      setFinisherMin(draft.finisherMin)
+      setDraftRestored(true)
+    } else {
+      applyPrefill(buildPrefill(session, lastLog))
+      setDraftRestored(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, lastLog, today])
+
+  // autosave do rascunho a cada edição do usuário
+  useEffect(() => {
+    if (!session || !today || !dirtyRef.current) return
+    saveDraft(toDateKey(today), session.id, {
+      rows,
+      cardioMin,
+      cardioBpm,
+      cardioMode,
+      finisherMin,
+      savedAt: Date.now(),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, cardioMin, cardioBpm, cardioMode, finisherMin])
 
   const totals = useMemo(() => {
     let volume = 0
@@ -114,10 +165,38 @@ export default function TreinoPage() {
   }
 
   const updateRow = (exId: string, idx: number, patch: Partial<SetRow>) => {
+    dirtyRef.current = true
     setRows((prev) => ({
       ...prev,
       [exId]: prev[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     }))
+  }
+
+  // marca/desmarca a série e, ao concluir, dispara o timer de descanso
+  const toggleSet = (ex: ExercisePrescription, idx: number, currentlyDone: boolean) => {
+    const nowDone = !currentlyDone
+    updateRow(ex.id, idx, { done: nowDone })
+    if (nowDone) {
+      try {
+        navigator.vibrate?.(15)
+      } catch {
+        /* ignore */
+      }
+      restTimer.start(parseRestSeconds(ex.rest), ex.name)
+    }
+  }
+
+  const setCardio = (setter: (v: string) => void, value: string) => {
+    dirtyRef.current = true
+    setter(value)
+  }
+
+  const discardDraft = () => {
+    if (!session || !today) return
+    clearDraft(toDateKey(today), session.id)
+    dirtyRef.current = false
+    applyPrefill(buildPrefill(session, lastLog))
+    setDraftRestored(false)
   }
 
   const handleSave = async () => {
@@ -157,8 +236,13 @@ export default function TreinoPage() {
 
     setSaving(true)
     setSaveError(null)
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false
     try {
       await addWorkout(log)
+      clearDraft(log.date, session.id)
+      dirtyRef.current = false
+      setDraftRestored(false)
+      setSavedOffline(offline)
       setSaved(true)
       window.scrollTo({ top: 0, behavior: "smooth" })
     } catch (e) {
@@ -202,11 +286,17 @@ export default function TreinoPage() {
           <div className="flex items-center gap-2 text-lg font-semibold text-zone">
             <Check size={20} /> Treino salvo!
           </div>
-          {totals.volume > 0 && (
-            <p className="mt-1 font-mono text-xs text-steel">
-              {formatKg(totals.volume)} movimentados hoje. Sobrecarga anotada — é assim
-              que o shape vem.
+          {savedOffline ? (
+            <p className="mt-1 flex items-center gap-1.5 font-mono text-xs text-gold">
+              <CloudOff size={13} /> Salvo no aparelho — sincroniza quando a rede voltar.
             </p>
+          ) : (
+            totals.volume > 0 && (
+              <p className="mt-1 font-mono text-xs text-steel">
+                {formatKg(totals.volume)} movimentados hoje. Sobrecarga anotada — é assim
+                que o shape vem.
+              </p>
+            )
           )}
           <Link
             href="/"
@@ -215,6 +305,26 @@ export default function TreinoPage() {
             <ArrowLeft size={14} /> Voltar ao painel
           </Link>
         </Card>
+      )}
+
+      {draftRestored && !saved && (
+        <div className="rise mb-4 flex items-center gap-2 rounded border border-ember/30 bg-ember/5 px-3 py-2 text-xs text-ember">
+          <History size={14} className="shrink-0" />
+          <span className="flex-1">Rascunho de hoje restaurado.</span>
+          <button
+            onClick={discardDraft}
+            className="flex items-center gap-1 font-semibold text-steel transition-colors hover:text-bone"
+          >
+            <RotateCcw size={12} /> Recomeçar
+          </button>
+        </div>
+      )}
+
+      {pendingCount > 0 && !saved && (
+        <p className="rise mb-4 flex items-center gap-1.5 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">
+          <CloudOff size={13} /> {pendingCount}{" "}
+          {pendingCount === 1 ? "registro pendente" : "registros pendentes"} de sincronização.
+        </p>
       )}
 
       {alreadyLoggedToday && !saved && (
@@ -356,7 +466,7 @@ export default function TreinoPage() {
                   </div>
 
                   <button
-                    onClick={() => updateRow(ex.id, i, { done: !row.done })}
+                    onClick={() => toggleSet(ex, i, row.done)}
                     className={cn(
                       "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-all",
                       row.done
@@ -390,7 +500,7 @@ export default function TreinoPage() {
             {(session.kind === "cardio" ? CARDIO_MODES : SPORT_MODES).map((m) => (
               <button
                 key={m}
-                onClick={() => setCardioMode(m)}
+                onClick={() => setCardio(setCardioMode, m)}
                 className={cn(
                   "rounded-full border px-3 py-1.5 text-sm transition-colors",
                   cardioMode === m
@@ -409,7 +519,7 @@ export default function TreinoPage() {
                 type="number"
                 inputMode="numeric"
                 value={cardioMin}
-                onChange={(e) => setCardioMin(e.target.value)}
+                onChange={(e) => setCardio(setCardioMin, e.target.value)}
                 className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
               />
             </label>
@@ -420,7 +530,7 @@ export default function TreinoPage() {
                   type="number"
                   inputMode="numeric"
                   value={cardioBpm}
-                  onChange={(e) => setCardioBpm(e.target.value)}
+                  onChange={(e) => setCardio(setCardioBpm, e.target.value)}
                   className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
                 />
               </label>
@@ -440,7 +550,7 @@ export default function TreinoPage() {
               type="number"
               inputMode="numeric"
               value={finisherMin}
-              onChange={(e) => setFinisherMin(e.target.value)}
+              onChange={(e) => setCardio(setFinisherMin, e.target.value)}
               className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
             />
             <span className="font-mono text-xs text-steel">min em Zona 2</span>
@@ -453,7 +563,10 @@ export default function TreinoPage() {
       </p>
 
       {/* barra de salvar fixa — sempre ao alcance do polegar */}
-      <div className="fixed inset-x-0 bottom-[68px] z-40 px-4">
+      <div
+        className="fixed inset-x-0 z-40 px-4"
+        style={{ bottom: "calc(68px + env(safe-area-inset-bottom))" }}
+      >
         <div className="mx-auto max-w-md md:max-w-2xl">
           {saveError && (
             <p className="mb-2 rounded border border-red-500/30 bg-coal/95 px-3 py-2 text-xs text-red-400 backdrop-blur">
@@ -475,6 +588,8 @@ export default function TreinoPage() {
           </button>
         </div>
       </div>
+
+      <RestTimer timer={restTimer} />
     </main>
   )
 }

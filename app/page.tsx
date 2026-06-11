@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, LogOut } from "lucide-react"
+import { ArrowRight, Check, CloudOff, LogOut } from "lucide-react"
 import { StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, StatCard } from "@/components/ui"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
@@ -61,7 +61,7 @@ function buildWeeks(data: GymData, today: Date) {
 }
 
 export default function Dashboard() {
-  const { data, error, signOut } = useGymData()
+  const { data, error, pendingCount, signOut } = useGymData()
   const [today, setToday] = useState<Date | null>(null)
   const [lift, setLift] = useState("bench")
 
@@ -168,13 +168,23 @@ export default function Dashboard() {
         kicker={`GYM//TRACK · ${dateFmt}`}
         title="Painel"
         right={
-          <button
-            onClick={signOut}
-            className="mb-1 flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-steel"
-            title="Sair"
-          >
-            <LogOut size={12} /> sair
-          </button>
+          <div className="mb-1 flex items-center gap-2">
+            {pendingCount > 0 && (
+              <span
+                className="flex items-center gap-1 rounded border border-gold/30 bg-gold/5 px-2 py-1 font-mono text-[10px] text-gold"
+                title={`${pendingCount} registro(s) aguardando sincronização`}
+              >
+                <CloudOff size={11} /> {pendingCount}
+              </span>
+            )}
+            <button
+              onClick={signOut}
+              className="flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-steel"
+              title="Sair"
+            >
+              <LogOut size={12} /> sair
+            </button>
+          </div>
         }
       />
 
