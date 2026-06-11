@@ -12,6 +12,8 @@ export interface WorkoutDraft {
   cardioMode: string
   finisherMin: string
   savedAt: number
+  /** epoch ms da primeira série marcada (p/ duração real da sessão) */
+  startedAt?: number
 }
 
 const key = (date: string, sessionId: string) =>

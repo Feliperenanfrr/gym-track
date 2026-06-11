@@ -28,6 +28,19 @@ export function bestE1RM(entry: ExerciseLog): number {
   }, 0)
 }
 
+/**
+ * 1RM estimada ajustada por RIR: reps efetivas = reps feitas + reps em
+ * reserva (75 kg × 8 @RIR2 vale como 10 reps até a falha). Séries sem
+ * RIR se comportam como na fórmula clássica.
+ */
+export function bestE1RMAdjusted(entry: ExerciseLog): number {
+  return entry.sets.reduce((best, s) => {
+    if (s.weight <= 0) return best
+    const effReps = s.reps + (s.rir ?? 0)
+    return Math.max(best, s.weight * (1 + effReps / 30))
+  }, 0)
+}
+
 /** Melhor série (maior carga; desempate por reps) */
 export function topSet(entry: ExerciseLog): SetLog | undefined {
   return [...entry.sets].sort((a, b) => b.weight - a.weight || b.reps - a.reps)[0]

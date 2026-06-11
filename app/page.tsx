@@ -2,11 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, CloudOff, LogOut, History } from "lucide-react"
+import { ArrowRight, Check, CloudOff, Droplets, LogOut, History, RotateCcw } from "lucide-react"
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
-import { computeReadiness, ReadinessLevel, weeklySummary } from "@/lib/insights"
+import {
+  getScheduleMode,
+  last7Days,
+  nextInCycle,
+  rolling7,
+  ScheduleMode,
+  setScheduleMode,
+} from "@/lib/cycle"
+import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
 import { MUSCLE_GROUPS, volumeByGroup } from "@/lib/muscles"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
@@ -103,14 +111,23 @@ function buildWeeks(data: GymData, today: Date) {
 }
 
 export default function Dashboard() {
-  const { data, error, pendingCount, signOut } = useGymData()
+  const { data, error, pendingCount, addWater, signOut } = useGymData()
   const [today, setToday] = useState<Date | null>(null)
   const [lift, setLift] = useState("bench")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
+  const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
+  const [mode, setMode] = useState<ScheduleMode>("ciclo")
 
   useEffect(() => {
     setToday(new Date())
+    setMode(getScheduleMode())
   }, [])
+
+  const toggleMode = () => {
+    const next: ScheduleMode = mode === "ciclo" ? "calendario" : "ciclo"
+    setScheduleMode(next)
+    setMode(next)
+  }
 
   const view = useMemo(() => {
     if (!data || !today) return null
@@ -208,6 +225,39 @@ export default function Dashboard() {
     const weekSummary = isoWeekday(today) === 7 ? weeklySummary(data, monday) : null
     const achievements = computeAchievements(data, today)
 
+    // hidratação de hoje
+    const waterToday = data.hydration.find((h) => h.date === todayKey)?.ml ?? 0
+    const waterGoal = waterGoalMl(data.body)
+
+    // modo ciclo: próximo da fila + janela móvel de 7 dias
+    const cycle = nextInCycle(data.workouts, today)
+    const roll = rolling7(data.workouts, today)
+    const strip = last7Days(data.workouts, today)
+    const anyToday = data.workouts.some(
+      (w) => w.date === todayKey && w.sessionId !== "rest"
+    )
+
+    // card principal unificado entre os dois modos
+    const headSession =
+      mode === "ciclo" ? PLAN_BY_ID[cycle.sessionId] : todaySession
+    const headDone = mode === "ciclo" ? anyToday : todayDone
+    const headKicker =
+      mode === "ciclo"
+        ? anyToday
+          ? "Hoje concluído · próximo do ciclo"
+          : "Próximo do ciclo"
+        : "Treino de hoje"
+    const headNote =
+      mode !== "ciclo"
+        ? null
+        : cycle.reason === "recovery"
+          ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+          : cycle.reason === "regression"
+            ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
+            : cycle.reason === "start"
+              ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
+              : null
+
     return {
       todaySession,
       todayDone,
@@ -224,8 +274,16 @@ export default function Dashboard() {
       readiness,
       weekSummary,
       achievements,
+      waterToday,
+      waterGoal,
+      roll,
+      strip,
+      headSession,
+      headDone,
+      headKicker,
+      headNote,
     }
-  }, [data, today, lift])
+  }, [data, today, lift, mode])
 
   if (error) {
     return (
@@ -295,14 +353,14 @@ export default function Dashboard() {
         }
       />
 
-      {/* Treino de hoje */}
+      {/* Treino de hoje / próximo do ciclo */}
       <Card className="rise rise-1 relative overflow-hidden border-l-4 border-l-ember">
         <div className="flex justify-between items-center">
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
             style={{ fontFamily: "var(--font-condensed)" }}
           >
-            Treino de hoje
+            {view.headKicker}
           </p>
           {view.daysActive > 0 && (
             <span className="font-mono text-[9px] text-steel-dim" title="Dias desde o primeiro treino">
@@ -310,19 +368,24 @@ export default function Dashboard() {
             </span>
           )}
         </div>
-        <h2 className="stencil mt-1 text-3xl text-bone">{view.todaySession.title}</h2>
-        <p className="mt-0.5 text-sm text-steel">{view.todaySession.subtitle}</p>
+        <h2 className="stencil mt-1 text-3xl text-bone">{view.headSession.title}</h2>
+        <p className="mt-0.5 text-sm text-steel">{view.headSession.subtitle}</p>
         <p className="mt-2 font-mono text-xs text-steel-dim">
-          {view.todaySession.duration}
-          {view.todaySession.exercises.length > 0 &&
-            ` · ${view.todaySession.exercises.length} exercícios`}
-          {view.todaySession.cardioAfter && ` · +${view.todaySession.cardioAfter.minutes} min Z2`}
+          {view.headSession.duration}
+          {view.headSession.exercises.length > 0 &&
+            ` · ${view.headSession.exercises.length} exercícios`}
+          {view.headSession.cardioAfter && ` · +${view.headSession.cardioAfter.minutes} min Z2`}
         </p>
-        {view.todayDone ? (
+        {view.headNote && (
+          <p className="mt-2 rounded border border-gold/30 bg-gold/5 px-2.5 py-1.5 text-xs text-gold">
+            {view.headNote}
+          </p>
+        )}
+        {view.headDone ? (
           <div className="mt-4 inline-flex items-center gap-2 rounded bg-zone/10 px-3 py-2 text-sm font-semibold text-zone">
             <Check size={16} /> Concluído — bom trabalho
           </div>
-        ) : view.todaySession.kind === "rest" ? (
+        ) : view.headSession.kind === "rest" ? (
           <p className="mt-4 text-sm text-steel">
             Descanso total ou caminhada leve. Durma 7–9 h.
           </p>
@@ -386,14 +449,14 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Fita da semana */}
+      {/* Fita: últimos 7 dias (ciclo) ou semana planejada (calendário) */}
       <div className="rise rise-2 mt-4">
         <div className="mb-2 flex items-center justify-between">
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
             style={{ fontFamily: "var(--font-condensed)" }}
           >
-            Sua semana
+            {mode === "ciclo" ? "Últimos 7 dias" : "Sua semana"}
           </p>
           <div className="flex items-center gap-3 font-mono text-[9px] text-steel-dim">
             <span className="flex items-center gap-1">
@@ -402,50 +465,109 @@ export default function Dashboard() {
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-sm border border-ember" /> hoje
             </span>
+            <button
+              onClick={toggleMode}
+              className="underline decoration-dotted underline-offset-2 transition-colors hover:text-bone"
+              title="Alternar entre ciclo rotativo e semana fixa por dia"
+            >
+              {mode === "ciclo" ? "ver semana fixa" : "ver ciclo"}
+            </button>
           </div>
         </div>
-        <div className="grid grid-cols-7 gap-1.5">
-          {view.days.map((d) => (
-            <div key={d.label} className="flex flex-col items-center gap-1.5">
-              <span
-                className={cn(
-                  "font-mono text-[9px]",
-                  d.isToday ? "font-bold text-ember" : "text-steel-dim"
-                )}
-              >
-                {d.label}
-              </span>
-              <div
-                className={cn(
-                  "flex h-10 w-full items-center justify-center rounded border text-[10px] font-semibold",
-                  d.done
-                    ? "border-ember/0 bg-ember text-coal"
-                    : d.isToday
-                      ? "today-pulse border-ember text-ember"
-                      : d.session.kind === "rest"
-                        ? "border-seam text-steel-dim"
-                        : d.isPast
-                          ? "border-seam bg-iron text-steel-dim line-through"
-                          : "border-seam bg-iron text-steel"
-                )}
-                style={{ fontFamily: "var(--font-condensed)" }}
-                title={d.session.title}
-              >
-                {d.done ? (
-                  <Check size={14} strokeWidth={3} />
-                ) : d.session.kind === "rest" ? (
-                  "—"
-                ) : d.session.kind === "cardio" ? (
-                  "Z2"
-                ) : d.session.kind === "sport" ? (
-                  "ESP"
-                ) : (
-                  d.session.title.replace("Upper ", "U").replace("Lower ", "L")
-                )}
+        {mode === "ciclo" ? (
+          <div className="grid grid-cols-7 gap-1.5">
+            {view.strip.map((d) => {
+              const allEasy =
+                d.done.length > 0 &&
+                d.done.every((s) => s === "cardioZ2" || s === "sport")
+              return (
+                <div key={d.key} className="flex flex-col items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "font-mono text-[9px]",
+                      d.isToday ? "font-bold text-ember" : "text-steel-dim"
+                    )}
+                  >
+                    {d.label}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex h-10 w-full items-center justify-center rounded border text-[10px] font-semibold",
+                      d.done.length > 0
+                        ? allEasy
+                          ? "border-zone/0 bg-zone text-coal"
+                          : "border-ember/0 bg-ember text-coal"
+                        : d.isToday
+                          ? "today-pulse border-ember text-ember"
+                          : "border-seam bg-iron text-steel-dim"
+                    )}
+                    style={{ fontFamily: "var(--font-condensed)" }}
+                    title={
+                      d.done.length > 0
+                        ? d.done.map((s) => PLAN_BY_ID[s].title).join(" + ")
+                        : "Sem registro"
+                    }
+                  >
+                    {d.done.length > 0
+                      ? d.done
+                          .map((s) =>
+                            PLAN_BY_ID[s].title
+                              .replace("Upper ", "U")
+                              .replace("Lower ", "L")
+                              .replace("Cardio Zona 2", "Z2")
+                              .replace("Esporte", "ESP")
+                          )
+                          .join("·")
+                      : "—"}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-7 gap-1.5">
+            {view.days.map((d) => (
+              <div key={d.label} className="flex flex-col items-center gap-1.5">
+                <span
+                  className={cn(
+                    "font-mono text-[9px]",
+                    d.isToday ? "font-bold text-ember" : "text-steel-dim"
+                  )}
+                >
+                  {d.label}
+                </span>
+                <div
+                  className={cn(
+                    "flex h-10 w-full items-center justify-center rounded border text-[10px] font-semibold",
+                    d.done
+                      ? "border-ember/0 bg-ember text-coal"
+                      : d.isToday
+                        ? "today-pulse border-ember text-ember"
+                        : d.session.kind === "rest"
+                          ? "border-seam text-steel-dim"
+                          : d.isPast
+                            ? "border-seam bg-iron text-steel-dim line-through"
+                            : "border-seam bg-iron text-steel"
+                  )}
+                  style={{ fontFamily: "var(--font-condensed)" }}
+                  title={d.session.title}
+                >
+                  {d.done ? (
+                    <Check size={14} strokeWidth={3} />
+                  ) : d.session.kind === "rest" ? (
+                    "—"
+                  ) : d.session.kind === "cardio" ? (
+                    "Z2"
+                  ) : d.session.kind === "sport" ? (
+                    "ESP"
+                  ) : (
+                    d.session.title.replace("Upper ", "U").replace("Lower ", "L")
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {data && data.workouts.length === 0 && (
@@ -497,10 +619,10 @@ export default function Dashboard() {
       {/* Stats da semana */}
       <div className="rise rise-3 mt-4 grid grid-cols-2 gap-3">
         <StatCard
-          label="Sessões na semana"
+          label={mode === "ciclo" ? "Sessões · 7 dias" : "Sessões na semana"}
           value={
             <>
-              {view.thisWeek.sessions}
+              {mode === "ciclo" ? view.roll.sessions : view.thisWeek.sessions}
               <span className="text-lg text-steel-dim">/5</span>
             </>
           }
@@ -516,8 +638,8 @@ export default function Dashboard() {
           }
         />
         <StatCard
-          label="Zona 2 na semana"
-          value={`${view.thisWeek.z2}′`}
+          label={mode === "ciclo" ? "Zona 2 · 7 dias" : "Zona 2 na semana"}
+          value={`${mode === "ciclo" ? view.roll.z2 : view.thisWeek.z2}′`}
           detail={`meta ${Z2_TARGET}–70 min · inegociável`}
           accent="zone"
         />
@@ -536,6 +658,64 @@ export default function Dashboard() {
           accent="gold"
         />
       </div>
+
+      {/* Hidratação de hoje — registro com 1 tap */}
+      <Card className="rise rise-4 mt-4 border-l-4 border-l-[#38bdf8]">
+        <div className="flex items-baseline justify-between gap-2">
+          <p
+            className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            <Droplets size={12} className="text-[#38bdf8]" /> Hidratação
+          </p>
+          <p className="font-mono text-xs">
+            <span className="font-semibold text-bone">
+              {(view.waterToday / 1000).toFixed(2).replace(".", ",")} L
+            </span>
+            <span className="text-steel-dim">
+              {" "}/ {(view.waterGoal / 1000).toFixed(1).replace(".", ",")} L
+            </span>
+          </p>
+        </div>
+        <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-iron-2">
+          <div
+            className="h-full rounded-full bg-[#38bdf8] transition-all duration-300"
+            style={{
+              width: `${Math.min(100, Math.round((view.waterToday / view.waterGoal) * 100))}%`,
+            }}
+          />
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          {[250, 500, 750].map((ml) => (
+            <button
+              key={ml}
+              onClick={() => {
+                addWater(ml)
+                setLastWaterAdd(ml)
+              }}
+              className="flex-1 rounded border border-seam py-2 font-mono text-xs font-semibold text-steel transition-colors hover:border-[#38bdf8]/50 hover:text-bone active:scale-95"
+            >
+              +{ml} ml
+            </button>
+          ))}
+          {lastWaterAdd !== null && (
+            <button
+              onClick={() => {
+                addWater(-lastWaterAdd)
+                setLastWaterAdd(null)
+              }}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-seam text-steel-dim transition-colors hover:text-bone active:scale-95"
+              aria-label="Desfazer último registro de água"
+              title={`Desfazer +${lastWaterAdd} ml`}
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
+        </div>
+        <p className="mt-2 font-mono text-[9px] text-steel-dim">
+          meta ~37 ml/kg pelo último peso · desidratação piora fôlego e causa tontura
+        </p>
+      </Card>
 
       {/* Volume semanal — total ou por grupo muscular */}
       <SectionTitle>Volume de treino — 6 semanas</SectionTitle>

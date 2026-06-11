@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
  */
 export interface PendingMutation {
   action?: "upsert" | "delete"
-  table: "workouts" | "body_logs"
+  table: "workouts" | "body_logs" | "hydration_logs"
   onConflict: string
   /** chave lógica para deduplicar (date+session ou date) */
   logicalKey: string

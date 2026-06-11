@@ -3,6 +3,20 @@ import { GymData, WorkoutLog } from "./types"
 import { bestE1RM, toDateKey, workoutVolume } from "./utils"
 
 /* ------------------------------------------------------------------ */
+/* Hidratação                                                           */
+/* ------------------------------------------------------------------ */
+
+const WATER_ML_PER_KG = 37 // meio da faixa do plano (35–40 ml/kg)
+const WATER_FALLBACK_ML = 3300
+
+/** Meta diária de água (ml) pelo peso corporal mais recente */
+export function waterGoalMl(body: { weightKg: number }[]): number {
+  const kg = [...body].reverse().find((b) => b.weightKg > 0)?.weightKg
+  if (!kg) return WATER_FALLBACK_ML
+  return Math.round((kg * WATER_ML_PER_KG) / 50) * 50
+}
+
+/* ------------------------------------------------------------------ */
 /* PRs                                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -33,6 +47,33 @@ export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
     }
   }
   return events
+}
+
+/* ------------------------------------------------------------------ */
+/* Carga interna                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Carga interna da sessão em unidades arbitrárias (AU).
+ * Com sRPE registrado: sRPE × minutos (método de Foster) — inclui
+ * musculação, cardio E esporte na mesma moeda.
+ * Fallbacks p/ registros antigos sem sRPE (documentados):
+ *  - musculação: tonelagem × 0,05 (≈ RPE 7 × 60′ para ~8 t) + finisher × 4
+ *  - esporte: minutos × 7 (RPE assumido de jogo recreativo)
+ *  - Zona 2: minutos × 4 (conversa confortável)
+ */
+export function internalLoad(w: WorkoutLog): number {
+  const kind = PLAN_BY_ID[w.sessionId]?.kind
+  if (w.srpe && w.srpe > 0) {
+    const minutes =
+      w.durationMin ?? (kind === "lift" ? 60 : w.cardio?.minutes ?? 0)
+    if (minutes > 0) return w.srpe * minutes
+  }
+  if (kind === "lift") {
+    return Math.round(workoutVolume(w) * 0.05 + (w.cardio?.minutes ?? 0) * 4)
+  }
+  if (kind === "sport") return (w.cardio?.minutes ?? 0) * 7
+  return (w.cardio?.minutes ?? 0) * 4
 }
 
 /* ------------------------------------------------------------------ */

@@ -39,6 +39,8 @@ export interface SessionPlan {
 export interface SetLog {
   weight: number
   reps: number
+  /** reps em reserva ao fim da série (0–4); opcional, registros antigos não têm */
+  rir?: number
 }
 
 /** Linha de série na UI de registro (strings cruas dos inputs) */
@@ -46,6 +48,8 @@ export interface SetRow {
   weight: string
   reps: string
   done: boolean
+  /** "" = não informado; "0".."4" */
+  rir?: string
 }
 
 export interface ExerciseLog {
@@ -68,6 +72,10 @@ export interface WorkoutLog {
   entries: ExerciseLog[]
   cardio?: CardioLog
   notes?: string
+  /** esforço da sessão, escala de Foster 1–10 (1 tap pós-treino) */
+  srpe?: number
+  /** ISO timestamp da primeira série marcada */
+  startedAt?: string
 }
 
 export interface BodyLog {
@@ -77,7 +85,15 @@ export interface BodyLog {
   waistCm?: number
 }
 
+export interface HydrationLog {
+  /** yyyy-MM-dd */
+  date: string
+  /** total acumulado do dia em ml */
+  ml: number
+}
+
 export interface GymData {
   workouts: WorkoutLog[]
   body: BodyLog[]
+  hydration: HydrationLog[]
 }
