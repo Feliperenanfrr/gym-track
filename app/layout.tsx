@@ -8,11 +8,23 @@ import "@fontsource/barlow-condensed/600.css"
 import "@fontsource-variable/jetbrains-mono"
 import "./globals.css"
 import { BottomNav } from "@/components/bottom-nav"
+import { PWARegister } from "@/components/pwa-register"
 
 export const metadata: Metadata = {
   title: "GYM//TRACK — Felipe",
   description:
     "Tracker do plano de treino: Upper/Lower, Zona 2 e recomposição corporal",
+  manifest: "/manifest.webmanifest",
+  applicationName: "GYM//TRACK",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "GYM//TRACK",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
 }
 
 export const viewport: Viewport = {
@@ -20,6 +32,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
 }
 
 export default function RootLayout({
@@ -32,6 +45,7 @@ export default function RootLayout({
           {children}
         </div>
         <BottomNav />
+        <PWARegister />
       </body>
     </html>
   )

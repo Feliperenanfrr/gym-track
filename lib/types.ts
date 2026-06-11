@@ -41,6 +41,13 @@ export interface SetLog {
   reps: number
 }
 
+/** Linha de série na UI de registro (strings cruas dos inputs) */
+export interface SetRow {
+  weight: string
+  reps: string
+  done: boolean
+}
+
 export interface ExerciseLog {
   exerciseId: string
   sets: SetLog[]

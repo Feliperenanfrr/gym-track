@@ -37,10 +37,21 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 - `workouts.entries` é JSONB com as séries (`[{ exerciseId, sets: [{weight, reps}] }]`);
   `cardio` é JSONB (`{ minutes, avgBpm?, mode }`).
 
+## Na academia (fluidez)
+
+- **Timer de descanso**: ao marcar uma série, dispara um countdown com o descanso
+  prescrito do exercício (pausar / −15 s / +15 s), vibra e bipa ao zerar.
+- **Rascunho que sobrevive**: o treino em andamento é salvo em `localStorage` a cada
+  toque; recarregar a aba, trocar de app ou bloquear a tela não perde nada.
+- **PWA instalável + offline**: ícone na tela inicial e tela cheia; service worker
+  cacheia o app shell. Salvar sem rede entra numa fila que sincroniza ao reconectar
+  (gravação otimista), com indicador de pendências.
+
 ## Stack
 
 Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Recharts · Supabase
-(`@supabase/ssr`) · TypeScript · fontes Anton / Barlow / JetBrains Mono via Fontsource.
+(`@supabase/ssr`) · PWA (service worker + manifest) · TypeScript · fontes Anton /
+Barlow / JetBrains Mono via Fontsource.
 
 ## Estrutura
 

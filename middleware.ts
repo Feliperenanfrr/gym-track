@@ -30,9 +30,13 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const isLogin = request.nextUrl.pathname.startsWith("/login")
+  const { pathname } = request.nextUrl
+  // rotas públicas: login + arquivos do PWA (manifest/sw/offline)
+  const PUBLIC = ["/login", "/offline", "/manifest.webmanifest", "/sw.js"]
+  const isPublic = PUBLIC.some((p) => pathname === p || pathname.startsWith(p + "/"))
+  const isLogin = pathname.startsWith("/login")
 
-  if (!user && !isLogin) {
+  if (!user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
