@@ -1,0 +1,20 @@
+Implementa o segundo pacote de UX — os polimentos de fluidez e satisfação focados no uso do app durante o treino.
+
+## 1. Celebração de PR
+- Cálculo da `1RM Estimada` (Epley) a cada salvamento, iterando pelos exercícios da sessão.
+- Comparação com o histórico do banco de dados (`data.workouts`) focado em encontrar a melhor 1RM já registrada daquele exercício.
+- Badges "🔥 PR! Exercício" injetados automaticamente no card final de "Treino salvo!".
+
+## 2. Fluxo de teclado entre campos
+- Foco automático (onKeyDown) otimizado: pressionar "Enter" no input de **peso** transfere o foco para o input de **reps**; "Enter" nas **reps** foca o **peso** da próxima série do exercício.
+- Otimização para eliminar toques redundantes com a tela suada durante a musculação.
+
+## 3. Skeletons no lugar de "Carregando…"
+- Componente genérico `<Skeleton />` adicionado em `components/ui.tsx`.
+- Telas de Painel (Home), Treino e Medidas agora montam um layout fantasma real via skeletons animados (`animate-pulse`), eliminando o texto estático "Carregando...". A espera pelo Supabase fica muito mais amigável.
+
+## Verificação
+- `npm run build` verde — tipagens verificadas para todas as rotas e uso do componente novo `Skeleton`.
+- Lógica de Epley reaproveitada de funções puras existentes (`bestE1RM`).
+
+🤖 Generated with Antigravity

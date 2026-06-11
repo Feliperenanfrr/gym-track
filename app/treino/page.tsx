@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Check, ChevronUp, CloudOff, History, RotateCcw, Save } from "lucide-react"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
@@ -12,6 +12,7 @@ import { bestE1RM, cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/li
 import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
+import { tapFeedback } from "@/lib/haptics"
 
 const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida leve", "Remo"]
 const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu"]
@@ -38,6 +39,12 @@ export default function TreinoPage() {
   const [draftRestored, setDraftRestored] = useState(false)
   const [prCelebrations, setPrCelebrations] = useState<string[]>([])
   const dirtyRef = useRef(false)
+  const popRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+
+  const setPopRef = useCallback((key: string) => (el: HTMLButtonElement | null) => {
+    if (el) popRefs.current.set(key, el)
+    else popRefs.current.delete(key)
+  }, [])
 
   useEffect(() => {
     const now = new Date()
@@ -191,12 +198,18 @@ export default function TreinoPage() {
   const toggleSet = (ex: ExercisePrescription, idx: number, currentlyDone: boolean) => {
     const nowDone = !currentlyDone
     updateRow(ex.id, idx, { done: nowDone })
+
+    // micro-animação pop no botão
+    const btn = popRefs.current.get(`${ex.id}-${idx}`)
+    if (btn) {
+      btn.classList.remove("check-pop")
+      // force reflow para reiniciar a animação caso já esteja ativa
+      void btn.offsetWidth
+      btn.classList.add("check-pop")
+    }
+
     if (nowDone) {
-      try {
-        navigator.vibrate?.(15)
-      } catch {
-        /* ignore */
-      }
+      tapFeedback()
       restTimer.start(parseRestSeconds(ex.rest), ex.name)
     }
   }
@@ -529,12 +542,13 @@ export default function TreinoPage() {
                   </div>
 
                   <button
+                    ref={setPopRef(`${ex.id}-${i}`)}
                     onClick={() => toggleSet(ex, i, row.done)}
                     className={cn(
                       "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-all",
                       row.done
                         ? "border-ember bg-ember text-coal"
-                        : "border-seam text-steel-dim hover:border-steel active:scale-95"
+                        : "border-seam text-steel-dim hover:border-steel"
                     )}
                     aria-label={`Marcar série ${i + 1} como concluída`}
                     aria-pressed={row.done}
