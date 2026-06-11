@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, CloudOff, LogOut, History } from "lucide-react"
-import { StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
+import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
+import { computeAchievements } from "@/lib/achievements"
+import { computeReadiness, ReadinessLevel, weeklySummary } from "@/lib/insights"
+import { MUSCLE_GROUPS, volumeByGroup } from "@/lib/muscles"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, WorkoutLog } from "@/lib/types"
@@ -31,6 +34,36 @@ const KEY_LIFTS: { id: string; label: string }[] = [
 
 const Z2_TARGET = 60 // ter 40–50 min + sex 20 min
 
+const READINESS_UI: Record<
+  ReadinessLevel,
+  { emoji: string; title: string; desc: string; border: string }
+> = {
+  building: {
+    emoji: "⚪",
+    title: "Construindo base",
+    desc: "Registre 2+ semanas de treino para calibrar o sinal de fadiga.",
+    border: "border-l-steel-dim",
+  },
+  green: {
+    emoji: "🟢",
+    title: "Pronto pra carga",
+    desc: "Volume dentro da sua base recente — pode progredir.",
+    border: "border-l-zone",
+  },
+  yellow: {
+    emoji: "🟡",
+    title: "Carga subindo rápido",
+    desc: "Acima da média das últimas 3 semanas. Capricha em sono e proteína.",
+    border: "border-l-gold",
+  },
+  red: {
+    emoji: "🔴",
+    title: "Alerta de fadiga",
+    desc: "Bem acima da base recente — considere uma semana mais leve.",
+    border: "border-l-ember",
+  },
+}
+
 function weekLabel(monday: Date): string {
   return `${String(monday.getDate()).padStart(2, "0")}/${String(monday.getMonth() + 1).padStart(2, "0")}`
 }
@@ -43,7 +76,14 @@ function z2Minutes(w: WorkoutLog): number {
 
 function buildWeeks(data: GymData, today: Date) {
   const currentMonday = mondayOf(today)
-  const weeks: { monday: Date; label: string; volume: number; z2: number; sessions: number }[] = []
+  const weeks: {
+    monday: Date
+    label: string
+    volume: number
+    z2: number
+    sessions: number
+    groups: ReturnType<typeof volumeByGroup>
+  }[] = []
   for (let i = 5; i >= 0; i--) {
     const monday = new Date(currentMonday)
     monday.setDate(monday.getDate() - i * 7)
@@ -56,6 +96,7 @@ function buildWeeks(data: GymData, today: Date) {
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + z2Minutes(w), 0),
       sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
+      groups: volumeByGroup(ws),
     })
   }
   return weeks
@@ -65,6 +106,7 @@ export default function Dashboard() {
   const { data, error, pendingCount, signOut } = useGymData()
   const [today, setToday] = useState<Date | null>(null)
   const [lift, setLift] = useState("bench")
+  const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
 
   useEffect(() => {
     setToday(new Date())
@@ -147,6 +189,25 @@ export default function Dashboard() {
       streak = counted
     }
 
+    // distribuição de volume por grupo muscular — últimas 4 semanas
+    const since28 = toDateKey(
+      new Date(today.getFullYear(), today.getMonth(), today.getDate() - 27)
+    )
+    const byGroup = volumeByGroup(
+      data.workouts.filter((w) => w.date >= since28 && w.date <= todayKey)
+    )
+    const groupTotal = Object.values(byGroup).reduce((a, b) => a + b, 0)
+    const groupShare = MUSCLE_GROUPS.map((g) => ({
+      ...g,
+      volume: byGroup[g.id],
+      pct: groupTotal > 0 ? Math.round((byGroup[g.id] / groupTotal) * 100) : 0,
+    })).sort((a, b) => b.volume - a.volume)
+
+    const readiness = computeReadiness(data.workouts, today)
+    // fechamento de domingo: resumo da semana corrente
+    const weekSummary = isoWeekday(today) === 7 ? weeklySummary(data, monday) : null
+    const achievements = computeAchievements(data, today)
+
     return {
       todaySession,
       todayDone,
@@ -159,6 +220,10 @@ export default function Dashboard() {
       strength,
       daysActive,
       streak,
+      groupShare,
+      readiness,
+      weekSummary,
+      achievements,
     }
   }, [data, today, lift])
 
@@ -272,6 +337,55 @@ export default function Dashboard() {
         )}
       </Card>
 
+      {/* Resumo semanal — gerado no fechamento de domingo */}
+      {view.weekSummary && (
+        <Card className="rise rise-2 mt-4 border-l-4 border-l-gold">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-[0.3em] text-gold"
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            📋 Fechamento de domingo — resumo da semana
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Sessões</p>
+              <p className="score text-2xl text-bone">
+                {view.weekSummary.sessions}
+                <span className="text-base text-steel-dim">/5</span>
+              </p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">PRs batidos</p>
+              <p className="score text-2xl text-ember-hot">{view.weekSummary.prs.length}</p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Volume</p>
+              <p className="score text-2xl text-bone">{formatKg(view.weekSummary.volume)}</p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Calorias (est.)</p>
+              <p className="score text-2xl text-gold">~{view.weekSummary.kcal.toLocaleString("pt-BR")}</p>
+            </div>
+          </div>
+          {view.weekSummary.prs.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {view.weekSummary.prs.map((pr) => (
+                <span
+                  key={pr}
+                  className="inline-flex items-center gap-1 rounded bg-ember px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-coal"
+                >
+                  🔥 PR! {pr}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 font-mono text-[9px] text-steel-dim">
+            kcal estimadas por METs (musculação ~60 min/sessão + cardio e esporte por minutos)
+            {view.weekSummary.z2Minutes > 0 && ` · ${view.weekSummary.z2Minutes}′ de Zona 2`}
+          </p>
+        </Card>
+      )}
+
       {/* Fita da semana */}
       <div className="rise rise-2 mt-4">
         <div className="mb-2 flex items-center justify-between">
@@ -344,6 +458,42 @@ export default function Dashboard() {
         </p>
       )}
 
+      {/* Readiness / fadiga — razão carga aguda : base crônica */}
+      <Card
+        className={cn(
+          "rise rise-3 mt-4 border-l-4",
+          READINESS_UI[view.readiness.level].border
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p
+              className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              Prontidão · Fadiga
+            </p>
+            <p className="mt-1 text-base font-semibold text-bone">
+              {READINESS_UI[view.readiness.level].emoji}{" "}
+              {READINESS_UI[view.readiness.level].title}
+            </p>
+            <p className="mt-0.5 text-xs text-steel">
+              {READINESS_UI[view.readiness.level].desc}
+            </p>
+          </div>
+          {view.readiness.ratio !== null && (
+            <div className="shrink-0 text-right">
+              <p className="score text-2xl text-bone">
+                {Math.round(view.readiness.ratio * 100)}%
+              </p>
+              <p className="font-mono text-[9px] text-steel-dim">
+                da base de {formatKg(Math.round(view.readiness.chronic))}/sem
+              </p>
+            </div>
+          )}
+        </div>
+      </Card>
+
       {/* Stats da semana */}
       <div className="rise rise-3 mt-4 grid grid-cols-2 gap-3">
         <StatCard
@@ -387,12 +537,55 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Volume semanal */}
+      {/* Volume semanal — total ou por grupo muscular */}
       <SectionTitle>Volume de treino — 6 semanas</SectionTitle>
       <Card className="rise rise-4">
-        <WeeklyVolumeChart
-          data={view.weeks.map((w) => ({ label: w.label, volume: w.volume }))}
-        />
+        <div className="mb-3 flex gap-1.5">
+          {(["grupos", "total"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setVolumeView(v)}
+              className={cn(
+                "rounded border px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-colors",
+                volumeView === v
+                  ? "border-ember bg-ember/10 text-ember"
+                  : "border-seam text-steel hover:text-bone"
+              )}
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              {v === "grupos" ? "Por grupo" : "Total"}
+            </button>
+          ))}
+        </div>
+        {volumeView === "total" ? (
+          <WeeklyVolumeChart
+            data={view.weeks.map((w) => ({ label: w.label, volume: w.volume }))}
+          />
+        ) : (
+          <>
+            <MuscleVolumeChart
+              data={view.weeks.map((w) => ({ label: w.label, ...w.groups }))}
+              groups={MUSCLE_GROUPS}
+            />
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
+              {view.groupShare.map((g) => (
+                <div key={g.id} className="flex items-center gap-2 font-mono text-[10px]">
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-sm"
+                    style={{ background: g.color }}
+                  />
+                  <span className="text-steel">{g.id}</span>
+                  <span className="ml-auto text-bone">
+                    {g.pct > 0 ? `${g.pct}%` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 font-mono text-[10px] text-steel-dim">
+              % do volume das últimas 4 semanas — caça desequilíbrios do shape
+            </p>
+          </>
+        )}
       </Card>
 
       {/* Progressão de força */}
@@ -438,6 +631,64 @@ export default function Dashboard() {
           É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B.
         </p>
       </Card>
+
+      {/* Conquistas Xbox-style */}
+      <SectionTitle accent="steel">
+        Conquistas — {view.achievements.filter((a) => a.unlocked).length}/
+        {view.achievements.length}
+      </SectionTitle>
+      <div className="grid grid-cols-2 gap-2">
+        {view.achievements.map((a) => (
+          <div
+            key={a.id}
+            className={cn(
+              "rounded-lg border p-3",
+              a.unlocked ? "border-gold/40 bg-gold/5" : "border-seam bg-iron"
+            )}
+            title={a.desc}
+          >
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xl", !a.unlocked && "opacity-40 grayscale")}>
+                {a.emoji}
+              </span>
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    "truncate text-xs font-semibold",
+                    a.unlocked ? "text-gold" : "text-bone"
+                  )}
+                >
+                  {a.name}
+                </p>
+                <p className="truncate text-[10px] text-steel-dim">{a.desc}</p>
+              </div>
+            </div>
+            {a.unlocked ? (
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-gold">
+                ✓ Desbloqueada
+              </p>
+            ) : (
+              <div className="mt-2">
+                <div className="h-1 overflow-hidden rounded-full bg-iron-2">
+                  <div
+                    className="h-full rounded-full bg-steel-dim"
+                    style={{
+                      width: `${Math.min(100, Math.round((a.current / a.target) * 100))}%`,
+                    }}
+                  />
+                </div>
+                <p className="mt-1 font-mono text-[9px] text-steel-dim">
+                  {a.unit === "kg"
+                    ? `${formatKg(Math.round(a.current))} / ${formatKg(a.target)}`
+                    : a.unit === "min"
+                      ? `${a.current}′ / ${a.target}′`
+                      : `${a.current} / ${a.target}`}
+                </p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
 
     </main>
   )

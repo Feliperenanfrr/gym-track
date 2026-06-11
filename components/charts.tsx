@@ -85,6 +85,76 @@ export function WeeklyVolumeChart({
   )
 }
 
+function MuscleTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { value: number; name: string; color?: string }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  const total = payload.reduce((s, p) => s + (p.value || 0), 0)
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-1 text-steel">
+        {label} · {Math.round(total).toLocaleString("pt-BR")} kg
+      </p>
+      {[...payload]
+        .reverse()
+        .filter((p) => p.value > 0)
+        .map((p) => (
+          <p key={p.name} className="flex items-center gap-1.5 text-bone">
+            <span
+              className="inline-block h-2 w-2 rounded-sm"
+              style={{ background: p.color }}
+            />
+            {p.name}: {Math.round(p.value).toLocaleString("pt-BR")} kg
+          </p>
+        ))}
+    </div>
+  )
+}
+
+/** Volume semanal empilhado por grupo muscular */
+export function MuscleVolumeChart({
+  data,
+  groups,
+}: {
+  data: Record<string, number | string>[]
+  groups: { id: string; color: string }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={190}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -14, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => `${Math.round(v / 1000)}t`}
+        />
+        <Tooltip
+          content={<MuscleTip />}
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        {groups.map((g, gi) => (
+          <Bar
+            key={g.id}
+            dataKey={g.id}
+            stackId="vol"
+            fill={g.color}
+            fillOpacity={0.8}
+            radius={gi === groups.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
 export function StrengthChart({
   data,
 }: {
