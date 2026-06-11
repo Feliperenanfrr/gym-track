@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Ferro & Brasa — paleta */
+  --color-coal: #0b0a0c;
+  --color-iron: #141216;
+  --color-iron-2: #1b181d;
+  --color-seam: rgba(255, 255, 255, 0.07);
+  --color-bone: #ece8e1;
+  --color-steel: #97919e;
+  --color-steel-dim: #5f5a66;
+
+  --color-ember: #ff5a1f;
+  --color-ember-hot: #ff7a45;
+  --color-ember-deep: #b53a0e;
+  --color-zone: #2dd4bf;
+  --color-zone-deep: #0f766e;
+  --color-gold: #fbbf24;
+
+  --font-display: 'Anton', 'Arial Narrow', sans-serif;
+  --font-condensed: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --font-body: 'Barlow', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Consolas', monospace;
+}
+
+html {
+  background: var(--color-coal);
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 50% -10%, rgba(255, 90, 31, 0.07), transparent 60%),
+    var(--color-coal);
+  color: var(--color-bone);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* grain — textura de pôster de academia */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* faixa de risco — detalhe industrial */
+.hazard {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-ember) 0 7px,
+    transparent 7px 14px
+  );
+}
+
+.hazard-zone {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--color-zone) 0 7px,
+    transparent 7px 14px
+  );
+}
+
+/* número de placar */
+.score {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* título estêncil */
+.stencil {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 0.95;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+::selection {
+  background: var(--color-ember);
+  color: var(--color-coal);
+}
+
+/* entrada em cascata dos cards */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rise-1 { animation-delay: 0.05s; }
+.rise-2 { animation-delay: 0.12s; }
+.rise-3 { animation-delay: 0.19s; }
+.rise-4 { animation-delay: 0.26s; }
+.rise-5 { animation-delay: 0.33s; }
+.rise-6 { animation-delay: 0.4s; }
+
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 90, 31, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 90, 31, 0); }
+}
+
+.today-pulse {
+  animation: pulse-ring 2s ease-in-out infinite;
+}

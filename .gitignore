@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+.env*.local
+
+# dados pessoais de saúde — não publicar
+Plano_de_Treino_Felipe.pdf
