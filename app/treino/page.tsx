@@ -29,6 +29,8 @@ export default function TreinoPage() {
   const [cardioMode, setCardioMode] = useState(CARDIO_MODES[0])
   const [finisherMin, setFinisherMin] = useState("20")
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     const now = new Date()
@@ -118,7 +120,7 @@ export default function TreinoPage() {
     }))
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const entries: ExerciseLog[] = session.exercises
       .map((ex) => ({
         exerciseId: ex.id,
@@ -153,9 +155,17 @@ export default function TreinoPage() {
       }
     }
 
-    addWorkout(log)
-    setSaved(true)
-    window.scrollTo({ top: 0, behavior: "smooth" })
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await addWorkout(log)
+      setSaved(true)
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Erro ao salvar no banco")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -381,12 +391,18 @@ export default function TreinoPage() {
         </Card>
       )}
 
+      {saveError && (
+        <p className="mb-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          {saveError}
+        </p>
+      )}
       <button
         onClick={handleSave}
-        className="mt-2 flex w-full items-center justify-center gap-2 rounded bg-ember py-3.5 text-sm font-bold uppercase tracking-[0.2em] text-coal transition-colors hover:bg-ember-hot"
+        disabled={saving}
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded bg-ember py-3.5 text-sm font-bold uppercase tracking-[0.2em] text-coal transition-colors hover:bg-ember-hot disabled:opacity-60"
         style={{ fontFamily: "var(--font-condensed)" }}
       >
-        <Save size={16} /> Salvar treino
+        <Save size={16} /> {saving ? "Salvando…" : "Salvar treino"}
       </button>
       <p className="mt-3 text-center font-mono text-[10px] text-steel-dim">
         Toda série a 1–3 reps da falha. Anote tudo — sobrecarga progressiva.

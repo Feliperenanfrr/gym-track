@@ -13,6 +13,8 @@
     "@fontsource/anton": "^5.2.5",
     "@fontsource/barlow": "^5.2.5",
     "@fontsource/barlow-condensed": "^5.2.5",
+    "@supabase/ssr": "0.8.0",
+    "@supabase/supabase-js": "2.91.0",
     "clsx": "^2.1.1",
     "date-fns": "4.1.0",
     "lucide-react": "^0.454.0",
