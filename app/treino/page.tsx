@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Check, ChevronUp, CloudOff, History, RotateCcw, Save } from "lucide-react"
-import { Card, PageHeader } from "@/components/ui"
+import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { ExercisePrescription, ExerciseLog, SessionId, SetRow, WorkoutLog } from "@/lib/types"
-import { cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/lib/utils"
+import { bestE1RM, cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
@@ -36,6 +36,7 @@ export default function TreinoPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draftRestored, setDraftRestored] = useState(false)
+  const [prCelebrations, setPrCelebrations] = useState<string[]>([])
   const dirtyRef = useRef(false)
 
   useEffect(() => {
@@ -159,7 +160,21 @@ export default function TreinoPage() {
     return (
       <main>
         <PageHeader kicker="REGISTRO" title="Treino" />
-        <Card className="animate-pulse text-sm text-steel">Carregando…</Card>
+        <div className="mb-4 flex gap-2 overflow-x-auto px-4 pb-1 -mx-4">
+          <Skeleton className="h-9 w-24 shrink-0 rounded-full" />
+          <Skeleton className="h-9 w-24 shrink-0 rounded-full" />
+          <Skeleton className="h-9 w-24 shrink-0 rounded-full" />
+        </div>
+        <Card className="mb-4">
+          <Skeleton className="mb-2 h-8 w-48" />
+          <Skeleton className="mb-4 h-4 w-64" />
+          <Skeleton className="h-2 w-full rounded-full" />
+        </Card>
+        <Card className="mb-3">
+          <Skeleton className="mb-4 h-6 w-32" />
+          <Skeleton className="mb-2 h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </Card>
       </main>
     )
   }
@@ -234,6 +249,29 @@ export default function TreinoPage() {
       }
     }
 
+    const newPRs: string[] = []
+    if (data) {
+      for (const entry of entries) {
+        const e1rm = bestE1RM(entry)
+        if (e1rm <= 0) continue
+
+        let historicalMax = 0
+        for (const w of data.workouts) {
+          if (w.date >= log.date) continue
+          const prevEntry = w.entries.find((e) => e.exerciseId === entry.exerciseId)
+          if (prevEntry) {
+            historicalMax = Math.max(historicalMax, bestE1RM(prevEntry))
+          }
+        }
+
+        if (historicalMax > 0 && e1rm > historicalMax) {
+          const exDef = session.exercises.find((e) => e.id === entry.exerciseId)
+          if (exDef) newPRs.push(exDef.name)
+        }
+      }
+    }
+    setPrCelebrations(newPRs)
+
     setSaving(true)
     setSaveError(null)
     const offline = typeof navigator !== "undefined" && navigator.onLine === false
@@ -297,6 +335,15 @@ export default function TreinoPage() {
                 que o shape vem.
               </p>
             )
+          )}
+          {prCelebrations.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {prCelebrations.map((pr) => (
+                <span key={pr} className="inline-flex items-center gap-1 rounded bg-ember px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-wider text-coal">
+                  🔥 PR! {pr}
+                </span>
+              ))}
+            </div>
           )}
           <Link
             href="/"
@@ -436,12 +483,19 @@ export default function TreinoPage() {
                   <div className="flex min-w-0 flex-1 items-end gap-2">
                     <label className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <input
+                        id={`weight-${ex.id}-${i}`}
                         type="number"
                         inputMode="decimal"
                         step="0.5"
                         placeholder="–"
                         value={row.weight}
                         onChange={(e) => updateRow(ex.id, i, { weight: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            document.getElementById(`reps-${ex.id}-${i}`)?.focus()
+                          }
+                        }}
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember disabled:opacity-40"
                         disabled={ex.unit === "seconds"}
                       />
@@ -452,11 +506,20 @@ export default function TreinoPage() {
                     <span className="pb-5 text-steel-dim">×</span>
                     <label className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <input
+                        id={`reps-${ex.id}-${i}`}
                         type="number"
                         inputMode="numeric"
                         placeholder="–"
                         value={row.reps}
                         onChange={(e) => updateRow(ex.id, i, { reps: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            const nextInput = document.getElementById(`weight-${ex.id}-${i + 1}`)
+                            if (nextInput) nextInput.focus()
+                            else e.currentTarget.blur()
+                          }
+                        }}
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
                       />
                       <span className="text-center font-mono text-[9px] uppercase tracking-wide text-steel-dim">

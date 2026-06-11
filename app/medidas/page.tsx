@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { Check, Plus } from "lucide-react"
 import { WeightChart } from "@/components/charts"
-import { Card, PageHeader, SectionTitle, StatCard } from "@/components/ui"
+import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { useGymData } from "@/lib/store"
 import { cn, fromDateKey, toDateKey } from "@/lib/utils"
 
@@ -51,8 +51,12 @@ export default function MedidasPage() {
   if (!view) {
     return (
       <main>
-        <PageHeader kicker="RECOMPOSIÇÃO" title="Medidas" />
-        <Card className="animate-pulse text-sm text-steel">Carregando…</Card>
+        <PageHeader kicker="RECOMPOSIÇÃO CORPORAL" title="Medidas" />
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <Card className="h-24"><Skeleton className="h-full w-full" /></Card>
+          <Card className="h-24"><Skeleton className="h-full w-full" /></Card>
+        </div>
+        <Card className="h-40"><Skeleton className="h-full w-full" /></Card>
       </main>
     )
   }

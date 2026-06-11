@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, CloudOff, LogOut } from "lucide-react"
 import { StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
-import { Card, PageHeader, SectionTitle, StatCard } from "@/components/ui"
+import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, WorkoutLog } from "@/lib/types"
@@ -151,7 +151,16 @@ export default function Dashboard() {
     return (
       <main>
         <PageHeader kicker="GYM//TRACK" title="Painel" />
-        <Card className="animate-pulse text-sm text-steel">Carregando ferro…</Card>
+        <Card className="mb-4">
+          <Skeleton className="mb-2 h-3 w-24" />
+          <Skeleton className="mb-2 h-8 w-48" />
+          <Skeleton className="mb-4 h-4 w-32" />
+          <Skeleton className="h-10 w-40" />
+        </Card>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <Card className="h-24"><Skeleton className="h-full w-full" /></Card>
+          <Card className="h-24"><Skeleton className="h-full w-full" /></Card>
+        </div>
       </main>
     )
   }
