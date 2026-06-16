@@ -11,6 +11,7 @@ import {
   GymData,
   HydrationLog,
   SessionId,
+  SleepLog,
   WorkoutLog,
 } from "./types"
 
@@ -37,6 +38,13 @@ interface HydrationRow {
   ml: number
 }
 
+interface SleepRow {
+  date: string
+  slept_at: string
+  woke_at: string
+  duration_min: number
+}
+
 function rowToWorkout(r: WorkoutRow): WorkoutLog {
   return {
     id: r.id,
@@ -56,6 +64,19 @@ function rowToBody(r: BodyRow): BodyLog {
     date: r.date,
     weightKg: Number(r.weight_kg),
     waistCm: r.waist_cm !== null ? Number(r.waist_cm) : undefined,
+  }
+}
+
+function trimTime(value: string): string {
+  return value.slice(0, 5)
+}
+
+function rowToSleep(r: SleepRow): SleepLog {
+  return {
+    date: r.date,
+    sleptAt: trimTime(r.slept_at),
+    wokeAt: trimTime(r.woke_at),
+    durationMin: Number(r.duration_min),
   }
 }
 
@@ -105,10 +126,11 @@ export function useGymData() {
     let cancelled = false
     async function load() {
       const supabase = getSupabaseBrowserClient()
-      const [w, b, h] = await Promise.all([
+      const [w, b, h, s] = await Promise.all([
         supabase.from("workouts").select("*").order("date", { ascending: true }),
         supabase.from("body_logs").select("*").order("date", { ascending: true }),
         supabase.from("hydration_logs").select("*").order("date", { ascending: true }),
+        supabase.from("sleep_logs").select("*").order("date", { ascending: true }),
       ])
       if (cancelled) return
       if (w.error || b.error) {
@@ -117,6 +139,8 @@ export function useGymData() {
       }
       // hidratação é não-fatal: app continua se a migration ainda não rodou
       if (h.error) console.warn("hydration_logs indisponível:", h.error.message)
+      // sono também é não-fatal até a migration 0003 rodar no Supabase
+      if (s.error) console.warn("sleep_logs indisponível:", s.error.message)
       setData({
         workouts: ((w.data ?? []) as WorkoutRow[]).map(rowToWorkout),
         body: ((b.data ?? []) as BodyRow[]).map(rowToBody),
@@ -124,6 +148,7 @@ export function useGymData() {
           date: r.date,
           ml: Number(r.ml),
         })),
+        sleep: ((s.data ?? []) as SleepRow[]).map(rowToSleep),
       })
     }
     load()
@@ -141,7 +166,7 @@ export function useGymData() {
   const addWorkout = useCallback(async (log: WorkoutLog) => {
     // 1) atualização otimista na tela
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [] }
+      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
       const workouts = [
         ...base.workouts.filter(
           (w) => !(w.date === log.date && w.sessionId === log.sessionId)
@@ -206,7 +231,7 @@ export function useGymData() {
 
   const addBodyLog = useCallback(async (log: BodyLog) => {
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [] }
+      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
       const body = [...base.body.filter((b) => b.date !== log.date), log].sort((a, b) =>
         a.date.localeCompare(b.date)
       )
@@ -269,7 +294,7 @@ export function useGymData() {
     const total = Math.max(0, current + deltaMl)
     waterRef.current[day] = total
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [] }
+      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
       const hydration = [
         ...base.hydration.filter((x) => x.date !== day),
         { date: day, ml: total },
@@ -298,6 +323,59 @@ export function useGymData() {
         .from("hydration_logs")
         .upsert(payload, { onConflict: "user_id,date" })
       if (error) throw new Error(error.message)
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      throw e
+    }
+  }, [])
+
+  const addSleepLog = useCallback(async (log: SleepLog) => {
+    setData((prev) => {
+      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
+      const sleep = [...base.sleep.filter((s) => s.date !== log.date), log].sort((a, b) =>
+        a.date.localeCompare(b.date)
+      )
+      return { ...base, sleep }
+    })
+
+    const payload = {
+      date: log.date,
+      slept_at: log.sleptAt,
+      woke_at: log.wokeAt,
+      duration_min: log.durationMin,
+    }
+    const enqueueIt = () => {
+      enqueue({
+        table: "sleep_logs",
+        onConflict: "user_id,date",
+        logicalKey: log.date,
+        payload,
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const { data: rows, error } = await supabase
+        .from("sleep_logs")
+        .upsert(payload, { onConflict: "user_id,date" })
+        .select()
+      if (error) throw new Error(error.message)
+      const saved = rowToSleep(rows![0] as SleepRow)
+      setData((prev) => {
+        if (!prev) return prev
+        const sleep = [...prev.sleep.filter((s) => s.date !== saved.date), saved].sort(
+          (a, b) => a.date.localeCompare(b.date)
+        )
+        return { ...prev, sleep }
+      })
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
@@ -350,5 +428,15 @@ export function useGymData() {
     }
   }, [])
 
-  return { data, error, pendingCount, addWorkout, addBodyLog, addWater, deleteWorkout, signOut }
+  return {
+    data,
+    error,
+    pendingCount,
+    addWorkout,
+    addBodyLog,
+    addWater,
+    addSleepLog,
+    deleteWorkout,
+    signOut,
+  }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, CloudOff, Droplets, LogOut, History, RotateCcw } from "lucide-react"
+import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw } from "lucide-react"
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
@@ -17,6 +17,7 @@ import {
 import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
+import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, WorkoutLog } from "@/lib/types"
 import {
@@ -228,6 +229,7 @@ export default function Dashboard() {
     // hidratação de hoje
     const waterToday = data.hydration.find((h) => h.date === todayKey)?.ml ?? 0
     const waterGoal = waterGoalMl(data.body)
+    const sleepMetrics = computeSleepMetrics(data.sleep, today)
 
     // modo ciclo: próximo da fila + janela móvel de 7 dias
     const cycle = nextInCycle(data.workouts, today)
@@ -276,6 +278,7 @@ export default function Dashboard() {
       achievements,
       waterToday,
       waterGoal,
+      sleepMetrics,
       roll,
       strip,
       headSession,
@@ -614,6 +617,56 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+      </Card>
+
+      {/* Sono — recuperação diária */}
+      <Card className="rise rise-3 mt-4 border-l-4 border-l-[#a78bfa]">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p
+              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              <Moon size={12} className="text-[#a78bfa]" /> Sono
+            </p>
+            <p className="mt-1 text-base font-semibold text-bone">
+              {view.sleepMetrics.latest
+                ? formatSleepDuration(view.sleepMetrics.latest.durationMin)
+                : "Sem registro"}
+            </p>
+            <p className="mt-0.5 text-xs text-steel">
+              {view.sleepMetrics.latest
+                ? `${view.sleepMetrics.latest.sleptAt} → ${view.sleepMetrics.latest.wokeAt}`
+                : "Registre a última noite na aba Medidas."}
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="score text-2xl text-bone">
+              {formatSleepDuration(view.sleepMetrics.avg7Min)}
+            </p>
+            <p className="font-mono text-[9px] text-steel-dim">
+              média 7d · {view.sleepMetrics.registered7}/7
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-seam pt-3 font-mono text-[10px]">
+          <div>
+            <p className="uppercase tracking-wider text-steel-dim">Dívida</p>
+            <p className="mt-0.5 text-bone">
+              {formatSleepDuration(view.sleepMetrics.debt7Min)}
+            </p>
+          </div>
+          <div>
+            <p className="uppercase tracking-wider text-steel-dim">Regularidade</p>
+            <p className="mt-0.5 text-bone">{view.sleepMetrics.consistency.label}</p>
+          </div>
+        </div>
+        <Link
+          href="/medidas"
+          className="mt-3 inline-flex text-xs font-semibold text-[#a78bfa] underline decoration-dotted underline-offset-4"
+        >
+          registrar sono
+        </Link>
       </Card>
 
       {/* Stats da semana */}
