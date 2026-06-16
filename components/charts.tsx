@@ -20,6 +20,7 @@ const EMBER = "#ff5a1f"
 const EMBER_HOT = "#ff7a45"
 const ZONE = "#2dd4bf"
 const GOLD = "#fbbf24"
+const SLEEP = "#a78bfa"
 const GRID = "rgba(255,255,255,0.06)"
 const TICK = {
   fill: "#97919e",
@@ -315,6 +316,47 @@ export function HydrationChart({
           }}
         />
         <Bar dataKey="ml" fill={WATER} fillOpacity={0.75} radius={[3, 3, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+export function SleepChart({
+  data,
+  targetHours = 8,
+}: {
+  data: { label: string; hours: number | null }[]
+  targetHours?: number
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={170}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => `${v}h`}
+        />
+        <Tooltip
+          content={<Tip suffix=" h" />}
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        <ReferenceLine
+          y={targetHours}
+          stroke={SLEEP}
+          strokeDasharray="4 4"
+          strokeOpacity={0.75}
+          label={{
+            value: `meta ${targetHours}h`,
+            position: "insideTopRight",
+            fill: SLEEP,
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono Variable', monospace",
+          }}
+        />
+        <Bar dataKey="hours" fill={SLEEP} fillOpacity={0.78} radius={[3, 3, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )

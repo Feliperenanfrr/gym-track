@@ -92,8 +92,19 @@ export interface HydrationLog {
   ml: number
 }
 
+export interface SleepLog {
+  /** yyyy-MM-dd do dia em que acordou */
+  date: string
+  /** HH:mm */
+  sleptAt: string
+  /** HH:mm */
+  wokeAt: string
+  durationMin: number
+}
+
 export interface GymData {
   workouts: WorkoutLog[]
   body: BodyLog[]
   hydration: HydrationLog[]
+  sleep: SleepLog[]
 }

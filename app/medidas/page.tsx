@@ -1,10 +1,17 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Check, Plus } from "lucide-react"
-import { HydrationChart, WeightChart, WaistChart } from "@/components/charts"
+import { useEffect, useMemo, useState } from "react"
+import { Check, Moon, Plus } from "lucide-react"
+import { HydrationChart, SleepChart, WeightChart, WaistChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { waterGoalMl } from "@/lib/insights"
+import {
+  computeSleepMetrics,
+  formatSleepDuration,
+  minutesToSleepInput,
+  parseSleepHours,
+  sleepDurationMinutes,
+} from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { cn, fromDateKey, toDateKey } from "@/lib/utils"
 
@@ -14,12 +21,19 @@ function shortDate(key: string): string {
 }
 
 export default function MedidasPage() {
-  const { data, addBodyLog } = useGymData()
+  const { data, addBodyLog, addSleepLog } = useGymData()
   const [weight, setWeight] = useState("")
   const [waist, setWaist] = useState("")
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [sleepStart, setSleepStart] = useState("")
+  const [sleepEnd, setSleepEnd] = useState("")
+  const [sleepHours, setSleepHours] = useState("")
+  const [sleepLoadedDate, setSleepLoadedDate] = useState<string | null>(null)
+  const [sleepSaved, setSleepSaved] = useState(false)
+  const [sleepSaving, setSleepSaving] = useState(false)
+  const [sleepError, setSleepError] = useState<string | null>(null)
 
   const view = useMemo(() => {
     if (!data) return null
@@ -48,8 +62,20 @@ export default function MedidasPage() {
         ml: data.hydration.find((h) => h.date === key)?.ml ?? 0,
       }
     })
+    const sleepMetrics = computeSleepMetrics(data.sleep, now)
+    const sleep7 = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
+      const key = toDateKey(d)
+      const log = data.sleep.find((s) => s.date === key)
+      return {
+        label: shortDate(key),
+        hours: log ? Math.round((log.durationMin / 60) * 10) / 10 : null,
+      }
+    })
     return {
       hydration7,
+      sleep7,
+      sleepMetrics,
       waterGoal: waterGoalMl(body),
       current,
       weightDelta,
@@ -60,8 +86,26 @@ export default function MedidasPage() {
       protein: [Math.round(kg * 1.8), Math.round(kg * 2.2)],
       water: [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)],
       recent: [...body].reverse().slice(0, 8),
+      recentSleep: [...data.sleep].reverse().slice(0, 8),
     }
   }, [data])
+
+  useEffect(() => {
+    if (!data) return
+    const todayKey = toDateKey(new Date())
+    if (sleepLoadedDate === todayKey) return
+    const todaySleep = data.sleep.find((s) => s.date === todayKey)
+    if (todaySleep) {
+      setSleepStart(todaySleep.sleptAt)
+      setSleepEnd(todaySleep.wokeAt)
+      setSleepHours(minutesToSleepInput(todaySleep.durationMin))
+    } else {
+      setSleepStart("23:30")
+      setSleepEnd("07:30")
+      setSleepHours("8,0")
+    }
+    setSleepLoadedDate(todayKey)
+  }, [data, sleepLoadedDate])
 
   if (!view) {
     return (
@@ -96,6 +140,56 @@ export default function MedidasPage() {
       setSaveError(e instanceof Error ? e.message : "Erro ao salvar no banco")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const syncSleepHours = (start: string, end: string) => {
+    const duration = sleepDurationMinutes(start, end)
+    if (duration !== null) setSleepHours(minutesToSleepInput(duration))
+  }
+
+  const handleSleepStartChange = (value: string) => {
+    setSleepStart(value)
+    if (value && sleepEnd) syncSleepHours(value, sleepEnd)
+  }
+
+  const handleSleepEndChange = (value: string) => {
+    setSleepEnd(value)
+    if (sleepStart && value) syncSleepHours(sleepStart, value)
+  }
+
+  const handleSleepSave = async () => {
+    if (!sleepStart || !sleepEnd) {
+      setSleepError("Informe a hora que dormiu e a hora que acordou.")
+      return
+    }
+    const durationFromHours = sleepHours.trim() ? parseSleepHours(sleepHours) : null
+    if (sleepHours.trim() && durationFromHours === null) {
+      setSleepError("Horas dormidas precisa ficar entre 0 e 18 h.")
+      return
+    }
+    const durationFromTimes = sleepDurationMinutes(sleepStart, sleepEnd)
+    const durationMin = durationFromHours ?? durationFromTimes
+    if (durationMin === null || durationMin <= 0 || durationMin > 18 * 60) {
+      setSleepError("Revise os horários ou a duração do sono.")
+      return
+    }
+
+    setSleepSaving(true)
+    setSleepError(null)
+    try {
+      await addSleepLog({
+        date: toDateKey(new Date()),
+        sleptAt: sleepStart,
+        wokeAt: sleepEnd,
+        durationMin,
+      })
+      setSleepSaved(true)
+      setTimeout(() => setSleepSaved(false), 2500)
+    } catch (e) {
+      setSleepError(e instanceof Error ? e.message : "Erro ao salvar sono no banco")
+    } finally {
+      setSleepSaving(false)
     }
   }
 
@@ -148,6 +242,109 @@ export default function MedidasPage() {
           </Card>
         </>
       )}
+
+      <SectionTitle accent="steel">Sono e recuperação</SectionTitle>
+      <div className="rise rise-3 grid grid-cols-2 gap-3">
+        <StatCard
+          label="Última noite"
+          value={formatSleepDuration(view.sleepMetrics.latest?.durationMin)}
+          detail={
+            view.sleepMetrics.latest
+              ? `${view.sleepMetrics.latest.sleptAt} → ${view.sleepMetrics.latest.wokeAt}`
+              : "registre abaixo"
+          }
+          accent="steel"
+        />
+        <StatCard
+          label="Média 7d"
+          value={formatSleepDuration(view.sleepMetrics.avg7Min)}
+          detail={`${view.sleepMetrics.registered7}/7 noites registradas`}
+          accent="gold"
+        />
+        <StatCard
+          label="Dívida 7d"
+          value={formatSleepDuration(view.sleepMetrics.debt7Min)}
+          detail="contra meta de 8h/noite registrada"
+          accent="ember"
+        />
+        <StatCard
+          label="Regularidade"
+          value={view.sleepMetrics.consistency.label}
+          detail={view.sleepMetrics.consistency.detail}
+          accent={
+            view.sleepMetrics.consistency.label === "Estável"
+              ? "zone"
+              : view.sleepMetrics.consistency.label === "Ok"
+                ? "gold"
+                : "steel"
+          }
+        />
+      </div>
+
+      <Card className="rise rise-3 mt-3 border-l-4 border-l-[#a78bfa]">
+        <SleepChart data={view.sleep7} />
+        <p className="mt-2 font-mono text-[10px] text-steel-dim">
+          média: {formatSleepDuration(view.sleepMetrics.avg7Min)}
+          {view.sleepMetrics.avgBedtime &&
+            view.sleepMetrics.avgWake &&
+            ` · janela média ${view.sleepMetrics.avgBedtime} → ${view.sleepMetrics.avgWake}`}
+        </p>
+      </Card>
+
+      <SectionTitle accent="steel">Registrar sono</SectionTitle>
+      <Card className="rise rise-3 border-l-4 border-l-[#a78bfa]">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Dormi às</span>
+            <input
+              type="time"
+              value={sleepStart}
+              onChange={(e) => handleSleepStartChange(e.target.value)}
+              className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Acordei às</span>
+            <input
+              type="time"
+              value={sleepEnd}
+              onChange={(e) => handleSleepEndChange(e.target.value)}
+              className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Horas</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="7,5"
+              value={sleepHours}
+              onChange={(e) => setSleepHours(e.target.value)}
+              className="w-24 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+            />
+          </label>
+          <button
+            onClick={handleSleepSave}
+            disabled={sleepSaving}
+            className={cn(
+              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
+              sleepSaved ? "bg-zone text-coal" : "bg-[#a78bfa] text-coal hover:bg-[#c4b5fd]"
+            )}
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            {sleepSaved ? <Check size={15} /> : <Moon size={15} />}
+            {sleepSaving ? "Salvando…" : sleepSaved ? "Salvo" : "Salvar"}
+          </button>
+        </div>
+        {sleepError && (
+          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            {sleepError}
+          </p>
+        )}
+        <p className="mt-2.5 text-[11px] text-steel-dim">
+          O registro fica no dia em que você acordou.
+        </p>
+      </Card>
 
       <SectionTitle>Registrar hoje</SectionTitle>
       <Card className="rise rise-3">
