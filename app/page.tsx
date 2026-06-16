@@ -15,12 +15,12 @@ import {
   setScheduleMode,
 } from "@/lib/cycle"
 import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
-import { MUSCLE_GROUPS, volumeByGroup } from "@/lib/muscles"
+import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, WorkoutLog } from "@/lib/types"
 import {
-  bestE1RM,
+  bestE1RMAdjusted,
   cn,
   daysSince,
   formatKg,
@@ -55,13 +55,13 @@ const READINESS_UI: Record<
   green: {
     emoji: "🟢",
     title: "Pronto pra carga",
-    desc: "Volume dentro da sua base recente — pode progredir.",
+    desc: "Carga interna dentro da sua base recente — pode progredir.",
     border: "border-l-zone",
   },
   yellow: {
     emoji: "🟡",
     title: "Carga subindo rápido",
-    desc: "Acima da média das últimas 3 semanas. Capricha em sono e proteína.",
+    desc: "Esforço acima da média das últimas 3 semanas. Capricha em sono e proteína.",
     border: "border-l-gold",
   },
   red: {
@@ -90,7 +90,7 @@ function buildWeeks(data: GymData, today: Date) {
     volume: number
     z2: number
     sessions: number
-    groups: ReturnType<typeof volumeByGroup>
+    groups: ReturnType<typeof hardSetsByGroup>
   }[] = []
   for (let i = 5; i >= 0; i--) {
     const monday = new Date(currentMonday)
@@ -104,7 +104,7 @@ function buildWeeks(data: GymData, today: Date) {
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + z2Minutes(w), 0),
       sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
-      groups: volumeByGroup(ws),
+      groups: hardSetsByGroup(ws),
     })
   }
   return weeks
@@ -179,7 +179,7 @@ export default function Dashboard() {
         const d = fromDateKey(w.date)
         return {
           label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
-          e1rm: Math.round(bestE1RM(entry) * 10) / 10,
+          e1rm: Math.round(bestE1RMAdjusted(entry) * 10) / 10,
         }
       })
 
@@ -206,19 +206,19 @@ export default function Dashboard() {
       streak = counted
     }
 
-    // distribuição de volume por grupo muscular — últimas 4 semanas
+    // distribuição de séries duras por grupo muscular — últimas 4 semanas
     const since28 = toDateKey(
       new Date(today.getFullYear(), today.getMonth(), today.getDate() - 27)
     )
-    const byGroup = volumeByGroup(
+    const byGroup = hardSetsByGroup(
       data.workouts.filter((w) => w.date >= since28 && w.date <= todayKey)
     )
     const groupTotal = Object.values(byGroup).reduce((a, b) => a + b, 0)
     const groupShare = MUSCLE_GROUPS.map((g) => ({
       ...g,
-      volume: byGroup[g.id],
+      sets: byGroup[g.id],
       pct: groupTotal > 0 ? Math.round((byGroup[g.id] / groupTotal) * 100) : 0,
-    })).sort((a, b) => b.volume - a.volume)
+    })).sort((a, b) => b.sets - a.sets)
 
     const readiness = computeReadiness(data.workouts, today)
     // fechamento de domingo: resumo da semana corrente
@@ -593,7 +593,7 @@ export default function Dashboard() {
               className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
               style={{ fontFamily: "var(--font-condensed)" }}
             >
-              Prontidão · Fadiga
+              Prontidão · Carga interna
             </p>
             <p className="mt-1 text-base font-semibold text-bone">
               {READINESS_UI[view.readiness.level].emoji}{" "}
@@ -609,7 +609,7 @@ export default function Dashboard() {
                 {Math.round(view.readiness.ratio * 100)}%
               </p>
               <p className="font-mono text-[9px] text-steel-dim">
-                da base de {formatKg(Math.round(view.readiness.chronic))}/sem
+                da base de {Math.round(view.readiness.chronic).toLocaleString("pt-BR")} AU/sem
               </p>
             </div>
           )}
@@ -717,8 +717,8 @@ export default function Dashboard() {
         </p>
       </Card>
 
-      {/* Volume semanal — total ou por grupo muscular */}
-      <SectionTitle>Volume de treino — 6 semanas</SectionTitle>
+      {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
+      <SectionTitle>Treino — 6 semanas</SectionTitle>
       <Card className="rise rise-4">
         <div className="mb-3 flex gap-1.5">
           {(["grupos", "total"] as const).map((v) => (
@@ -733,7 +733,7 @@ export default function Dashboard() {
               )}
               style={{ fontFamily: "var(--font-condensed)" }}
             >
-              {v === "grupos" ? "Por grupo" : "Total"}
+              {v === "grupos" ? "Séries duras" : "Tonelagem"}
             </button>
           ))}
         </div>
@@ -746,6 +746,9 @@ export default function Dashboard() {
             <MuscleVolumeChart
               data={view.weeks.map((w) => ({ label: w.label, ...w.groups }))}
               groups={MUSCLE_GROUPS}
+              valueSuffix=" séries"
+              yTickFormatter={(v) => String(Math.round(v))}
+              tooltipValueFormatter={(v) => String(Math.round(v))}
             />
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
               {view.groupShare.map((g) => (
@@ -762,7 +765,7 @@ export default function Dashboard() {
               ))}
             </div>
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
-              % do volume das últimas 4 semanas — caça desequilíbrios do shape
+              % das séries duras nas últimas 4 semanas · RIR 4+ não conta como série dura
             </p>
           </>
         )}
@@ -796,7 +799,7 @@ export default function Dashboard() {
           </p>
         )}
         <p className="mt-2 font-mono text-[10px] text-steel-dim">
-          Epley: carga × (1 + reps/30) da melhor série · queda leve no déficit é esperada
+          Epley com reps ajustadas por RIR quando informado · PRs continuam pela fórmula clássica
         </p>
       </Card>
 

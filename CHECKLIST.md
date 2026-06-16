@@ -26,8 +26,8 @@ Este documento consolida todas as ideias de melhorias pensadas para o sistema, u
 - [x] **15. Evolução de Cintura:** Gráfico específico da recomposição corporal ao lado do de peso.
 
 ### Inteligência e Gamificação
-- [x] **19. Volume por Grupo Muscular:** Gráfico de "Tons Levantados" com barras empilhadas por parte do corpo (Perna, Costas, Peito, Ombro, Braço, Core) + % de distribuição das últimas 4 semanas para enxergar deficiências do shape. Toggle Total/Por grupo no painel.
-- [x] **20. Estimativa de Fadiga / Readiness:** Sinal 🟢🟡🔴 no painel via razão carga aguda:crônica (ACWR) — volume dos últimos 7 dias contra a média semanal das 3 semanas anteriores (≤110% verde, ≤140% amarelo, acima vermelho).
+- [x] **19. Séries Duras por Grupo Muscular:** Gráfico com barras empilhadas por parte do corpo (Perna, Costas, Peito, Ombro, Braço, Core), usando contagem de séries efetivas em vez de tonelagem. Séries sem RIR contam; RIR 4+ não conta como série dura. Toggle Séries duras/Tonelagem no painel.
+- [x] **20. Estimativa de Fadiga / Readiness:** Sinal 🟢🟡🔴 no painel via razão carga aguda:crônica (ACWR) por carga interna — sRPE × duração quando informado, com fallback para registros antigos (≤110% verde, ≤140% amarelo, acima vermelho).
 - [x] **21. Resumo Semanal Automático:** Card dourado no painel todo domingo com sessões/5, PRs batidos na semana, volume total e calorias estimadas por METs.
 - [x] **22. Badges de Conquistas Xbox-style:** 16 selos derivados do histórico (séries 100/500/1000, toneladas 50/250/1000, streaks 4/12 semanas, PRs, Zona 2, Atleta Bronze/Prata/Ouro) com barra de progresso nos bloqueados.
 

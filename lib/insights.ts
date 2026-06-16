@@ -86,17 +86,17 @@ export interface Readiness {
   level: ReadinessLevel
   /** carga aguda ÷ base crônica (null sem histórico suficiente) */
   ratio: number | null
-  /** volume dos últimos 7 dias (kg) */
+  /** carga interna dos últimos 7 dias (AU) */
   acute: number
-  /** média semanal dos 21 dias anteriores à janela aguda (kg) */
+  /** média semanal dos 21 dias anteriores à janela aguda (AU) */
   chronic: number
 }
 
 const DAY_MS = 86_400_000
 
 /**
- * Sinal de fadiga via razão carga aguda:crônica (ACWR): volume de carga
- * dos últimos 7 dias contra a média semanal das 3 semanas anteriores.
+ * Sinal de fadiga via razão carga aguda:crônica (ACWR): carga interna dos
+ * últimos 7 dias contra a média semanal das 3 semanas anteriores.
  * ≤1.1 verde · ≤1.4 amarelo · >1.4 vermelho.
  */
 export function computeReadiness(workouts: WorkoutLog[], today: Date): Readiness {
@@ -108,8 +108,8 @@ export function computeReadiness(workouts: WorkoutLog[], today: Date): Readiness
   let acute = 0
   let chronicTotal = 0
   for (const w of workouts) {
-    if (w.date >= acuteStart && w.date <= todayKey) acute += workoutVolume(w)
-    else if (w.date >= chronicStart && w.date <= chronicEnd) chronicTotal += workoutVolume(w)
+    if (w.date >= acuteStart && w.date <= todayKey) acute += internalLoad(w)
+    else if (w.date >= chronicStart && w.date <= chronicEnd) chronicTotal += internalLoad(w)
   }
   const chronic = chronicTotal / 3
 
