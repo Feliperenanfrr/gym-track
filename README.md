@@ -23,7 +23,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 
 | Aba | O que faz |
 | --- | --- |
-| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2 da semana, gráficos de volume, 1RM estimada (Epley) e minutos de base aeróbica |
+| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado e minutos de base aeróbica |
 | **Treino** | Registro de séries (kg × reps) com prescrição do plano, números da última sessão e alerta de sobrecarga progressiva ("topo da faixa → suba 2,5–5 kg") |
 | **Plano** | O plano completo do preparador: estrutura da semana, exercícios, regras de ouro, nutrição e linha do tempo |
 | **Medidas** | Peso e cintura com tendência, metas diárias de proteína/água calculadas pelo peso atual |

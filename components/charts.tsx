@@ -89,17 +89,22 @@ function MuscleTip({
   active,
   payload,
   label,
+  suffix = " kg",
+  valueFormatter = (v: number) => Math.round(v).toLocaleString("pt-BR"),
 }: {
   active?: boolean
   payload?: { value: number; name: string; color?: string }[]
   label?: string
+  suffix?: string
+  valueFormatter?: (value: number) => string
 }) {
   if (!active || !payload?.length) return null
   const total = payload.reduce((s, p) => s + (p.value || 0), 0)
   return (
     <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
       <p className="mb-1 text-steel">
-        {label} · {Math.round(total).toLocaleString("pt-BR")} kg
+        {label} · {valueFormatter(total)}
+        {suffix}
       </p>
       {[...payload]
         .reverse()
@@ -110,7 +115,8 @@ function MuscleTip({
               className="inline-block h-2 w-2 rounded-sm"
               style={{ background: p.color }}
             />
-            {p.name}: {Math.round(p.value).toLocaleString("pt-BR")} kg
+            {p.name}: {valueFormatter(p.value)}
+            {suffix}
           </p>
         ))}
     </div>
@@ -121,9 +127,15 @@ function MuscleTip({
 export function MuscleVolumeChart({
   data,
   groups,
+  valueSuffix = " kg",
+  yTickFormatter = (v: number) => `${Math.round(v / 1000)}t`,
+  tooltipValueFormatter = (v: number) => Math.round(v).toLocaleString("pt-BR"),
 }: {
   data: Record<string, number | string>[]
   groups: { id: string; color: string }[]
+  valueSuffix?: string
+  yTickFormatter?: (value: number) => string
+  tooltipValueFormatter?: (value: number) => string
 }) {
   return (
     <ResponsiveContainer width="100%" height={190}>
@@ -134,10 +146,15 @@ export function MuscleVolumeChart({
           tick={TICK}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => `${Math.round(v / 1000)}t`}
+          tickFormatter={yTickFormatter}
         />
         <Tooltip
-          content={<MuscleTip />}
+          content={
+            <MuscleTip
+              suffix={valueSuffix}
+              valueFormatter={tooltipValueFormatter}
+            />
+          }
           cursor={{ fill: "rgba(255,255,255,0.04)" }}
         />
         {groups.map((g, gi) => (

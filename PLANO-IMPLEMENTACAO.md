@@ -145,14 +145,14 @@ alter table workouts add column started_at timestamptz; -- 1ª série marcada
 ### Entregas
 1. **Séries duras por grupo/semana** (`lib/muscles.ts` + toggle no gráfico do painel):
    - contagem de *sets* por grupo (não tonelagem — tonelagem infla perna e mascara deficiência de ombro/braço);
-   - faixa-alvo sombreada no gráfico: 10–20 séries/grupo/semana;
-   - com RIR: séries com RIR ≥ 5 não contam como "duras" (fallback: todas contam).
+   - com RIR: séries com RIR 4+ não contam como "duras" (fallback: todas contam);
+   - faixa-alvo sombreada no gráfico: 10–20 séries/grupo/semana. **Pendente.**
 2. **Força relativa** (`components/charts.tsx`): e1RM ÷ peso corporal da época (interpolar `body_logs`), série temporal por exercício-chave. O gráfico anti-desânimo do cutting: peso caindo + relativa subindo = recomposição vencendo.
 3. **Razões de equilíbrio estrutural** (card no painel): remada:supino (volume e e1RM, alvo ~1:1 ±15%), puxada:desenvolvimento. Fora da faixa → aviso âmbar com sugestão ("+2 séries de remada/semana").
 4. **ACWR por carga interna + monotonia/strain de Foster** (`lib/insights.ts`):
-   - `computeReadiness` passa a usar `internalLoad` (inclui futsal e cardio — hoje a tonelagem ignora justamente a carga do sábado);
-   - monotonia = média ÷ desvio-padrão da carga diária (7 dias); strain = carga semanal × monotonia;
-   - card de prontidão ganha os 2 números secundários + tooltip explicativo.
+   - `computeReadiness` usa `internalLoad` (inclui futsal e cardio; sem novo input obrigatório);
+   - monotonia = média ÷ desvio-padrão da carga diária (7 dias); strain = carga semanal × monotonia. **Pendente**;
+   - card de prontidão ganha os 2 números secundários + tooltip explicativo. **Pendente.**
 
 ### Testes
 - Unidade para os 4 cálculos com cenários sintéticos (incluindo histórico misto com/sem RIR/sRPE).
