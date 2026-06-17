@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getSupabaseBrowserClient } from "./supabase/client"
 import { enqueue, flushQueue, queueCount } from "./sync-queue"
-import { toDateKey } from "./utils"
+import { toOperationalDateKey } from "./utils"
 import {
   BodyLog,
   CardioLog,
@@ -289,7 +289,7 @@ export function useGymData() {
    * rápida não leiam estado React ainda não re-renderizado.
    */
   const addWater = useCallback(async (deltaMl: number, date?: string) => {
-    const day = date ?? toDateKey(new Date())
+    const day = date ?? toOperationalDateKey(new Date())
     const current = waterRef.current[day] ?? 0
     const total = Math.max(0, current + deltaMl)
     waterRef.current[day] = total

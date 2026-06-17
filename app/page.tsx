@@ -20,6 +20,7 @@ import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, WorkoutLog } from "@/lib/types"
+import { useOperationalDay } from "@/lib/use-operational-day"
 import {
   bestE1RMAdjusted,
   cn,
@@ -113,14 +114,13 @@ function buildWeeks(data: GymData, today: Date) {
 
 export default function Dashboard() {
   const { data, error, pendingCount, addWater, signOut } = useGymData()
-  const [today, setToday] = useState<Date | null>(null)
+  const today = useOperationalDay()
   const [lift, setLift] = useState("bench")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
   const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
   const [mode, setMode] = useState<ScheduleMode>("ciclo")
 
   useEffect(() => {
-    setToday(new Date())
     setMode(getScheduleMode())
   }, [])
 

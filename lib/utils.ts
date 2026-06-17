@@ -59,6 +59,31 @@ export function fromDateKey(key: string): Date {
   return new Date(y, m - 1, d)
 }
 
+export const OPERATIONAL_DAY_START_HOUR = 5
+
+/** Dia operacional: antes das 05:00 ainda conta como o dia anterior. */
+export function operationalDay(d: Date): Date {
+  const out = new Date(d)
+  if (out.getHours() < OPERATIONAL_DAY_START_HOUR) {
+    out.setDate(out.getDate() - 1)
+  }
+  out.setHours(12, 0, 0, 0)
+  return out
+}
+
+export function toOperationalDateKey(d: Date): string {
+  return toDateKey(operationalDay(d))
+}
+
+export function nextOperationalDayStart(d: Date): Date {
+  const next = new Date(d)
+  next.setHours(OPERATIONAL_DAY_START_HOUR, 0, 0, 0)
+  if (d.getTime() >= next.getTime()) {
+    next.setDate(next.getDate() + 1)
+  }
+  return next
+}
+
 /** ISO weekday: 1=Seg ... 7=Dom */
 export function isoWeekday(d: Date): number {
   return d.getDay() === 0 ? 7 : d.getDay()
