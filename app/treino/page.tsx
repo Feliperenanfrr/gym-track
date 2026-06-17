@@ -8,7 +8,16 @@ import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { ExercisePrescription, ExerciseLog, SessionId, SetRow, WorkoutLog } from "@/lib/types"
-import { bestE1RM, cn, formatKg, fromDateKey, isoWeekday, toDateKey } from "@/lib/utils"
+import {
+  bestE1RM,
+  cn,
+  formatKg,
+  fromDateKey,
+  isoWeekday,
+  operationalDay,
+  toDateKey,
+  toOperationalDateKey,
+} from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
@@ -55,7 +64,7 @@ export default function TreinoPage() {
   }, [])
 
   useEffect(() => {
-    const now = new Date()
+    const now = operationalDay(new Date())
     setToday(now)
     // sessão padrão = a planejada para hoje (domingo cai em Upper A)
     const planned = PLAN.find((s) => s.weekday === isoWeekday(now))
@@ -294,9 +303,14 @@ export default function TreinoPage() {
       }))
       .filter((e) => e.sets.length > 0)
 
+    const workoutDay =
+      session.kind === "lift" && startedAtRef.current
+        ? new Date(startedAtRef.current)
+        : new Date()
+
     const log: WorkoutLog = {
       id: `log-${Date.now()}`,
-      date: toDateKey(today),
+      date: toOperationalDateKey(workoutDay),
       sessionId: session.id,
       entries,
     }

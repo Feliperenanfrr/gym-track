@@ -13,7 +13,8 @@ import {
   sleepDurationMinutes,
 } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
-import { cn, fromDateKey, toDateKey } from "@/lib/utils"
+import { useOperationalDay } from "@/lib/use-operational-day"
+import { cn, fromDateKey, toDateKey, toOperationalDateKey } from "@/lib/utils"
 
 function shortDate(key: string): string {
   const d = fromDateKey(key)
@@ -22,6 +23,7 @@ function shortDate(key: string): string {
 
 export default function MedidasPage() {
   const { data, addBodyLog, addSleepLog } = useGymData()
+  const today = useOperationalDay()
   const [weight, setWeight] = useState("")
   const [waist, setWaist] = useState("")
   const [saved, setSaved] = useState(false)
@@ -36,7 +38,7 @@ export default function MedidasPage() {
   const [sleepError, setSleepError] = useState<string | null>(null)
 
   const view = useMemo(() => {
-    if (!data) return null
+    if (!data || !today) return null
     const body = data.body
     const current = body[body.length - 1]
     const first = body[0]
@@ -53,7 +55,7 @@ export default function MedidasPage() {
     // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
     const kg = current?.weightKg ?? 93
     // água dos últimos 7 dias (dias sem registro = 0, sinceridade > vaidade)
-    const now = new Date()
+    const now = today
     const hydration7 = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
       const key = toDateKey(d)
@@ -88,11 +90,11 @@ export default function MedidasPage() {
       recent: [...body].reverse().slice(0, 8),
       recentSleep: [...data.sleep].reverse().slice(0, 8),
     }
-  }, [data])
+  }, [data, today])
 
   useEffect(() => {
-    if (!data) return
-    const todayKey = toDateKey(new Date())
+    if (!data || !today) return
+    const todayKey = toDateKey(today)
     if (sleepLoadedDate === todayKey) return
     const todaySleep = data.sleep.find((s) => s.date === todayKey)
     if (todaySleep) {
@@ -105,7 +107,7 @@ export default function MedidasPage() {
       setSleepHours("8,0")
     }
     setSleepLoadedDate(todayKey)
-  }, [data, sleepLoadedDate])
+  }, [data, sleepLoadedDate, today])
 
   if (!view) {
     return (
@@ -128,7 +130,7 @@ export default function MedidasPage() {
     setSaveError(null)
     try {
       await addBodyLog({
-        date: toDateKey(new Date()),
+        date: toOperationalDateKey(new Date()),
         weightKg: Math.round(w * 10) / 10,
         waistCm: !isNaN(wa) && wa > 0 ? Math.round(wa * 10) / 10 : undefined,
       })
@@ -179,7 +181,7 @@ export default function MedidasPage() {
     setSleepError(null)
     try {
       await addSleepLog({
-        date: toDateKey(new Date()),
+        date: toOperationalDateKey(new Date()),
         sleptAt: sleepStart,
         wokeAt: sleepEnd,
         durationMin,
