@@ -74,8 +74,17 @@ const READINESS_UI: Record<
   },
 }
 
+function dayMonth(d: Date): string {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
 function weekLabel(monday: Date): string {
-  return `${String(monday.getDate()).padStart(2, "0")}/${String(monday.getMonth() + 1).padStart(2, "0")}`
+  const sunday = new Date(monday)
+  sunday.setDate(sunday.getDate() + 6)
+  if (monday.getMonth() === sunday.getMonth()) {
+    return `${String(monday.getDate()).padStart(2, "0")}-${dayMonth(sunday)}`
+  }
+  return `${dayMonth(monday)}-${dayMonth(sunday)}`
 }
 
 /** Z2 = sessão de cardio + finisher do Lower B (esporte não conta como base) */
@@ -791,9 +800,14 @@ export default function Dashboard() {
           ))}
         </div>
         {volumeView === "total" ? (
-          <WeeklyVolumeChart
-            data={view.weeks.map((w) => ({ label: w.label, volume: w.volume }))}
-          />
+          <>
+            <WeeklyVolumeChart
+              data={view.weeks.map((w) => ({ label: w.label, volume: w.volume }))}
+            />
+            <p className="mt-2 font-mono text-[10px] text-steel-dim">
+              cada barra representa uma semana calendário (seg-dom)
+            </p>
+          </>
         ) : (
           <>
             <MuscleVolumeChart
@@ -818,7 +832,7 @@ export default function Dashboard() {
               ))}
             </div>
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
-              % das séries duras nas últimas 4 semanas · RIR 4+ não conta como série dura
+              barras por semana calendário (seg-dom) · % das séries duras nas últimas 4 semanas · RIR 4+ não conta como série dura
             </p>
           </>
         )}
