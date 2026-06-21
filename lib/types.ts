@@ -9,6 +9,18 @@ export type SessionId =
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest"
 
+export type MuscleGroup =
+  | "Quadríceps"
+  | "Posterior/Glúteo"
+  | "Panturrilha"
+  | "Costas"
+  | "Peito"
+  | "Ombro"
+  | "Braço"
+  | "Core"
+
+export type CardioPurpose = "zone2" | "intense" | "sport"
+
 export interface ExercisePrescription {
   id: string
   name: string
@@ -20,6 +32,8 @@ export interface ExercisePrescription {
   unit: "reps" | "seconds"
   rest: string
   note: string
+  /** Necessário em exercícios fora do plano para manter as métricas por grupo. */
+  muscleGroup?: MuscleGroup
 }
 
 export interface SessionPlan {
@@ -54,6 +68,9 @@ export interface SetRow {
 
 export interface ExerciseLog {
   exerciseId: string
+  /** Preserva exercícios personalizados e substituições no histórico. */
+  exerciseName?: string
+  muscleGroup?: MuscleGroup
   sets: SetLog[]
 }
 
@@ -61,6 +78,8 @@ export interface CardioLog {
   minutes: number
   avgBpm?: number
   mode: string
+  /** Ausente em registros antigos, que são interpretados pelo tipo da sessão. */
+  purpose?: CardioPurpose
 }
 
 export interface WorkoutLog {

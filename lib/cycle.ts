@@ -1,4 +1,5 @@
 import { SessionId, WorkoutLog } from "./types"
+import { zone2Minutes } from "./cardio"
 import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
 
 /**
@@ -131,10 +132,7 @@ export function rolling7(workouts: WorkoutLog[], today: Date): Rolling7 {
   return {
     sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
     volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
-    z2: ws.reduce(
-      (s, w) => s + (w.sessionId !== "sport" ? w.cardio?.minutes ?? 0 : 0),
-      0
-    ),
+    z2: ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0),
   }
 }
 

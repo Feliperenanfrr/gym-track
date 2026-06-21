@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Trash2 } from "lucide-react"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
-import { PLAN_BY_ID } from "@/lib/plan"
+import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { cn, formatKg, fromDateKey, workoutVolume } from "@/lib/utils"
 
@@ -71,6 +71,12 @@ export default function Historico() {
             const date = fromDateKey(w.date)
             const session = PLAN_BY_ID[w.sessionId]
             const volume = workoutVolume(w)
+            const cardioLabel =
+              w.cardio?.purpose === "intense"
+                ? "intenso"
+                : w.cardio?.purpose === "sport" || w.sessionId === "sport"
+                  ? "esporte"
+                  : "Zona 2"
             
             return (
               <Card key={w.id} className={cn("rise", `rise-${Math.min(6, i + 1)}`, "relative overflow-hidden")}>
@@ -83,8 +89,22 @@ export default function Historico() {
                       {session?.title || "Sessão Desconhecida"}
                     </h3>
                     <p className="mt-1 font-mono text-xs text-steel-dim">
-                      {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`} {w.cardio && `· +${w.cardio.minutes} min Z2`}
+                      {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`} {w.cardio && `· ${w.cardio.minutes} min ${w.cardio.mode} (${cardioLabel})`}
                     </p>
+                    {w.entries.length > 0 && (
+                      <ul className="mt-3 space-y-1 border-t border-seam pt-3">
+                        {w.entries.map((entry) => (
+                          <li key={entry.exerciseId} className="flex justify-between gap-3 text-xs">
+                            <span className="text-steel">
+                              {entry.exerciseName ?? EXERCISES_BY_ID[entry.exerciseId]?.name ?? entry.exerciseId}
+                            </span>
+                            <span className="shrink-0 font-mono text-steel-dim">
+                              {entry.sets.length} séries
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <button
                     onClick={() => handleDelete(w.id, w.date, w.sessionId)}

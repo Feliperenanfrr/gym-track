@@ -1,19 +1,9 @@
-import { WorkoutLog } from "./types"
+import { MuscleGroup, WorkoutLog } from "./types"
 
 /**
  * Classificação dos exercícios do plano por parte do corpo, para o
  * gráfico de volume por grupo muscular (caça desequilíbrios do shape).
  */
-export type MuscleGroup =
-  | "Quadríceps"
-  | "Posterior/Glúteo"
-  | "Panturrilha"
-  | "Costas"
-  | "Peito"
-  | "Ombro"
-  | "Braço"
-  | "Core"
-
 /** Ordem de empilhamento no gráfico (maiores embaixo) e cor de cada grupo */
 export const MUSCLE_GROUPS: { id: MuscleGroup; color: string }[] = [
   { id: "Quadríceps", color: "#f472b6" },
@@ -64,7 +54,7 @@ export function volumeByGroup(workouts: WorkoutLog[]): Record<MuscleGroup, numbe
   ) as Record<MuscleGroup, number>
   for (const w of workouts) {
     for (const e of w.entries) {
-      const group = EXERCISE_GROUP[e.exerciseId]
+      const group = e.muscleGroup ?? EXERCISE_GROUP[e.exerciseId]
       if (!group) continue
       out[group] += e.sets.reduce((s, set) => s + set.weight * set.reps, 0)
     }
@@ -83,7 +73,7 @@ export function hardSetsByGroup(workouts: WorkoutLog[]): Record<MuscleGroup, num
   ) as Record<MuscleGroup, number>
   for (const w of workouts) {
     for (const e of w.entries) {
-      const group = EXERCISE_GROUP[e.exerciseId]
+      const group = e.muscleGroup ?? EXERCISE_GROUP[e.exerciseId]
       if (!group) continue
       out[group] += e.sets.filter((set) => set.reps > 0 && (set.rir === undefined || set.rir <= 3)).length
     }

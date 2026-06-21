@@ -1,4 +1,4 @@
-import { SetRow } from "./types"
+import { CardioPurpose, ExercisePrescription, SetRow } from "./types"
 
 /**
  * Rascunho do treino em andamento (localStorage), por data + sessão.
@@ -7,9 +7,12 @@ import { SetRow } from "./types"
  */
 export interface WorkoutDraft {
   rows: Record<string, SetRow[]>
+  /** Exercícios efetivamente escolhidos, incluindo trocas e adições. */
+  exercises?: ExercisePrescription[]
   cardioMin: string
   cardioBpm: string
   cardioMode: string
+  cardioPurpose?: CardioPurpose
   finisherMin: string
   savedAt: number
   /** epoch ms da primeira série marcada (p/ duração real da sessão) */
@@ -49,5 +52,5 @@ export function draftHasContent(draft: WorkoutDraft): boolean {
   const rowsFilled = Object.values(draft.rows ?? {}).some((sets) =>
     sets.some((s) => s.weight.trim() !== "" || s.reps.trim() !== "" || s.done)
   )
-  return rowsFilled
+  return rowsFilled || Boolean(draft.cardioMin?.trim()) || draft.exercises !== undefined
 }
