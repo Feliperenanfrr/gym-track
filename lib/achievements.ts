@@ -1,4 +1,5 @@
 import { prEvents } from "./insights"
+import { zone2Minutes } from "./cardio"
 import { GymData } from "./types"
 import { fromDateKey, mondayOf, toDateKey, workoutVolume } from "./utils"
 
@@ -27,10 +28,7 @@ export function computeAchievements(data: GymData, today: Date): Achievement[] {
     0
   )
   const totalVolume = workouts.reduce((s, w) => s + workoutVolume(w), 0)
-  const totalZ2 = workouts.reduce(
-    (s, w) => s + (w.sessionId !== "sport" ? w.cardio?.minutes ?? 0 : 0),
-    0
-  )
+  const totalZ2 = workouts.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
   const totalPRs = prEvents(workouts).length
 
   // sessões de treino (sem esporte) por semana + semanas com qualquer registro

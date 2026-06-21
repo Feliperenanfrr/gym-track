@@ -6,6 +6,7 @@ import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
+import { zone2Minutes } from "@/lib/cardio"
 import {
   getScheduleMode,
   last7Days,
@@ -19,7 +20,7 @@ import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
-import { GymData, SessionId, WorkoutLog } from "@/lib/types"
+import { GymData, SessionId } from "@/lib/types"
 import { useOperationalDay } from "@/lib/use-operational-day"
 import {
   bestE1RMAdjusted,
@@ -87,12 +88,6 @@ function weekLabel(monday: Date): string {
   return `${dayMonth(monday)}-${dayMonth(sunday)}`
 }
 
-/** Z2 = sessão de cardio + finisher do Lower B (esporte não conta como base) */
-function z2Minutes(w: WorkoutLog): number {
-  if (w.sessionId === "sport") return 0
-  return w.cardio?.minutes ?? 0
-}
-
 function buildWeeks(data: GymData, today: Date) {
   const currentMonday = mondayOf(today)
   const weeks: {
@@ -113,7 +108,7 @@ function buildWeeks(data: GymData, today: Date) {
       monday,
       label: weekLabel(monday),
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
-      z2: ws.reduce((s, w) => s + z2Minutes(w), 0),
+      z2: ws.reduce((s, w) => s + zone2Minutes(w), 0),
       sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
       groups: hardSetsByGroup(ws),
     })

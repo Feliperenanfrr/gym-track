@@ -2,12 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Check, ChevronUp, CloudOff, History, RotateCcw, Save } from "lucide-react"
+import { ArrowLeft, Check, ChevronUp, CloudOff, Dumbbell, History, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { ExercisePrescription, ExerciseLog, SessionId, SetRow, WorkoutLog } from "@/lib/types"
+import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SetRow, WorkoutLog } from "@/lib/types"
+import {
+  CatalogExercise,
+  EXERCISE_CATALOG,
+  groupOfExercise,
+  makeCustomExercise,
+  MUSCLE_GROUP_OPTIONS,
+} from "@/lib/exercise-catalog"
 import {
   bestE1RM,
   cn,
@@ -24,8 +31,14 @@ import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
 import { tapFeedback } from "@/lib/haptics"
 
-const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida leve", "Remo"]
-const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu"]
+const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Pular corda", "Natação", "Remo"]
+const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu", "Natação", "Outro esporte"]
+
+const CARDIO_PURPOSES: { id: CardioPurpose; label: string; hint: string }[] = [
+  { id: "zone2", label: "Zona 2", hint: "ritmo contínuo e confortável" },
+  { id: "intense", label: "Intenso", hint: "tiros, corda ou natação forte" },
+  { id: "sport", label: "Esporte", hint: "jogo, luta ou treino técnico" },
+]
 
 function shortDate(key: string): string {
   const d = fromDateKey(key)
@@ -37,11 +50,16 @@ export default function TreinoPage() {
   const restTimer = useRestTimer()
   const [today, setToday] = useState<Date | null>(null)
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
+  const [activeExercises, setActiveExercises] = useState<ExercisePrescription[]>([])
   const [rows, setRows] = useState<Record<string, SetRow[]>>({})
   const [cardioMin, setCardioMin] = useState("")
   const [cardioBpm, setCardioBpm] = useState("")
   const [cardioMode, setCardioMode] = useState(CARDIO_MODES[0])
+  const [cardioPurpose, setCardioPurpose] = useState<CardioPurpose>("zone2")
   const [finisherMin, setFinisherMin] = useState("20")
+  const [pickerFor, setPickerFor] = useState<string | "new" | null>(null)
+  const [pickerGroup, setPickerGroup] = useState<MuscleGroup>("Peito")
+  const [customName, setCustomName] = useState("")
   const [saved, setSaved] = useState(false)
   const [savedOffline, setSavedOffline] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -101,15 +119,34 @@ export default function TreinoPage() {
     )
   }, [data, session, today])
 
+  /** Última execução por exercício, mesmo que tenha sido feita em outra sessão. */
+  const exerciseHistory = useMemo(() => {
+    const history: Record<string, { log: WorkoutLog; entry: ExerciseLog }> = {}
+    if (!data || !today) return history
+    const todayKey = toDateKey(today)
+    for (const log of [...data.workouts].sort((a, b) => a.date.localeCompare(b.date))) {
+      if (log.date >= todayKey) continue
+      for (const entry of log.entries) history[entry.exerciseId] = { log, entry }
+    }
+    return history
+  }, [data, today])
+
   /**
    * Pré-preenchimento a partir do último treino desta sessão.
    * factor < 1 = volta de pausa (regressão do ciclo): cargas reduzidas e
    * arredondadas a 2,5 kg, sem auto-progressão.
    */
-  const buildPrefill = (s: typeof session, ll: typeof lastLog, factor = 1) => {
+  const buildPrefill = (
+    s: typeof session,
+    ll: typeof lastLog,
+    factor = 1,
+    exercises: ExercisePrescription[] = s!.exercises
+  ) => {
     const rows: Record<string, SetRow[]> = {}
-    for (const ex of s!.exercises) {
-      const lastEntry = ll?.entries.find((e) => e.exerciseId === ex.id)
+    const defaultPurpose: CardioPurpose =
+      ll?.cardio?.purpose ?? (s!.kind === "sport" ? "sport" : "zone2")
+    for (const ex of exercises) {
+      const lastEntry = exerciseHistory[ex.id]?.entry
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
         let suggestedWeight = lastSet ? String(lastSet.weight) : ""
@@ -144,7 +181,8 @@ export default function TreinoPage() {
             : "",
       cardioBpm: ll?.cardio?.avgBpm ? String(ll.cardio.avgBpm) : "130",
       cardioMode:
-        s!.kind === "sport" ? SPORT_MODES[0] : ll?.cardio?.mode ?? CARDIO_MODES[0],
+        ll?.cardio?.mode ?? (s!.kind === "sport" ? SPORT_MODES[0] : CARDIO_MODES[0]),
+      cardioPurpose: defaultPurpose,
       finisherMin: s!.cardioAfter ? String(s!.cardioAfter.minutes) : "20",
     }
   }
@@ -154,6 +192,7 @@ export default function TreinoPage() {
     setCardioMin(p.cardioMin)
     setCardioBpm(p.cardioBpm)
     setCardioMode(p.cardioMode)
+    setCardioPurpose(p.cardioPurpose)
     setFinisherMin(p.finisherMin)
   }
 
@@ -171,16 +210,19 @@ export default function TreinoPage() {
     const dateKey = toDateKey(today)
     const draft = loadDraft(dateKey, session.id)
     if (draft && draftHasContent(draft)) {
+      setActiveExercises(draft.exercises ?? session.exercises)
       setRows(draft.rows)
       setCardioMin(draft.cardioMin)
       setCardioBpm(draft.cardioBpm)
       setCardioMode(draft.cardioMode)
+      setCardioPurpose(draft.cardioPurpose ?? (session.kind === "sport" ? "sport" : "zone2"))
       setFinisherMin(draft.finisherMin)
       startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
       setRegressionApplied(false)
     } else {
       const factor = currentFactor()
+      setActiveExercises(session.exercises)
       applyPrefill(buildPrefill(session, lastLog, factor))
       startedAtRef.current = null
       setDraftRestored(false)
@@ -194,21 +236,23 @@ export default function TreinoPage() {
     if (!session || !today || !dirtyRef.current) return
     saveDraft(toDateKey(today), session.id, {
       rows,
+      exercises: activeExercises,
       cardioMin,
       cardioBpm,
       cardioMode,
+      cardioPurpose,
       finisherMin,
       savedAt: Date.now(),
       startedAt: startedAtRef.current ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, cardioMin, cardioBpm, cardioMode, finisherMin])
+  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin])
 
   const totals = useMemo(() => {
     let volume = 0
     let setsDone = 0
     let setsTotal = 0
-    for (const ex of session?.exercises ?? []) {
+    for (const ex of activeExercises) {
       for (const r of rows[ex.id] ?? []) {
         setsTotal++
         if (r.done) setsDone++
@@ -218,7 +262,7 @@ export default function TreinoPage() {
       }
     }
     return { volume, setsDone, setsTotal }
-  }, [rows, session])
+  }, [rows, activeExercises])
 
   if (!data || !session || !today) {
     return (
@@ -249,6 +293,103 @@ export default function TreinoPage() {
       ...prev,
       [exId]: prev[exId].map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     }))
+  }
+
+  const openExercisePicker = (target: string | "new") => {
+    const current = target === "new" ? null : activeExercises.find((ex) => ex.id === target)
+    setPickerFor(target)
+    setPickerGroup(current ? groupOfExercise(current) : "Peito")
+    setCustomName("")
+  }
+
+  const applyExerciseChoice = (choice: CatalogExercise) => {
+    if (!pickerFor) return
+    const replacingId = pickerFor === "new" ? null : pickerFor
+    if (activeExercises.some((exercise) => exercise.id === choice.id && exercise.id !== replacingId)) {
+      setSaveError("Este exercício já está no treino.")
+      return
+    }
+
+    dirtyRef.current = true
+    const prescription: ExercisePrescription = { ...choice }
+    setActiveExercises((current) =>
+      replacingId
+        ? current.map((exercise) => (exercise.id === replacingId ? prescription : exercise))
+        : [...current, prescription]
+    )
+    setRows((current) => {
+      const next = { ...current }
+      if (replacingId) delete next[replacingId]
+      next[choice.id] = buildPrefill(session, lastLog, 1, [prescription]).rows[choice.id]
+      return next
+    })
+    setPickerFor(null)
+    setSaveError(null)
+  }
+
+  const addCustomExercise = () => {
+    if (!customName.trim()) return
+    applyExerciseChoice(makeCustomExercise(customName, pickerGroup))
+  }
+
+  const removeExercise = (exerciseId: string) => {
+    dirtyRef.current = true
+    setActiveExercises((current) => current.filter((exercise) => exercise.id !== exerciseId))
+    setRows((current) => {
+      const next = { ...current }
+      delete next[exerciseId]
+      return next
+    })
+    if (pickerFor === exerciseId) setPickerFor(null)
+  }
+
+  const addSet = (exerciseId: string) => {
+    dirtyRef.current = true
+    setRows((current) => {
+      const previous = current[exerciseId] ?? []
+      const last = previous[previous.length - 1]
+      return {
+        ...current,
+        [exerciseId]: [
+          ...previous,
+          { weight: last?.weight ?? "", reps: last?.reps ?? "", done: false, rir: "" },
+        ],
+      }
+    })
+    setActiveExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId ? { ...exercise, sets: exercise.sets + 1 } : exercise
+      )
+    )
+  }
+
+  const removeSet = (exerciseId: string) => {
+    if ((rows[exerciseId]?.length ?? 0) <= 1) return
+    dirtyRef.current = true
+    setRows((current) => ({ ...current, [exerciseId]: current[exerciseId].slice(0, -1) }))
+    setActiveExercises((current) =>
+      current.map((exercise) =>
+        exercise.id === exerciseId ? { ...exercise, sets: Math.max(1, exercise.sets - 1) } : exercise
+      )
+    )
+  }
+
+  const useDumbbellVersion = () => {
+    const usedIds = new Set<string>()
+    const exercises = activeExercises.map((current) => {
+      const group = groupOfExercise(current)
+      const options = EXERCISE_CATALOG.filter(
+        (exercise) => exercise.muscleGroup === group && exercise.equipment === "halteres"
+      )
+      const selected = options.find((exercise) => !usedIds.has(exercise.id)) ?? current
+      usedIds.add(selected.id)
+      return { ...selected }
+    })
+    const prefill = buildPrefill(session, lastLog, 1, exercises)
+    dirtyRef.current = true
+    setActiveExercises(exercises)
+    setRows(prefill.rows)
+    setPickerFor(null)
   }
 
   // marca/desmarca a série e, ao concluir, dispara o timer de descanso
@@ -284,15 +425,18 @@ export default function TreinoPage() {
     dirtyRef.current = false
     startedAtRef.current = null
     const factor = currentFactor()
+    setActiveExercises(session.exercises)
     applyPrefill(buildPrefill(session, lastLog, factor))
     setDraftRestored(false)
     setRegressionApplied(factor < 1)
   }
 
   const handleSave = async () => {
-    const entries: ExerciseLog[] = session.exercises
+    const entries: ExerciseLog[] = activeExercises
       .map((ex) => ({
         exerciseId: ex.id,
+        exerciseName: ex.name,
+        muscleGroup: groupOfExercise(ex),
         sets: (rows[ex.id] ?? [])
           .map((r) => ({
             weight: parseFloat(r.weight.replace(",", ".")) || 0,
@@ -330,12 +474,13 @@ export default function TreinoPage() {
         minutes,
         avgBpm: session.kind === "cardio" ? parseInt(cardioBpm) || undefined : undefined,
         mode: cardioMode,
+        purpose: cardioPurpose,
       }
       log.durationMin = minutes
     } else if (session.cardioAfter) {
       const minutes = parseInt(finisherMin) || 0
       if (minutes > 0) {
-        log.cardio = { minutes, mode: "Bike ou esteira — Z2" }
+        log.cardio = { minutes, mode: "Cardio após musculação", purpose: "zone2" }
       }
     }
 
@@ -355,7 +500,7 @@ export default function TreinoPage() {
         }
 
         if (historicalMax > 0 && e1rm > historicalMax) {
-          const exDef = session.exercises.find((e) => e.id === entry.exerciseId)
+          const exDef = activeExercises.find((e) => e.id === entry.exerciseId)
           if (exDef) newPRs.push(exDef.name)
         }
       }
@@ -550,13 +695,97 @@ export default function TreinoPage() {
                 style={{ width: `${progressPct}%` }}
               />
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => openExercisePicker("new")}
+                className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-ember/50 hover:text-bone"
+              >
+                <Plus size={14} /> Adicionar exercício
+              </button>
+              <button
+                onClick={useDumbbellVersion}
+                className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-gold/50 hover:text-bone"
+              >
+                <Dumbbell size={14} /> Versão com halteres
+              </button>
+            </div>
           </div>
         )}
       </Card>
 
+      {pickerFor && (
+        <Card className="rise mb-4 border-l-4 border-l-gold">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-bone">
+                {pickerFor === "new" ? "Adicionar exercício" : "Trocar exercício"}
+              </h3>
+              <p className="mt-0.5 text-xs text-steel-dim">
+                Escolha um equivalente ou registre qualquer movimento.
+              </p>
+            </div>
+            <button onClick={() => setPickerFor(null)} className="p-1 text-steel hover:text-bone" aria-label="Fechar">
+              <X size={18} />
+            </button>
+          </div>
+
+          <label className="mt-3 block">
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Grupo muscular</span>
+            <select
+              value={pickerGroup}
+              onChange={(event) => setPickerGroup(event.target.value as MuscleGroup)}
+              className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-gold"
+            >
+              {MUSCLE_GROUP_OPTIONS.map((group) => <option key={group}>{group}</option>)}
+            </select>
+          </label>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {EXERCISE_CATALOG.filter((exercise) => exercise.muscleGroup === pickerGroup).map((exercise) => (
+              <button
+                key={exercise.id}
+                onClick={() => applyExerciseChoice(exercise)}
+                className="rounded border border-seam bg-coal px-3 py-2 text-left transition-colors hover:border-gold/60"
+              >
+                <span className="block text-sm font-semibold text-bone">{exercise.name}</span>
+                <span className="font-mono text-[9px] uppercase text-steel-dim">
+                  {exercise.equipment} · {exercise.sets} × {exercise.repsMin}–{exercise.repsMax}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 border-t border-seam pt-3">
+            <p className="font-mono text-[10px] uppercase text-steel-dim">Outro exercício</p>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                value={customName}
+                onChange={(event) => setCustomName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    addCustomExercise()
+                  }
+                }}
+                placeholder="Ex.: complexo com halteres"
+                className="min-w-0 flex-1 rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-gold"
+              />
+              <button
+                onClick={addCustomExercise}
+                disabled={!customName.trim()}
+                className="rounded-md bg-gold px-3 text-sm font-bold text-coal disabled:opacity-40"
+              >
+                Incluir
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* musculação */}
-      {session.exercises.map((ex, exIdx) => {
-        const lastEntry = lastLog?.entries.find((e) => e.exerciseId === ex.id)
+      {activeExercises.map((ex, exIdx) => {
+        const previous = exerciseHistory[ex.id]
+        const lastEntry = previous?.entry
         const doneCount = (rows[ex.id] ?? []).filter((r) => r.done).length
         const exComplete = doneCount > 0 && doneCount === (rows[ex.id]?.length ?? 0)
         const hitTop =
@@ -584,13 +813,23 @@ export default function TreinoPage() {
                 </h3>
                 <p className="font-mono text-[10px] text-steel-dim">{ex.nameEn}</p>
               </div>
-              <span
-                className="shrink-0 rounded bg-iron-2 px-2 py-1 font-mono text-[11px] text-steel"
-                title={`Descanso ${ex.rest}`}
-              >
-                {ex.sets} × {ex.repsMin}–{ex.repsMax}
-                {ex.unit === "seconds" ? "s" : ""} · {ex.rest}
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <span
+                  className="rounded bg-iron-2 px-2 py-1 font-mono text-[11px] text-steel"
+                  title={`Descanso ${ex.rest}`}
+                >
+                  {ex.sets} × {ex.repsMin}–{ex.repsMax}
+                  {ex.unit === "seconds" ? "s" : ""} · {ex.rest}
+                </span>
+                <div className="flex gap-1">
+                  <button onClick={() => openExercisePicker(ex.id)} className="rounded border border-seam p-1.5 text-steel hover:text-bone" aria-label={`Trocar ${ex.name}`}>
+                    <RefreshCw size={12} />
+                  </button>
+                  <button onClick={() => removeExercise(ex.id)} className="rounded border border-seam p-1.5 text-steel-dim hover:text-ember" aria-label={`Remover ${ex.name}`}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
             </div>
             <p className="mt-1 text-xs text-steel-dim">{ex.note}</p>
 
@@ -598,7 +837,7 @@ export default function TreinoPage() {
             {lastEntry && (
               <div className="mt-2 flex items-center gap-1.5 rounded bg-iron-2 px-2.5 py-1.5 font-mono text-[11px] text-steel">
                 <History size={12} className="shrink-0 text-steel-dim" />
-                <span className="text-steel-dim">{shortDate(lastLog!.date)}:</span>
+                <span className="text-steel-dim">{shortDate(previous!.log.date)}:</span>
                 <span className="text-bone">
                   {lastEntry.sets[0]?.weight ?? 0} kg × {lastEntry.sets.map((s) => s.reps).join("·")}
                 </span>
@@ -613,7 +852,7 @@ export default function TreinoPage() {
             {/* séries — alvos de toque grandes */}
             <div className="mt-3 space-y-2">
               {(rows[ex.id] ?? []).map((row, i) => {
-                const lastEntry = lastLog?.entries.find((e) => e.exerciseId === ex.id)
+                const lastEntry = exerciseHistory[ex.id]?.entry
                 const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
                 let indicator = null
                 if (lastSet && row.weight) {
@@ -749,6 +988,18 @@ export default function TreinoPage() {
                 </div>
               )})}
             </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                onClick={() => removeSet(ex.id)}
+                disabled={(rows[ex.id]?.length ?? 0) <= 1}
+                className="rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel disabled:opacity-30"
+              >
+                − série
+              </button>
+              <button onClick={() => addSet(ex.id)} className="rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel hover:text-bone">
+                + série
+              </button>
+            </div>
           </Card>
         )
       })}
@@ -757,13 +1008,33 @@ export default function TreinoPage() {
       {(session.kind === "cardio" || session.kind === "sport") && (
         <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
           <h3 className="text-base font-semibold text-bone">
-            {session.kind === "cardio" ? "Sessão Zona 2" : "Sessão de esporte"}
+            {session.kind === "cardio" ? "Sessão de cardio" : "Sessão de esporte"}
           </h3>
-          {session.kind === "cardio" && (
+          {cardioPurpose === "zone2" && (
             <p className="mt-1 text-xs text-steel-dim">
               Ritmo de conversa: fala frases completas, não canta (~120–140 bpm).
             </p>
           )}
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            {CARDIO_PURPOSES.map((purpose) => (
+              <button
+                key={purpose.id}
+                onClick={() => {
+                  dirtyRef.current = true
+                  setCardioPurpose(purpose.id)
+                }}
+                className={cn(
+                  "rounded border px-2 py-2 text-xs font-semibold transition-colors",
+                  cardioPurpose === purpose.id
+                    ? "border-zone bg-zone/15 text-zone"
+                    : "border-seam text-steel hover:text-bone"
+                )}
+                title={purpose.hint}
+              >
+                {purpose.label}
+              </button>
+            ))}
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {(session.kind === "cardio" ? CARDIO_MODES : SPORT_MODES).map((m) => (
               <button
@@ -780,6 +1051,16 @@ export default function TreinoPage() {
               </button>
             ))}
           </div>
+          <label className="mt-3 block">
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Modalidade livre</span>
+            <input
+              type="text"
+              value={cardioMode}
+              onChange={(event) => setCardio(setCardioMode, event.target.value)}
+              placeholder="Ex.: natação intensa, corda, trilha..."
+              className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-zone"
+            />
+          </label>
           <div className="mt-4 flex gap-3">
             <label className="flex flex-1 flex-col gap-1">
               <span className="font-mono text-[10px] uppercase text-steel-dim">Minutos</span>

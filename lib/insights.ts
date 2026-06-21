@@ -1,4 +1,5 @@
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
+import { zone2Minutes } from "./cardio"
 import { GymData, WorkoutLog } from "./types"
 import { bestE1RM, toDateKey, workoutVolume } from "./utils"
 
@@ -24,6 +25,7 @@ export interface PrEvent {
   /** yyyy-MM-dd */
   date: string
   exerciseId: string
+  exerciseName?: string
 }
 
 /**
@@ -41,7 +43,7 @@ export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
       if (e1rm <= 0) continue
       const prev = best[e.exerciseId] ?? 0
       if (prev > 0 && e1rm > prev) {
-        events.push({ date: w.date, exerciseId: e.exerciseId })
+        events.push({ date: w.date, exerciseId: e.exerciseId, exerciseName: e.exerciseName })
       }
       if (e1rm > prev) best[e.exerciseId] = e1rm
     }
@@ -72,7 +74,11 @@ export function internalLoad(w: WorkoutLog): number {
   if (kind === "lift") {
     return Math.round(workoutVolume(w) * 0.05 + (w.cardio?.minutes ?? 0) * 4)
   }
-  if (kind === "sport") return (w.cardio?.minutes ?? 0) * 7
+  if (w.cardio?.purpose === "intense") return (w.cardio?.minutes ?? 0) * 8
+  if (w.cardio?.purpose === "zone2") return (w.cardio?.minutes ?? 0) * 4
+  if (kind === "sport" || w.cardio?.purpose === "sport") {
+    return (w.cardio?.minutes ?? 0) * 7
+  }
   return (w.cardio?.minutes ?? 0) * 4
 }
 
@@ -140,6 +146,7 @@ export interface WeeklySummary {
 // METs aproximados (Compendium of Physical Activities)
 const MET_LIFT = 5 // musculação vigorosa
 const MET_Z2 = 6.5 // bike/esteira em ritmo moderado
+const MET_INTENSE = 8.5 // corda, tiros ou natação vigorosa
 const MET_SPORT = 8 // futsal/flag/jiu-jitsu recreativo
 const LIFT_SESSION_MIN = 60 // duração típica do treino de força
 const FALLBACK_WEIGHT_KG = 85
@@ -154,10 +161,7 @@ export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
 
   const sessions = ws.filter((w) => w.sessionId !== "rest").length
   const volume = ws.reduce((s, w) => s + workoutVolume(w), 0)
-  const z2Minutes = ws.reduce(
-    (s, w) => s + (w.sessionId !== "sport" ? w.cardio?.minutes ?? 0 : 0),
-    0
-  )
+  const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 
   const weightKg =
     [...data.body].reverse().find((b) => b.weightKg > 0)?.weightKg ??
@@ -165,19 +169,22 @@ export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
   const kcalPerMin = (met: number) => (met * 3.5 * weightKg) / 200
   let kcal = 0
   for (const w of ws) {
-    if (w.sessionId === "sport") {
+    const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
+    if (purpose === "sport") {
       kcal += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_SPORT)
     } else {
       if (PLAN_BY_ID[w.sessionId]?.kind === "lift") {
         kcal += LIFT_SESSION_MIN * kcalPerMin(MET_LIFT)
       }
-      kcal += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_Z2)
+      kcal +=
+        (w.cardio?.minutes ?? 0) *
+        kcalPerMin(purpose === "intense" ? MET_INTENSE : MET_Z2)
     }
   }
 
   const prNames = prEvents(data.workouts)
     .filter((p) => p.date >= start && p.date <= end)
-    .map((p) => EXERCISES_BY_ID[p.exerciseId]?.name ?? p.exerciseId)
+    .map((p) => p.exerciseName ?? EXERCISES_BY_ID[p.exerciseId]?.name ?? p.exerciseId)
 
   return {
     sessions,
