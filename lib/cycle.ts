@@ -1,5 +1,6 @@
 import { SessionId, WorkoutLog } from "./types"
 import { zone2Minutes } from "./cardio"
+import { countsTowardTrainingTarget } from "./plan"
 import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
 
 /**
@@ -168,7 +169,7 @@ export function rolling7(workouts: WorkoutLog[], today: Date): Rolling7 {
   const end = toDateKey(today)
   const ws = workouts.filter((w) => w.date >= start && w.date <= end)
   return {
-    sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
+    sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
     volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
     z2: ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0),
   }

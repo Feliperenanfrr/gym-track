@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils"
 
 const WEEKDAY_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
+// Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
+const WEEK_STRUCTURE = PLAN.filter((s) => s.weekday >= 1)
+
 export default function PlanoPage() {
   return (
     <main>
@@ -46,12 +49,12 @@ export default function PlanoPage() {
 
       <SectionTitle>Estrutura da semana</SectionTitle>
       <Card className="rise rise-3 p-0">
-        {PLAN.map((s, i) => (
+        {WEEK_STRUCTURE.map((s, i) => (
           <div
             key={s.id}
             className={cn(
               "flex items-center gap-3 px-4 py-2.5",
-              i < PLAN.length - 1 && "border-b border-seam"
+              i < WEEK_STRUCTURE.length - 1 && "border-b border-seam"
             )}
           >
             <span className="w-16 shrink-0 font-mono text-[10px] uppercase text-steel-dim">

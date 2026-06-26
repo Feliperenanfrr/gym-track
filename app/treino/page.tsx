@@ -7,7 +7,7 @@ import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SetRow, WorkoutLog } from "@/lib/types"
+import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SetRow, WorkoutLog } from "@/lib/types"
 import {
   CatalogExercise,
   EXERCISE_CATALOG,
@@ -39,6 +39,14 @@ const CARDIO_PURPOSES: { id: CardioPurpose; label: string; hint: string }[] = [
   { id: "intense", label: "Intenso", hint: "tiros, corda ou natação forte" },
   { id: "sport", label: "Esporte", hint: "jogo, luta ou treino técnico" },
 ]
+
+function isStrengthKind(kind: SessionKind): boolean {
+  return kind === "lift" || kind === "mixed"
+}
+
+function hasCardioForm(kind: SessionKind): boolean {
+  return kind === "cardio" || kind === "sport" || kind === "mixed"
+}
 
 function shortDate(key: string): string {
   const d = fromDateKey(key)
@@ -119,17 +127,18 @@ export default function TreinoPage() {
     )
   }, [data, session, today])
 
-  /** Última execução por exercício, mesmo que tenha sido feita em outra sessão. */
+  /** Última execução por exercício; treinos oficiais não usam Avulso como prefill. */
   const exerciseHistory = useMemo(() => {
     const history: Record<string, { log: WorkoutLog; entry: ExerciseLog }> = {}
-    if (!data || !today) return history
+    if (!data || !today || !session) return history
     const todayKey = toDateKey(today)
     for (const log of [...data.workouts].sort((a, b) => a.date.localeCompare(b.date))) {
       if (log.date >= todayKey) continue
+      if (session.id !== "free" && log.sessionId === "free") continue
       for (const entry of log.entries) history[entry.exerciseId] = { log, entry }
     }
     return history
-  }, [data, today])
+  }, [data, session, today])
 
   /**
    * Pré-preenchimento a partir do último treino desta sessão.
@@ -178,7 +187,11 @@ export default function TreinoPage() {
             : "45"
           : s!.kind === "sport"
             ? "60"
-            : "",
+            : s!.kind === "mixed"
+              ? ll?.cardio
+                ? String(ll.cardio.minutes)
+                : "60"
+              : "",
       cardioBpm: ll?.cardio?.avgBpm ? String(ll.cardio.avgBpm) : "130",
       cardioMode:
         ll?.cardio?.mode ?? (s!.kind === "sport" ? SPORT_MODES[0] : CARDIO_MODES[0]),
@@ -447,8 +460,14 @@ export default function TreinoPage() {
       }))
       .filter((e) => e.sets.length > 0)
 
+    const cardioMinutes = parseInt(cardioMin) || 0
+    if (session.kind === "mixed" && entries.length === 0 && cardioMinutes <= 0) {
+      setSaveError("Adicione cardio ou pelo menos um exercício no avulso.")
+      return
+    }
+
     const workoutDay =
-      session.kind === "lift" && startedAtRef.current
+      isStrengthKind(session.kind) && startedAtRef.current
         ? new Date(startedAtRef.current)
         : new Date()
 
@@ -460,7 +479,7 @@ export default function TreinoPage() {
     }
 
     // duração real da musculação: 1ª série marcada → salvar
-    if (session.kind === "lift" && startedAtRef.current) {
+    if (isStrengthKind(session.kind) && startedAtRef.current) {
       log.startedAt = new Date(startedAtRef.current).toISOString()
       log.durationMin = Math.min(
         480,
@@ -468,15 +487,19 @@ export default function TreinoPage() {
       )
     }
 
-    if (session.kind === "cardio" || session.kind === "sport") {
-      const minutes = parseInt(cardioMin) || 0
-      log.cardio = {
-        minutes,
-        avgBpm: session.kind === "cardio" ? parseInt(cardioBpm) || undefined : undefined,
-        mode: cardioMode,
-        purpose: cardioPurpose,
+    if (hasCardioForm(session.kind)) {
+      if (session.kind !== "mixed" || cardioMinutes > 0) {
+        log.cardio = {
+          minutes: cardioMinutes,
+          avgBpm: session.kind !== "sport" ? parseInt(cardioBpm) || undefined : undefined,
+          mode: cardioMode,
+          purpose: cardioPurpose,
+        }
       }
-      log.durationMin = minutes
+      log.durationMin =
+        session.kind === "mixed"
+          ? Math.min(480, (log.durationMin ?? 0) + cardioMinutes)
+          : cardioMinutes
     } else if (session.cardioAfter) {
       const minutes = parseInt(finisherMin) || 0
       if (minutes > 0) {
@@ -539,7 +562,7 @@ export default function TreinoPage() {
 
   const progressPct =
     totals.setsTotal > 0 ? Math.round((totals.setsDone / totals.setsTotal) * 100) : 0
-  const isLift = session.kind === "lift"
+  const isLift = isStrengthKind(session.kind)
 
   return (
     <main className="pb-24">
@@ -683,18 +706,22 @@ export default function TreinoPage() {
         )}
         {isLift && (
           <div className="mt-3">
-            <div className="flex items-baseline justify-between font-mono text-xs">
-              <span className="text-steel">
-                {totals.setsDone}/{totals.setsTotal} séries
-              </span>
-              <span className="text-ember-hot">{formatKg(totals.volume)}</span>
-            </div>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-iron-2">
-              <div
-                className="h-full rounded-full bg-ember transition-all duration-300"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+            {totals.setsTotal > 0 && (
+              <>
+                <div className="flex items-baseline justify-between font-mono text-xs">
+                  <span className="text-steel">
+                    {totals.setsDone}/{totals.setsTotal} séries
+                  </span>
+                  <span className="text-ember-hot">{formatKg(totals.volume)}</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-iron-2">
+                  <div
+                    className="h-full rounded-full bg-ember transition-all duration-300"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+              </>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => openExercisePicker("new")}
@@ -702,12 +729,14 @@ export default function TreinoPage() {
               >
                 <Plus size={14} /> Adicionar exercício
               </button>
-              <button
-                onClick={useDumbbellVersion}
-                className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-gold/50 hover:text-bone"
-              >
-                <Dumbbell size={14} /> Versão com halteres
-              </button>
+              {activeExercises.length > 0 && (
+                <button
+                  onClick={useDumbbellVersion}
+                  className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-gold/50 hover:text-bone"
+                >
+                  <Dumbbell size={14} /> Versão com halteres
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1005,10 +1034,14 @@ export default function TreinoPage() {
       })}
 
       {/* cardio / esporte */}
-      {(session.kind === "cardio" || session.kind === "sport") && (
+      {hasCardioForm(session.kind) && (
         <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
           <h3 className="text-base font-semibold text-bone">
-            {session.kind === "cardio" ? "Sessão de cardio" : "Sessão de esporte"}
+            {session.kind === "sport"
+              ? "Sessão de esporte"
+              : session.kind === "mixed"
+                ? "Cardio avulso"
+                : "Sessão de cardio"}
           </h3>
           {cardioPurpose === "zone2" && (
             <p className="mt-1 text-xs text-steel-dim">
@@ -1036,7 +1069,7 @@ export default function TreinoPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(session.kind === "cardio" ? CARDIO_MODES : SPORT_MODES).map((m) => (
+            {(session.kind === "sport" ? SPORT_MODES : CARDIO_MODES).map((m) => (
               <button
                 key={m}
                 onClick={() => setCardio(setCardioMode, m)}
@@ -1072,7 +1105,7 @@ export default function TreinoPage() {
                 className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
               />
             </label>
-            {session.kind === "cardio" && (
+            {session.kind !== "sport" && (
               <label className="flex flex-1 flex-col gap-1">
                 <span className="font-mono text-[10px] uppercase text-steel-dim">BPM médio</span>
                 <input
@@ -1131,6 +1164,10 @@ export default function TreinoPage() {
             <Save size={16} />
             {saving
               ? "Salvando…"
+              : session.kind === "mixed"
+                ? totals.setsTotal > 0
+                  ? `Salvar avulso · ${totals.setsDone}/${totals.setsTotal}`
+                  : "Salvar avulso"
               : isLift
                 ? `Salvar treino · ${totals.setsDone}/${totals.setsTotal}`
                 : "Salvar treino"}
