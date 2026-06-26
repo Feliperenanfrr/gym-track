@@ -4,10 +4,11 @@ export type SessionId =
   | "lowerA"
   | "upperB"
   | "lowerB"
+  | "free"
   | "sport"
   | "rest"
 
-export type SessionKind = "lift" | "cardio" | "sport" | "rest"
+export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 
 export type MuscleGroup =
   | "Quadríceps"

@@ -92,6 +92,18 @@ export const PLAN: SessionPlan[] = [
     ],
   },
   {
+    id: "free",
+    title: "Avulso",
+    subtitle: "Cardio + exercícios soltos",
+    weekday: 0,
+    duration: "Livre",
+    kind: "mixed",
+    accent: "zone",
+    description:
+      "Registro livre para cardio e estímulos pontuais. Conta volume muscular e cardio, mas não avança Upper/Lower.",
+    exercises: [],
+  },
+  {
     id: "sport",
     title: "Esporte",
     subtitle: "Futsal / Flag / Jiu-jitsu",
@@ -132,6 +144,18 @@ export function sessionOfExercise(exerciseId: string): SessionPlan | undefined {
 /** Sessão planejada para um dia ISO (1=Seg..7=Dom) */
 export function sessionForWeekday(isoWeekday: number): SessionPlan {
   return PLAN.find((s) => s.weekday === isoWeekday) ?? PLAN_BY_ID.rest
+}
+
+const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
+  "upperA",
+  "cardioZ2",
+  "lowerA",
+  "upperB",
+  "lowerB",
+])
+
+export function countsTowardTrainingTarget(sessionId: SessionId): boolean {
+  return TRAINING_TARGET_SESSION_IDS.has(sessionId)
 }
 
 export const GOLDEN_RULES = [

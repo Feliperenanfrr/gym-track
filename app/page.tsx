@@ -17,7 +17,7 @@ import {
 } from "@/lib/cycle"
 import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
-import { PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
+import { countsTowardTrainingTarget, PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId } from "@/lib/types"
@@ -109,7 +109,7 @@ function buildWeeks(data: GymData, today: Date) {
       label: weekLabel(monday),
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + zone2Minutes(w), 0),
-      sessions: ws.filter((w) => w.sessionId !== "sport" && w.sessionId !== "rest").length,
+      sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
       groups: hardSetsByGroup(ws),
     })
   }
@@ -522,6 +522,7 @@ export default function Dashboard() {
                               .replace("Upper ", "U")
                               .replace("Lower ", "L")
                               .replace("Cardio Zona 2", "Z2")
+                              .replace("Avulso", "AVL")
                               .replace("Esporte", "ESP")
                           )
                           .join("·")

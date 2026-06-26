@@ -1,6 +1,7 @@
 import { prEvents } from "./insights"
 import { zone2Minutes } from "./cardio"
 import { GymData } from "./types"
+import { countsTowardTrainingTarget } from "./plan"
 import { fromDateKey, mondayOf, toDateKey, workoutVolume } from "./utils"
 
 /**
@@ -37,7 +38,7 @@ export function computeAchievements(data: GymData, today: Date): Achievement[] {
   for (const w of workouts) {
     const key = toDateKey(mondayOf(fromDateKey(w.date)))
     weeksWithWorkout.add(key)
-    if (w.sessionId !== "sport" && w.sessionId !== "rest") {
+    if (countsTowardTrainingTarget(w.sessionId)) {
       sessionsPerWeek.set(key, (sessionsPerWeek.get(key) ?? 0) + 1)
     }
   }

@@ -1,4 +1,4 @@
-import { EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
+import { countsTowardTrainingTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
 import { zone2Minutes } from "./cardio"
 import { GymData, WorkoutLog } from "./types"
 import { bestE1RM, toDateKey, workoutVolume } from "./utils"
@@ -68,10 +68,13 @@ export function internalLoad(w: WorkoutLog): number {
   const kind = PLAN_BY_ID[w.sessionId]?.kind
   if (w.srpe && w.srpe > 0) {
     const minutes =
-      w.durationMin ?? (kind === "lift" ? 60 : w.cardio?.minutes ?? 0)
+      w.durationMin ??
+      (kind === "lift" || (kind === "mixed" && w.entries.length > 0)
+        ? 60
+        : w.cardio?.minutes ?? 0)
     if (minutes > 0) return w.srpe * minutes
   }
-  if (kind === "lift") {
+  if (kind === "lift" || kind === "mixed") {
     return Math.round(workoutVolume(w) * 0.05 + (w.cardio?.minutes ?? 0) * 4)
   }
   if (w.cardio?.purpose === "intense") return (w.cardio?.minutes ?? 0) * 8
@@ -159,7 +162,7 @@ export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
   )
   const ws = data.workouts.filter((w) => w.date >= start && w.date <= end)
 
-  const sessions = ws.filter((w) => w.sessionId !== "rest").length
+  const sessions = ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length
   const volume = ws.reduce((s, w) => s + workoutVolume(w), 0)
   const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 
@@ -173,7 +176,7 @@ export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
     if (purpose === "sport") {
       kcal += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_SPORT)
     } else {
-      if (PLAN_BY_ID[w.sessionId]?.kind === "lift") {
+      if ((PLAN_BY_ID[w.sessionId]?.kind === "lift" || PLAN_BY_ID[w.sessionId]?.kind === "mixed") && w.entries.length > 0) {
         kcal += LIFT_SESSION_MIN * kcalPerMin(MET_LIFT)
       }
       kcal +=
