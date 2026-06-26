@@ -43,6 +43,19 @@ export interface CycleSuggestion {
   daysSinceLastLift: number | null
 }
 
+export interface CycleTodayView {
+  /** sugestão bruta do ciclo, usada para saber o próximo lift */
+  suggestion: CycleSuggestion
+  /** sessão que o card principal deve mostrar */
+  sessionId: SessionId
+  /** sessão concluída hoje que justifica o estado "feito" */
+  completedSessionId: SessionId | null
+  /** lift concluído hoje, quando houver */
+  completedLiftSessionId: SessionId | null
+  /** o card principal representa algo realmente feito hoje */
+  done: boolean
+}
+
 const DAY_MS = 86_400_000
 
 function dateKeyDaysAgo(today: Date, days: number): string {
@@ -112,6 +125,31 @@ export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestio
     reason: "next",
     loadFactor: 1,
     daysSinceLastLift: daysSince,
+  }
+}
+
+/**
+ * Estado do card principal no modo ciclo.
+ *
+ * O ciclo pode avançar para o próximo lift assim que um lift é salvo hoje. Nesse
+ * caso, o painel não deve marcar o próximo lift como concluído; ele mostra o lift
+ * que acabou de ser registrado e mantém a próxima sugestão em `suggestion`.
+ */
+export function cycleTodayView(workouts: WorkoutLog[], today: Date): CycleTodayView {
+  const suggestion = nextInCycle(workouts, today)
+  const todayKey = toDateKey(today)
+  const todayLogs = workouts.filter((w) => w.date === todayKey && w.sessionId !== "rest")
+  const suggestedLog = todayLogs.find((w) => w.sessionId === suggestion.sessionId) ?? null
+  const completedLift =
+    [...todayLogs].reverse().find((w) => LIFT_CYCLE.includes(w.sessionId)) ?? null
+  const completedLog = suggestedLog ?? completedLift
+
+  return {
+    suggestion,
+    sessionId: completedLog?.sessionId ?? suggestion.sessionId,
+    completedSessionId: completedLog?.sessionId ?? null,
+    completedLiftSessionId: completedLift?.sessionId ?? null,
+    done: Boolean(completedLog),
   }
 }
 
