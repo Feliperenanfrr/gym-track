@@ -8,9 +8,9 @@ import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components
 import { computeAchievements } from "@/lib/achievements"
 import { zone2Minutes } from "@/lib/cardio"
 import {
+  cycleTodayView,
   getScheduleMode,
   last7Days,
-  nextInCycle,
   rolling7,
   ScheduleMode,
   setScheduleMode,
@@ -236,33 +236,33 @@ export default function Dashboard() {
     const sleepMetrics = computeSleepMetrics(data.sleep, today)
 
     // modo ciclo: próximo da fila + janela móvel de 7 dias
-    const cycle = nextInCycle(data.workouts, today)
+    const cycleView = cycleTodayView(data.workouts, today)
+    const cycle = cycleView.suggestion
     const roll = rolling7(data.workouts, today)
     const strip = last7Days(data.workouts, today)
-    const anyToday = data.workouts.some(
-      (w) => w.date === todayKey && w.sessionId !== "rest"
-    )
 
     // card principal unificado entre os dois modos
     const headSession =
-      mode === "ciclo" ? PLAN_BY_ID[cycle.sessionId] : todaySession
-    const headDone = mode === "ciclo" ? anyToday : todayDone
+      mode === "ciclo" ? PLAN_BY_ID[cycleView.sessionId] : todaySession
+    const headDone = mode === "ciclo" ? cycleView.done : todayDone
     const headKicker =
       mode === "ciclo"
-        ? anyToday
-          ? "Hoje concluído · próximo do ciclo"
+        ? cycleView.done
+          ? "Hoje concluído"
           : "Próximo do ciclo"
         : "Treino de hoje"
     const headNote =
       mode !== "ciclo"
         ? null
-        : cycle.reason === "recovery"
-          ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
-          : cycle.reason === "regression"
-            ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
-            : cycle.reason === "start"
-              ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
-              : null
+        : cycleView.completedLiftSessionId
+          ? `Próximo do ciclo: ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+          : cycle.reason === "recovery"
+            ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+            : cycle.reason === "regression"
+              ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
+              : cycle.reason === "start"
+                ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
+                : null
 
     return {
       todaySession,

@@ -59,6 +59,17 @@ function rowToWorkout(r: WorkoutRow): WorkoutLog {
   }
 }
 
+function sameWorkoutSlot(
+  a: Pick<WorkoutLog, "date" | "sessionId">,
+  b: Pick<WorkoutLog, "date" | "sessionId">
+) {
+  return a.date === b.date && a.sessionId === b.sessionId
+}
+
+function sortWorkouts(workouts: WorkoutLog[]) {
+  return [...workouts].sort((a, b) => a.date.localeCompare(b.date))
+}
+
 function rowToBody(r: BodyRow): BodyLog {
   return {
     date: r.date,
@@ -101,10 +112,12 @@ export function useGymData() {
   const [data, setData] = useState<GymData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const dataRef = useRef<GymData | null>(null)
   /** total de água por dia, espelho síncrono do estado (ver addWater) */
   const waterRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
+    dataRef.current = data
     if (!data) return
     const map: Record<string, number> = {}
     for (const h of data.hydration) map[h.date] = h.ml
@@ -164,13 +177,14 @@ export function useGymData() {
   }, [flush, refreshPending])
 
   const addWorkout = useCallback(async (log: WorkoutLog) => {
+    const previousWorkout =
+      dataRef.current?.workouts.find((w) => sameWorkoutSlot(w, log)) ?? null
+
     // 1) atualização otimista na tela
     setData((prev) => {
       const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
       const workouts = [
-        ...base.workouts.filter(
-          (w) => !(w.date === log.date && w.sessionId === log.sessionId)
-        ),
+        ...base.workouts.filter((w) => !sameWorkoutSlot(w, log)),
         log,
       ].sort((a, b) => a.date.localeCompare(b.date))
       return { ...base, workouts }
@@ -213,9 +227,7 @@ export function useGymData() {
       setData((prev) => {
         if (!prev) return prev
         const workouts = [
-          ...prev.workouts.filter(
-            (w) => !(w.date === saved.date && w.sessionId === saved.sessionId)
-          ),
+          ...prev.workouts.filter((w) => !sameWorkoutSlot(w, saved)),
           saved,
         ].sort((a, b) => a.date.localeCompare(b.date))
         return { ...prev, workouts }
@@ -225,6 +237,18 @@ export function useGymData() {
         enqueueIt() // sem rede → fila, mantém otimista
         return
       }
+      setData((prev) => {
+        if (!prev) return prev
+        const current = prev.workouts.find((w) => sameWorkoutSlot(w, log))
+        if (!current || current.id !== log.id) return prev
+        const withoutOptimistic = prev.workouts.filter((w) => !sameWorkoutSlot(w, log))
+        return {
+          ...prev,
+          workouts: sortWorkouts(
+            previousWorkout ? [...withoutOptimistic, previousWorkout] : withoutOptimistic
+          ),
+        }
+      })
       throw e
     }
   }, [])
@@ -392,6 +416,8 @@ export function useGymData() {
   }, [])
 
   const deleteWorkout = useCallback(async (id: string, date: string, sessionId: string) => {
+    const previousWorkout = dataRef.current?.workouts.find((w) => w.id === id) ?? null
+
     setData((prev) => {
       if (!prev) return prev
       return {
@@ -423,6 +449,12 @@ export function useGymData() {
       if (isNetworkError(e)) {
         enqueueIt()
         return
+      }
+      if (previousWorkout) {
+        setData((prev) => {
+          if (!prev || prev.workouts.some((w) => w.id === id)) return prev
+          return { ...prev, workouts: sortWorkouts([...prev.workouts, previousWorkout]) }
+        })
       }
       throw e
     }
