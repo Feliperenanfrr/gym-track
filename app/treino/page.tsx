@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Check, ChevronUp, CloudOff, Dumbbell, History, Minus, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, Minus, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
@@ -916,18 +916,20 @@ export default function TreinoPage() {
               {(rows[ex.id] ?? []).map((row, i) => {
                 const lastEntry = exerciseHistory[ex.id]?.entry
                 const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
-                let indicator = null
+                // tendência da série vs. a mesma série da última vez (carga;
+                // em empate, reps) — feedback ao vivo de sobrecarga progressiva
+                let trend: "up" | "down" | "same" | null = null
                 if (lastSet && row.weight) {
                   const currentW = parseFloat(row.weight)
                   if (!isNaN(currentW)) {
-                    if (currentW > lastSet.weight) indicator = "🔼"
-                    else if (currentW < lastSet.weight) indicator = "🔽"
+                    if (currentW > lastSet.weight) trend = "up"
+                    else if (currentW < lastSet.weight) trend = "down"
                     else {
                       const currentR = parseInt(row.reps)
                       if (!isNaN(currentR)) {
-                        if (currentR > lastSet.reps) indicator = "🔼"
-                        else if (currentR < lastSet.reps) indicator = "🔽"
-                        else indicator = "▶️"
+                        if (currentR > lastSet.reps) trend = "up"
+                        else if (currentR < lastSet.reps) trend = "down"
+                        else trend = "same"
                       }
                     }
                   }
@@ -951,7 +953,29 @@ export default function TreinoPage() {
                       >
                         {i + 1}
                       </span>
-                      {indicator && <span className="text-[10px] text-steel-dim">{indicator}</span>}
+                      {trend && (
+                        <span
+                          title={
+                            trend === "up"
+                              ? "Mais que da última vez"
+                              : trend === "down"
+                                ? "Menos que da última vez"
+                                : "Igual à última vez"
+                          }
+                          className={cn(
+                            "flex items-center justify-center",
+                            trend === "up" ? "text-ember" : "text-steel-dim"
+                          )}
+                        >
+                          {trend === "up" ? (
+                            <ChevronUp size={14} strokeWidth={3} />
+                          ) : trend === "down" ? (
+                            <ChevronDown size={14} strokeWidth={3} />
+                          ) : (
+                            <Minus size={12} strokeWidth={3} />
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex min-w-0 flex-1 items-end gap-2">
