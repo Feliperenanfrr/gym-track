@@ -168,7 +168,7 @@ export default function Dashboard() {
     })
 
     // peso
-    const weights = data.body.filter((b) => b.weightKg > 0)
+    const weights = data.body.filter((b) => (b.weightKg ?? 0) > 0)
     const currentWeight = weights[weights.length - 1]?.weightKg
     const firstWeight = weights[0]?.weightKg
     const weightDelta =

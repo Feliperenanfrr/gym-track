@@ -6,13 +6,16 @@ import {
   BodyFatChart,
   CompositionChart,
   HydrationChart,
+  LeanFatStackChart,
   SleepChart,
+  VisceralChart,
   WeightChart,
   WaistChart,
 } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
 import { waterGoalMl } from "@/lib/insights"
+import { BodyLog } from "@/lib/types"
 import {
   computeSleepMetrics,
   formatSleepDuration,
@@ -27,6 +30,29 @@ import { cn, fromDateKey, toDateKey, toOperationalDateKey } from "@/lib/utils"
 function shortDate(key: string): string {
   const d = fromDateKey(key)
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+type WeightQuality = {
+  /** variação de peso (kg) do 1º ao último registro com peso + gordura */
+  dWeight: number
+  /** variação de massa de gordura (kg) */
+  dFat: number
+  /** variação de massa magra (kg) */
+  dLean: number
+  /** fração da variação de peso explicada pela gordura (%) */
+  fatShare: number | null
+  losing: boolean
+}
+
+/** Leitura em uma frase da qualidade da recomposição. */
+function qualityVerdict(q: WeightQuality): string {
+  if (q.dFat <= -0.1 && q.dLean >= -0.1)
+    return "Recomposição acontecendo: gordura caindo e massa magra preservada ou subindo."
+  if (q.dFat < 0 && q.dLean < -0.1)
+    return "Perdendo gordura, mas também um pouco de magra — comum no déficit; segure a proteína alta."
+  if (q.dFat > 0.1)
+    return "A gordura subiu no período — vale revisar o déficit calórico."
+  return "Variação ainda pequena para conclusão — siga registrando."
 }
 
 export default function MedidasPage() {
@@ -57,9 +83,12 @@ export default function MedidasPage() {
   const view = useMemo(() => {
     if (!data || !today) return null
     const body = data.body
-    const current = body[body.length - 1]
-    const first = body[0]
-    const weightDelta = current && first ? current.weightKg - first.weightKg : null
+    // peso agora é opcional: só conta quem registrou peso
+    const weighed = body.filter((b) => b.weightKg !== undefined)
+    const current = weighed[weighed.length - 1]
+    const first = weighed[0]
+    const weightDelta =
+      current && first && current !== first ? current.weightKg! - first.weightKg! : null
     const waists = body.filter((b) => b.waistCm !== undefined)
     const currentWaist = waists[waists.length - 1]?.waistCm
     const firstWaist = waists[0]?.waistCm
@@ -67,10 +96,12 @@ export default function MedidasPage() {
       currentWaist !== undefined && firstWaist !== undefined
         ? currentWaist - firstWaist
         : null
-    const chart = body.map((b) => ({ label: shortDate(b.date), peso: b.weightKg }))
+    const chart = weighed.map((b) => ({ label: shortDate(b.date), peso: b.weightKg! }))
     const waistChart = waists.map((b) => ({ label: shortDate(b.date), cintura: b.waistCm! }))
     // bioimpedância: primeiro vs. último registro que tem cada métrica
-    const bioDelta = (key: "bodyFatPct" | "fatMassKg" | "skeletalMuscleKg" | "visceralFat") => {
+    const bioDelta = (
+      key: "bodyFatPct" | "fatMassKg" | "skeletalMuscleKg" | "visceralFat" | "waterPct"
+    ) => {
       const series = body.filter((b) => b[key] !== undefined)
       if (series.length < 2) return null
       return (series[series.length - 1][key] as number) - (series[0][key] as number)
@@ -87,6 +118,43 @@ export default function MedidasPage() {
     const bodyFatChart = body
       .filter((b) => b.bodyFatPct !== undefined)
       .map((b) => ({ label: shortDate(b.date), gordura: b.bodyFatPct! }))
+    // anatomia do peso: gordura + massa magra (peso − gordura); soma = peso
+    const leanFatChart = body
+      .filter((b) => b.weightKg !== undefined && b.fatMassKg !== undefined)
+      .map((b) => ({
+        label: shortDate(b.date),
+        gordura: Math.round(b.fatMassKg! * 10) / 10,
+        magra: Math.round((b.weightKg! - b.fatMassKg!) * 10) / 10,
+      }))
+    const visceralChart = body
+      .filter((b) => b.visceralFat !== undefined)
+      .map((b) => ({ label: shortDate(b.date), visceral: b.visceralFat! }))
+    // razão músculo/gordura — índice de recomposição (sobe = recompondo)
+    const ratioOf = (b?: BodyLog) =>
+      b && b.skeletalMuscleKg !== undefined && b.fatMassKg && b.fatMassKg > 0
+        ? b.skeletalMuscleKg / b.fatMassKg
+        : undefined
+    const ratioSeries = body.filter((b) => ratioOf(b) !== undefined)
+    const muscleFatRatio = ratioOf(ratioSeries[ratioSeries.length - 1])
+    const ratioDelta =
+      ratioSeries.length >= 2
+        ? ratioOf(ratioSeries[ratioSeries.length - 1])! - ratioOf(ratioSeries[0])!
+        : null
+    // qualidade da variação de peso: quanto veio de gordura vs. massa magra
+    const compSeries = body.filter(
+      (b) => b.weightKg !== undefined && b.fatMassKg !== undefined
+    )
+    let weightQuality: WeightQuality | null = null
+    if (compSeries.length >= 2) {
+      const a = compSeries[0]
+      const z = compSeries[compSeries.length - 1]
+      const dWeight = z.weightKg! - a.weightKg!
+      const dFat = z.fatMassKg! - a.fatMassKg!
+      const dLean = z.weightKg! - z.fatMassKg! - (a.weightKg! - a.fatMassKg!)
+      // fração da variação de peso explicada pela gordura (>100% = ganhou magra)
+      const fatShare = Math.abs(dWeight) > 0.05 ? (dFat / dWeight) * 100 : null
+      weightQuality = { dWeight, dFat, dLean, fatShare, losing: dWeight < 0 }
+    }
     // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
     const kg = current?.weightKg ?? 93
     // água dos últimos 7 dias (dias sem registro = 0, sinceridade > vaidade)
@@ -123,10 +191,16 @@ export default function MedidasPage() {
       latestBio,
       compositionChart,
       bodyFatChart,
+      leanFatChart,
+      visceralChart,
+      muscleFatRatio,
+      ratioDelta,
+      weightQuality,
       bodyFatDelta: bioDelta("bodyFatPct"),
       fatMassDelta: bioDelta("fatMassKg"),
       muscleDelta: bioDelta("skeletalMuscleKg"),
       visceralDelta: bioDelta("visceralFat"),
+      waterDelta: bioDelta("waterPct"),
       protein: [Math.round(kg * 1.8), Math.round(kg * 2.2)],
       water: [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)],
       recent: [...body].reverse().slice(0, 8),
@@ -166,15 +240,22 @@ export default function MedidasPage() {
 
   const handleSave = async () => {
     const w = parseFloat(weight.replace(",", "."))
-    if (isNaN(w) || w <= 0) return
     const wa = parseFloat(waist.replace(",", "."))
+    const hasWeight = !isNaN(w) && w > 0
+    const hasWaist = !isNaN(wa) && wa > 0
+    if (!hasWeight && !hasWaist) {
+      setSaveError("Informe o peso, a cintura, ou os dois.")
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
+      // só os campos informados vão no log — o store faz merge por dia, então
+      // salvar só a cintura preserva o peso/bioimpedância já gravados (e vice-versa)
       await addBodyLog({
         date: toOperationalDateKey(new Date()),
-        weightKg: Math.round(w * 10) / 10,
-        waistCm: !isNaN(wa) && wa > 0 ? Math.round(wa * 10) / 10 : undefined,
+        ...(hasWeight ? { weightKg: Math.round(w * 10) / 10 } : {}),
+        ...(hasWaist ? { waistCm: Math.round(wa * 10) / 10 } : {}),
       })
       setWeight("")
       setWaist("")
@@ -264,6 +345,9 @@ export default function MedidasPage() {
   const fmt1 = (n: number | undefined) =>
     n === undefined ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
+  const fmtSigned = (n: number, unit: string) =>
+    `${n > 0 ? "+" : ""}${n.toFixed(1).replace(".", ",")} ${unit}`
+
   return (
     <main>
       <PageHeader kicker="RECOMPOSIÇÃO CORPORAL" title="Medidas" />
@@ -271,11 +355,7 @@ export default function MedidasPage() {
       <div className="rise rise-1 grid grid-cols-2 gap-3">
         <StatCard
           label="Peso"
-          value={
-            view.current
-              ? view.current.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })
-              : "—"
-          }
+          value={fmt1(view.current?.weightKg)}
           detail={fmtDelta(view.weightDelta, "kg")}
           accent="gold"
         />
@@ -291,13 +371,17 @@ export default function MedidasPage() {
         />
       </div>
 
-      <SectionTitle accent="steel">Tendência de peso</SectionTitle>
-      <Card className="rise rise-2 mb-6">
-        <WeightChart data={view.chart} />
-        <p className="mt-2 font-mono text-[10px] text-steel-dim">
-          alvo do plano: −0,4 a −0,7 kg/semana · lento e sustentável preserva músculo
-        </p>
-      </Card>
+      {view.chart.length > 0 && (
+        <>
+          <SectionTitle accent="steel">Tendência de peso</SectionTitle>
+          <Card className="rise rise-2 mb-6">
+            <WeightChart data={view.chart} />
+            <p className="mt-2 font-mono text-[10px] text-steel-dim">
+              alvo do plano: −0,4 a −0,7 kg/semana · lento e sustentável preserva músculo
+            </p>
+          </Card>
+        </>
+      )}
 
       {view.waistChart.length > 0 && (
         <>
@@ -358,9 +442,99 @@ export default function MedidasPage() {
               }
               accent="gold"
             />
+            <StatCard
+              label="Músculo ÷ gordura"
+              value={
+                view.muscleFatRatio !== undefined
+                  ? view.muscleFatRatio.toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : "—"
+              }
+              detail={
+                view.ratioDelta === null
+                  ? "índice de recomposição · sobe = recompõe"
+                  : `${view.ratioDelta > 0 ? "+" : ""}${view.ratioDelta
+                      .toFixed(2)
+                      .replace(".", ",")} desde o início`
+              }
+              accent="zone"
+            />
+            <StatCard
+              label="Água"
+              value={
+                <>
+                  {fmt1(view.latestBio.waterPct)}
+                  <span className="text-base text-steel-dim"> %</span>
+                </>
+              }
+              detail={
+                view.waterDelta === null
+                  ? "água corporal · afeta as leituras"
+                  : fmtDelta(view.waterDelta, "%")
+              }
+              accent="steel"
+            />
           </div>
 
-          {view.compositionChart.length > 0 && (
+          <p className="rise rise-2 mt-3 font-mono text-[11px] text-steel-dim">
+            IMC {fmt1(view.latestBio.bmi)} · metabolismo basal{" "}
+            {view.latestBio.bmrKcal !== undefined
+              ? Math.round(view.latestBio.bmrKcal).toLocaleString("pt-BR")
+              : "—"}{" "}
+            kcal/dia
+          </p>
+
+          {view.weightQuality && (
+            <Card className="rise rise-3 mt-3 border-l-4 border-l-gold">
+              <p
+                className="mb-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-gold"
+                style={{ fontFamily: "var(--font-condensed)" }}
+              >
+                Qualidade da variação de peso
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
+                <span className="text-steel">
+                  peso{" "}
+                  <span className="text-bone">
+                    {fmtSigned(view.weightQuality.dWeight, "kg")}
+                  </span>
+                </span>
+                <span className="text-steel">
+                  gordura{" "}
+                  <span style={{ color: "#fb7185" }}>
+                    {fmtSigned(view.weightQuality.dFat, "kg")}
+                  </span>
+                </span>
+                <span className="text-steel">
+                  massa magra{" "}
+                  <span style={{ color: "#2dd4bf" }}>
+                    {fmtSigned(view.weightQuality.dLean, "kg")}
+                  </span>
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-steel">
+                {qualityVerdict(view.weightQuality)}
+              </p>
+            </Card>
+          )}
+
+          {view.leanFatChart.length > 0 && (
+            <>
+              <SectionTitle accent="ember">Anatomia do peso</SectionTitle>
+              <Card className="rise rise-3 border-l-4 border-l-[#fb7185]">
+                <LeanFatStackChart data={view.leanFatChart} />
+                <p className="mt-2 font-mono text-[10px] text-steel-dim">
+                  <span style={{ color: "#2dd4bf" }}>massa magra</span> +{" "}
+                  <span style={{ color: "#fb7185" }}>gordura</span> = seu peso · meta é
+                  encolher a fatia vermelha
+                </p>
+              </Card>
+            </>
+          )}
+
+          {view.compositionChart.length > 1 && (
             <Card className="rise rise-3 mt-3 border-l-4 border-l-[#2dd4bf]">
               <CompositionChart data={view.compositionChart} />
               <p className="mt-2 font-mono text-[10px] text-steel-dim">
@@ -372,10 +546,19 @@ export default function MedidasPage() {
           )}
 
           {view.bodyFatChart.length > 1 && (
-            <Card className="rise rise-3 mb-6 mt-3 border-l-4 border-l-[#fb7185]">
+            <Card className="rise rise-3 mt-3 border-l-4 border-l-[#fb7185]">
               <BodyFatChart data={view.bodyFatChart} />
               <p className="mt-2 font-mono text-[10px] text-steel-dim">
                 leia a tendência, não o ponto — bioimpedância oscila com hidratação
+              </p>
+            </Card>
+          )}
+
+          {view.visceralChart.length > 1 && (
+            <Card className="rise rise-3 mb-6 mt-3 border-l-4 border-l-gold">
+              <VisceralChart data={view.visceralChart} />
+              <p className="mt-2 font-mono text-[10px] text-steel-dim">
+                gordura visceral é a do abdômen profundo — a que mais pesa na saúde
               </p>
             </Card>
           )}
@@ -485,11 +668,13 @@ export default function MedidasPage() {
         </p>
       </Card>
 
-      <SectionTitle>Registrar hoje</SectionTitle>
+      <SectionTitle>Registrar medidas</SectionTitle>
       <Card className="rise rise-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Peso (kg)</span>
+            <span className="font-mono text-[10px] uppercase text-steel-dim">
+              Peso (kg) — opcional
+            </span>
             <input
               type="number"
               inputMode="decimal"
@@ -516,9 +701,9 @@ export default function MedidasPage() {
           </label>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || (!weight.trim() && !waist.trim())}
             className={cn(
-              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
+              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-50",
               saved ? "bg-zone text-coal" : "bg-gold text-coal hover:bg-gold/85"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}
@@ -533,7 +718,8 @@ export default function MedidasPage() {
           </p>
         )}
         <p className="mt-2.5 text-[11px] text-steel-dim">
-          Pese-se sempre na mesma condição: de manhã, em jejum, depois do banheiro.
+          Registre peso, cintura, ou os dois — o que faltar entra do mesmo dia da
+          balança. Cintura: meça no umbigo, relaxado. Peso: de manhã, em jejum.
         </p>
       </Card>
 
@@ -656,9 +842,16 @@ export default function MedidasPage() {
           >
             <span className="font-mono text-xs text-steel-dim">{shortDate(b.date)}</span>
             <span className="font-mono text-sm text-bone">
-              {b.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} kg
+              {b.weightKg !== undefined
+                ? `${b.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} kg`
+                : "—"}
             </span>
-            <span className="w-20 text-right font-mono text-xs text-steel">
+            <span className="w-24 text-right font-mono text-xs text-steel">
+              {b.bodyFatPct !== undefined && (
+                <span className="mr-2" style={{ color: "#fb7185" }}>
+                  {b.bodyFatPct.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%
+                </span>
+              )}
               {b.waistCm !== undefined
                 ? `${b.waistCm.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} cm`
                 : "—"}
