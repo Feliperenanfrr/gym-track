@@ -478,6 +478,109 @@ export function BodyFatChart({
   )
 }
 
+/**
+ * Anatomia do peso: massa magra (peso − gordura) + gordura, empilhadas.
+ * Soma exatamente o peso, sem dupla contagem (água/músculo se sobrepõem, então
+ * não entram aqui). Mostra do que o seu peso é feito e como isso muda.
+ */
+export function LeanFatStackChart({
+  data,
+}: {
+  data: { label: string; gordura: number; magra: number }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -14, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => `${Math.round(v)}`}
+        />
+        <Tooltip
+          content={
+            <MuscleTip
+              suffix=" kg"
+              valueFormatter={(v) =>
+                v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })
+              }
+            />
+          }
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        <Bar
+          dataKey="magra"
+          name="Massa magra"
+          stackId="comp"
+          fill={ZONE}
+          fillOpacity={0.8}
+        />
+        <Bar
+          dataKey="gordura"
+          name="Gordura"
+          stackId="comp"
+          fill={FAT}
+          fillOpacity={0.85}
+          radius={[3, 3, 0, 0]}
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+/** Gordura visceral com a linha do limite saudável (índice < 10) */
+export function VisceralChart({
+  data,
+}: {
+  data: { label: string; visceral: number }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={190}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="visceralFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={GOLD} stopOpacity={0.32} />
+            <stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={[0, (dataMax: number) => Math.max(Math.ceil(dataMax) + 2, 12)]}
+          tickFormatter={(v: number) => `${Math.round(v)}`}
+        />
+        <Tooltip content={<Tip suffix="" />} cursor={{ stroke: GRID }} />
+        <ReferenceLine
+          y={10}
+          stroke={ZONE}
+          strokeDasharray="4 4"
+          strokeOpacity={0.8}
+          label={{
+            value: "saudável < 10",
+            position: "insideTopRight",
+            fill: ZONE,
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono Variable', monospace",
+          }}
+        />
+        <Area
+          type="monotone"
+          dataKey="visceral"
+          stroke={GOLD}
+          strokeWidth={2}
+          fill="url(#visceralFill)"
+          dot={{ r: 2.5, fill: GOLD, strokeWidth: 0 }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
 export function WaistChart({
   data,
 }: {

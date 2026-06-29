@@ -29,7 +29,7 @@ interface WorkoutRow {
 
 interface BodyRow {
   date: string
-  weight_kg: number
+  weight_kg: number | null
   waist_cm: number | null
   // Colunas de bioimpedância (migration 0004). Opcionais no tipo porque o
   // select("*") pode rodar antes da migration — aí elas chegam como undefined.
@@ -88,7 +88,7 @@ function numOrUndef(v: number | null | undefined): number | undefined {
 function rowToBody(r: BodyRow): BodyLog {
   return {
     date: r.date,
-    weightKg: Number(r.weight_kg),
+    weightKg: numOrUndef(r.weight_kg),
     waistCm: numOrUndef(r.waist_cm),
     bodyFatPct: numOrUndef(r.body_fat_pct),
     fatMassKg: numOrUndef(r.fat_mass_kg),
@@ -288,24 +288,21 @@ export function useGymData() {
       return { ...base, body }
     })
 
-    // bioimpedância entra no payload só quando preenchida: salvar continua
-    // funcionando antes da migration 0004 e o upsert preserva colunas omitidas
-    const bio: Record<string, unknown> = {}
-    if (log.bodyFatPct !== undefined) bio.body_fat_pct = log.bodyFatPct
-    if (log.fatMassKg !== undefined) bio.fat_mass_kg = log.fatMassKg
-    if (log.skeletalMuscleKg !== undefined) bio.skeletal_muscle_kg = log.skeletalMuscleKg
-    if (log.muscleMassKg !== undefined) bio.muscle_mass_kg = log.muscleMassKg
-    if (log.waterPct !== undefined) bio.water_pct = log.waterPct
-    if (log.visceralFat !== undefined) bio.visceral_fat = log.visceralFat
-    if (log.bmrKcal !== undefined) bio.bmr_kcal = log.bmrKcal
-    if (log.bmi !== undefined) bio.bmi = log.bmi
-
-    const payload = {
-      date: log.date,
-      weight_kg: log.weightKg,
-      waist_cm: log.waistCm ?? null,
-      ...bio,
-    }
+    // Só os campos preenchidos entram no payload. O upsert por (user_id, date)
+    // preserva as colunas omitidas, então um save só de cintura não apaga o
+    // peso/bioimpedância do mesmo dia (e vice-versa) — e salvar continua
+    // funcionando antes das migrations 0004/0005 rodarem.
+    const payload: Record<string, unknown> = { date: log.date }
+    if (log.weightKg !== undefined) payload.weight_kg = log.weightKg
+    if (log.waistCm !== undefined) payload.waist_cm = log.waistCm
+    if (log.bodyFatPct !== undefined) payload.body_fat_pct = log.bodyFatPct
+    if (log.fatMassKg !== undefined) payload.fat_mass_kg = log.fatMassKg
+    if (log.skeletalMuscleKg !== undefined) payload.skeletal_muscle_kg = log.skeletalMuscleKg
+    if (log.muscleMassKg !== undefined) payload.muscle_mass_kg = log.muscleMassKg
+    if (log.waterPct !== undefined) payload.water_pct = log.waterPct
+    if (log.visceralFat !== undefined) payload.visceral_fat = log.visceralFat
+    if (log.bmrKcal !== undefined) payload.bmr_kcal = log.bmrKcal
+    if (log.bmi !== undefined) payload.bmi = log.bmi
     const enqueueIt = () => {
       enqueue({
         table: "body_logs",

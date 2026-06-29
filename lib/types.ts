@@ -101,7 +101,8 @@ export interface WorkoutLog {
 export interface BodyLog {
   /** yyyy-MM-dd */
   date: string
-  weightKg: number
+  /** Opcional: dá pra registrar só a cintura num dia (peso vem da balança). */
+  weightKg?: number
   waistCm?: number
   /**
    * Bioimpedância — todos opcionais. Registros antigos e entradas manuais só

@@ -11,8 +11,8 @@ const WATER_ML_PER_KG = 37 // meio da faixa do plano (35–40 ml/kg)
 const WATER_FALLBACK_ML = 3300
 
 /** Meta diária de água (ml) pelo peso corporal mais recente */
-export function waterGoalMl(body: { weightKg: number }[]): number {
-  const kg = [...body].reverse().find((b) => b.weightKg > 0)?.weightKg
+export function waterGoalMl(body: { weightKg?: number }[]): number {
+  const kg = [...body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg
   if (!kg) return WATER_FALLBACK_ML
   return Math.round((kg * WATER_ML_PER_KG) / 50) * 50
 }
@@ -167,7 +167,7 @@ export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
   const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 
   const weightKg =
-    [...data.body].reverse().find((b) => b.weightKg > 0)?.weightKg ??
+    [...data.body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg ??
     FALLBACK_WEIGHT_KG
   const kcalPerMin = (met: number) => (met * 3.5 * weightKg) / 200
   let kcal = 0
