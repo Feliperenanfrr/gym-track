@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Check, ChevronUp, CloudOff, Dumbbell, History, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
-import { Card, PageHeader, Skeleton } from "@/components/ui"
+import { ArrowLeft, Check, ChevronUp, CloudOff, Dumbbell, History, Minus, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
+import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { PLAN, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
@@ -52,6 +52,13 @@ function shortDate(key: string): string {
   const d = fromDateKey(key)
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
 }
+
+/** Botão secundário "fantasma" — ação leve, padrão do sistema */
+const GHOST_BTN =
+  "inline-flex items-center gap-1.5 rounded-md border border-seam bg-iron-2/40 px-3 py-2 text-xs font-semibold text-steel transition-colors"
+/** Botão de ícone compacto (trocar/remover série ou exercício) */
+const ICON_BTN =
+  "flex h-8 w-8 items-center justify-center rounded-md border border-seam text-steel-dim transition-colors"
 
 export default function TreinoPage() {
   const { data, addWorkout, pendingCount } = useGymData()
@@ -583,7 +590,7 @@ export default function TreinoPage() {
                 ? s.accent === "zone"
                   ? "border-zone bg-zone/15 text-zone"
                   : "border-ember bg-ember/15 text-ember"
-                : "border-seam text-steel hover:text-bone"
+                : "border-seam bg-iron-2/40 text-steel hover:border-steel/40 hover:text-bone"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}
           >
@@ -704,39 +711,19 @@ export default function TreinoPage() {
         {session.description && (
           <p className="mt-1.5 text-xs leading-relaxed text-steel-dim">{session.description}</p>
         )}
-        {isLift && (
+        {isLift && totals.setsTotal > 0 && (
           <div className="mt-3">
-            {totals.setsTotal > 0 && (
-              <>
-                <div className="flex items-baseline justify-between font-mono text-xs">
-                  <span className="text-steel">
-                    {totals.setsDone}/{totals.setsTotal} séries
-                  </span>
-                  <span className="text-ember-hot">{formatKg(totals.volume)}</span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-iron-2">
-                  <div
-                    className="h-full rounded-full bg-ember transition-all duration-300"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-              </>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                onClick={() => openExercisePicker("new")}
-                className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-ember/50 hover:text-bone"
-              >
-                <Plus size={14} /> Adicionar exercício
-              </button>
-              {activeExercises.length > 0 && (
-                <button
-                  onClick={useDumbbellVersion}
-                  className="inline-flex items-center gap-1.5 rounded border border-seam px-3 py-2 text-xs font-semibold text-steel transition-colors hover:border-gold/50 hover:text-bone"
-                >
-                  <Dumbbell size={14} /> Versão com halteres
-                </button>
-              )}
+            <div className="flex items-baseline justify-between font-mono text-xs">
+              <span className="text-steel">
+                {totals.setsDone}/{totals.setsTotal} séries
+              </span>
+              <span className="text-ember-hot">{formatKg(totals.volume)}</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-iron-2">
+              <div
+                className="h-full rounded-full bg-ember transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
             </div>
           </div>
         )}
@@ -753,8 +740,12 @@ export default function TreinoPage() {
                 Escolha um equivalente ou registre qualquer movimento.
               </p>
             </div>
-            <button onClick={() => setPickerFor(null)} className="p-1 text-steel hover:text-bone" aria-label="Fechar">
-              <X size={18} />
+            <button
+              onClick={() => setPickerFor(null)}
+              className={cn(ICON_BTN, "shrink-0 hover:border-ember/50 hover:text-bone")}
+              aria-label="Fechar"
+            >
+              <X size={16} />
             </button>
           </div>
 
@@ -802,7 +793,7 @@ export default function TreinoPage() {
               <button
                 onClick={addCustomExercise}
                 disabled={!customName.trim()}
-                className="rounded-md bg-gold px-3 text-sm font-bold text-coal disabled:opacity-40"
+                className="shrink-0 rounded-md bg-gold px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-coal transition-colors hover:bg-gold/85 disabled:opacity-40"
               >
                 Incluir
               </button>
@@ -812,6 +803,42 @@ export default function TreinoPage() {
       )}
 
       {/* musculação */}
+      {isLift && (
+        <div className="rise mb-3 mt-6 flex items-center justify-between gap-3">
+          <h2
+            className="text-xs font-semibold uppercase tracking-[0.3em] text-ember"
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            Exercícios
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => openExercisePicker("new")}
+              className={cn(GHOST_BTN, "hover:border-ember/50 hover:text-bone")}
+            >
+              <Plus size={14} /> Adicionar
+            </button>
+            {activeExercises.length > 0 && (
+              <button
+                onClick={useDumbbellVersion}
+                className={cn(GHOST_BTN, "hover:border-gold/50 hover:text-bone")}
+              >
+                <Dumbbell size={14} /> Halteres
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isLift && activeExercises.length === 0 && (
+        <Card className="rise mb-3 border-dashed">
+          <p className="text-center text-sm text-steel-dim">
+            Nenhum exercício ainda. Toque em{" "}
+            <span className="font-semibold text-bone">Adicionar</span> para montar o treino.
+          </p>
+        </Card>
+      )}
+
       {activeExercises.map((ex, exIdx) => {
         const previous = exerciseHistory[ex.id]
         const lastEntry = previous?.entry
@@ -833,32 +860,38 @@ export default function TreinoPage() {
           >
             {/* título + meta */}
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="flex items-center gap-2 text-base font-semibold text-bone">
                   {exComplete && (
                     <Check size={16} strokeWidth={3} className="shrink-0 text-ember" />
                   )}
-                  {ex.name}
+                  <span className="min-w-0 truncate">{ex.name}</span>
                 </h3>
                 <p className="font-mono text-[10px] text-steel-dim">{ex.nameEn}</p>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-1.5">
-                <span
-                  className="rounded bg-iron-2 px-2 py-1 font-mono text-[11px] text-steel"
-                  title={`Descanso ${ex.rest}`}
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  onClick={() => openExercisePicker(ex.id)}
+                  className={cn(ICON_BTN, "hover:border-ember/50 hover:text-bone")}
+                  aria-label={`Trocar ${ex.name}`}
                 >
-                  {ex.sets} × {ex.repsMin}–{ex.repsMax}
-                  {ex.unit === "seconds" ? "s" : ""} · {ex.rest}
-                </span>
-                <div className="flex gap-1">
-                  <button onClick={() => openExercisePicker(ex.id)} className="rounded border border-seam p-1.5 text-steel hover:text-bone" aria-label={`Trocar ${ex.name}`}>
-                    <RefreshCw size={12} />
-                  </button>
-                  <button onClick={() => removeExercise(ex.id)} className="rounded border border-seam p-1.5 text-steel-dim hover:text-ember" aria-label={`Remover ${ex.name}`}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
+                  <RefreshCw size={14} />
+                </button>
+                <button
+                  onClick={() => removeExercise(ex.id)}
+                  className={cn(ICON_BTN, "hover:border-red-500/40 hover:text-red-400")}
+                  aria-label={`Remover ${ex.name}`}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
+            </div>
+            <div className="mt-1.5 flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[11px] text-ember-hot">
+                {ex.sets} × {ex.repsMin}–{ex.repsMax}
+                {ex.unit === "seconds" ? "s" : ""}
+              </span>
+              <span className="font-mono text-[10px] text-steel-dim">descanso {ex.rest}</span>
             </div>
             <p className="mt-1 text-xs text-steel-dim">{ex.note}</p>
 
@@ -905,7 +938,7 @@ export default function TreinoPage() {
                     key={i}
                     className={cn(
                       "rounded-lg border p-2 transition-colors",
-                      row.done ? "border-ember/40 bg-ember/5" : "border-seam bg-coal"
+                      row.done ? "border-ember/40 bg-ember/5" : "border-seam bg-iron-2/50"
                     )}
                   >
                   <div className="flex items-center gap-2.5">
@@ -1017,16 +1050,19 @@ export default function TreinoPage() {
                 </div>
               )})}
             </div>
-            <div className="mt-2 flex justify-end gap-2">
+            <div className="mt-3 flex justify-end gap-2">
               <button
                 onClick={() => removeSet(ex.id)}
                 disabled={(rows[ex.id]?.length ?? 0) <= 1}
-                className="rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel disabled:opacity-30"
+                className="inline-flex items-center gap-1 rounded-md border border-seam px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-steel-dim transition-colors hover:text-bone disabled:opacity-30"
               >
-                − série
+                <Minus size={12} /> Série
               </button>
-              <button onClick={() => addSet(ex.id)} className="rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel hover:text-bone">
-                + série
+              <button
+                onClick={() => addSet(ex.id)}
+                className="inline-flex items-center gap-1 rounded-md border border-seam px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-steel transition-colors hover:border-ember/50 hover:text-bone"
+              >
+                <Plus size={12} /> Série
               </button>
             </div>
           </Card>
@@ -1035,14 +1071,15 @@ export default function TreinoPage() {
 
       {/* cardio / esporte */}
       {hasCardioForm(session.kind) && (
+        <>
+        <SectionTitle accent="zone">
+          {session.kind === "sport"
+            ? "Esporte"
+            : session.kind === "mixed"
+              ? "Cardio avulso"
+              : "Cardio"}
+        </SectionTitle>
         <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
-          <h3 className="text-base font-semibold text-bone">
-            {session.kind === "sport"
-              ? "Sessão de esporte"
-              : session.kind === "mixed"
-                ? "Cardio avulso"
-                : "Sessão de cardio"}
-          </h3>
           {cardioPurpose === "zone2" && (
             <p className="mt-1 text-xs text-steel-dim">
               Ritmo de conversa: fala frases completas, não canta (~120–140 bpm).
@@ -1119,30 +1156,33 @@ export default function TreinoPage() {
             )}
           </div>
         </Card>
+        </>
       )}
 
       {/* finisher Z2 do Lower B */}
       {session.cardioAfter && (
-        <Card className="rise mb-3 border-l-4 border-l-zone">
-          <h3 className="text-sm font-semibold text-bone">
-            Finisher — {session.cardioAfter.label}
-          </h3>
-          <label className="mt-2 flex items-center gap-2">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={finisherMin}
-              onChange={(e) => setCardio(setFinisherMin, e.target.value)}
-              className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
-            />
-            <span className="font-mono text-xs text-steel">min em Zona 2</span>
-          </label>
-        </Card>
+        <>
+          <SectionTitle accent="zone">Finisher — {session.cardioAfter.label}</SectionTitle>
+          <Card className="rise mb-3 border-l-4 border-l-zone">
+            <label className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={finisherMin}
+                onChange={(e) => setCardio(setFinisherMin, e.target.value)}
+                className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
+              />
+              <span className="font-mono text-xs text-steel">min em Zona 2</span>
+            </label>
+          </Card>
+        </>
       )}
 
-      <p className="mt-3 text-center font-mono text-[10px] text-steel-dim">
-        Toda série a 1–3 reps da falha. Anote tudo — sobrecarga progressiva.
-      </p>
+      {isLift && (
+        <p className="mt-3 text-center font-mono text-[10px] text-steel-dim">
+          Toda série a 1–3 reps da falha. Anote tudo — sobrecarga progressiva.
+        </p>
+      )}
 
       {/* barra de salvar fixa — sempre ao alcance do polegar */}
       <div
