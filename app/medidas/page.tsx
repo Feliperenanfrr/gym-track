@@ -1,9 +1,17 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Check, Moon, Plus } from "lucide-react"
-import { HydrationChart, SleepChart, WeightChart, WaistChart } from "@/components/charts"
+import { Activity, Check, Moon, Plus } from "lucide-react"
+import {
+  BodyFatChart,
+  CompositionChart,
+  HydrationChart,
+  SleepChart,
+  WeightChart,
+  WaistChart,
+} from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
+import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
 import { waterGoalMl } from "@/lib/insights"
 import {
   computeSleepMetrics,
@@ -36,6 +44,15 @@ export default function MedidasPage() {
   const [sleepSaved, setSleepSaved] = useState(false)
   const [sleepSaving, setSleepSaving] = useState(false)
   const [sleepError, setSleepError] = useState<string | null>(null)
+  const [bioText, setBioText] = useState("")
+  const [bioSaving, setBioSaving] = useState(false)
+  const [bioSaved, setBioSaved] = useState(false)
+  const [bioError, setBioError] = useState<string | null>(null)
+
+  const bioParse = useMemo(
+    () => (bioText.trim() ? parseBioimpedanceCsv(bioText) : null),
+    [bioText]
+  )
 
   const view = useMemo(() => {
     if (!data || !today) return null
@@ -52,6 +69,24 @@ export default function MedidasPage() {
         : null
     const chart = body.map((b) => ({ label: shortDate(b.date), peso: b.weightKg }))
     const waistChart = waists.map((b) => ({ label: shortDate(b.date), cintura: b.waistCm! }))
+    // bioimpedância: primeiro vs. último registro que tem cada métrica
+    const bioDelta = (key: "bodyFatPct" | "fatMassKg" | "skeletalMuscleKg" | "visceralFat") => {
+      const series = body.filter((b) => b[key] !== undefined)
+      if (series.length < 2) return null
+      return (series[series.length - 1][key] as number) - (series[0][key] as number)
+    }
+    const withBio = body.filter((b) => b.bodyFatPct !== undefined || b.fatMassKg !== undefined)
+    const latestBio = withBio.length ? withBio[withBio.length - 1] : undefined
+    const compositionChart = body
+      .filter((b) => b.fatMassKg !== undefined && b.skeletalMuscleKg !== undefined)
+      .map((b) => ({
+        label: shortDate(b.date),
+        gordura: b.fatMassKg!,
+        musculo: b.skeletalMuscleKg!,
+      }))
+    const bodyFatChart = body
+      .filter((b) => b.bodyFatPct !== undefined)
+      .map((b) => ({ label: shortDate(b.date), gordura: b.bodyFatPct! }))
     // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
     const kg = current?.weightKg ?? 93
     // água dos últimos 7 dias (dias sem registro = 0, sinceridade > vaidade)
@@ -85,6 +120,13 @@ export default function MedidasPage() {
       waistDelta,
       chart,
       waistChart,
+      latestBio,
+      compositionChart,
+      bodyFatChart,
+      bodyFatDelta: bioDelta("bodyFatPct"),
+      fatMassDelta: bioDelta("fatMassKg"),
+      muscleDelta: bioDelta("skeletalMuscleKg"),
+      visceralDelta: bioDelta("visceralFat"),
       protein: [Math.round(kg * 1.8), Math.round(kg * 2.2)],
       water: [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)],
       recent: [...body].reverse().slice(0, 8),
@@ -145,6 +187,27 @@ export default function MedidasPage() {
     }
   }
 
+  const handleBioSave = async () => {
+    if (!bioParse) return
+    const log = toBodyLog(bioParse.values, toOperationalDateKey(new Date()))
+    if (!log) {
+      setBioError("Peso não encontrado no texto — é obrigatório para salvar.")
+      return
+    }
+    setBioSaving(true)
+    setBioError(null)
+    try {
+      await addBodyLog(log)
+      setBioText("")
+      setBioSaved(true)
+      setTimeout(() => setBioSaved(false), 2500)
+    } catch (e) {
+      setBioError(e instanceof Error ? e.message : "Erro ao salvar no banco")
+    } finally {
+      setBioSaving(false)
+    }
+  }
+
   const syncSleepHours = (start: string, end: string) => {
     const duration = sleepDurationMinutes(start, end)
     if (duration !== null) setSleepHours(minutesToSleepInput(duration))
@@ -198,6 +261,9 @@ export default function MedidasPage() {
   const fmtDelta = (d: number | null, unit: string) =>
     d === null ? "—" : `${d > 0 ? "+" : ""}${d.toFixed(1).replace(".", ",")} ${unit} desde o início`
 
+  const fmt1 = (n: number | undefined) =>
+    n === undefined ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
   return (
     <main>
       <PageHeader kicker="RECOMPOSIÇÃO CORPORAL" title="Medidas" />
@@ -242,6 +308,77 @@ export default function MedidasPage() {
               redução na cintura é um forte indicativo de perda de gordura
             </p>
           </Card>
+        </>
+      )}
+
+      {view.latestBio && (
+        <>
+          <SectionTitle accent="ember">Composição corporal</SectionTitle>
+          <div className="rise rise-2 grid grid-cols-2 gap-3">
+            <StatCard
+              label="Gordura"
+              value={
+                <>
+                  {fmt1(view.latestBio.bodyFatPct)}
+                  <span className="text-base text-steel-dim"> %</span>
+                </>
+              }
+              detail={fmtDelta(view.bodyFatDelta, "%")}
+              accent="ember"
+            />
+            <StatCard
+              label="Gordura"
+              value={
+                <>
+                  {fmt1(view.latestBio.fatMassKg)}
+                  <span className="text-base text-steel-dim"> kg</span>
+                </>
+              }
+              detail={fmtDelta(view.fatMassDelta, "kg")}
+              accent="ember"
+            />
+            <StatCard
+              label="Músculo esq."
+              value={
+                <>
+                  {fmt1(view.latestBio.skeletalMuscleKg)}
+                  <span className="text-base text-steel-dim"> kg</span>
+                </>
+              }
+              detail={fmtDelta(view.muscleDelta, "kg")}
+              accent="zone"
+            />
+            <StatCard
+              label="Visceral"
+              value={fmt1(view.latestBio.visceralFat)}
+              detail={
+                view.visceralDelta === null
+                  ? "índice da balança (alvo < 10)"
+                  : fmtDelta(view.visceralDelta, "pts")
+              }
+              accent="gold"
+            />
+          </div>
+
+          {view.compositionChart.length > 0 && (
+            <Card className="rise rise-3 mt-3 border-l-4 border-l-[#2dd4bf]">
+              <CompositionChart data={view.compositionChart} />
+              <p className="mt-2 font-mono text-[10px] text-steel-dim">
+                <span style={{ color: "#fb7185" }}>gordura</span> ↓ +{" "}
+                <span style={{ color: "#2dd4bf" }}>músculo</span> estável/↑ = recomposição
+                funcionando
+              </p>
+            </Card>
+          )}
+
+          {view.bodyFatChart.length > 1 && (
+            <Card className="rise rise-3 mb-6 mt-3 border-l-4 border-l-[#fb7185]">
+              <BodyFatChart data={view.bodyFatChart} />
+              <p className="mt-2 font-mono text-[10px] text-steel-dim">
+                leia a tendência, não o ponto — bioimpedância oscila com hidratação
+              </p>
+            </Card>
+          )}
         </>
       )}
 
@@ -397,6 +534,80 @@ export default function MedidasPage() {
         )}
         <p className="mt-2.5 text-[11px] text-steel-dim">
           Pese-se sempre na mesma condição: de manhã, em jejum, depois do banheiro.
+        </p>
+      </Card>
+
+      <SectionTitle accent="ember">Registrar bioimpedância</SectionTitle>
+      <Card className="rise rise-3">
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase text-steel-dim">
+            Cole o resultado exportado da balança (CSV)
+          </span>
+          <textarea
+            value={bioText}
+            onChange={(e) => setBioText(e.target.value)}
+            rows={6}
+            placeholder={"Peso,93.95,kg\nGordura corporal,30.2,%\nPeso da gordura,28.4,kg\n…"}
+            className="w-full resize-y rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none focus:border-ember"
+          />
+        </label>
+
+        {bioParse && (
+          <div className="mt-3">
+            {bioParse.recognized.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {bioParse.recognized.map((r) => (
+                  <span
+                    key={r.field}
+                    className="rounded border border-seam bg-coal px-2 py-1 font-mono text-[10px] text-steel"
+                  >
+                    <span className="text-steel-dim">{r.label}:</span>{" "}
+                    <span className="text-bone">
+                      {typeof r.value === "number"
+                        ? r.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })
+                        : r.value}
+                      {r.unit ? ` ${r.unit}` : ""}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-steel-dim">
+              Será salvo na data{" "}
+              <span className="text-bone">{bioParse.values.date ?? "de hoje"}</span>
+              {bioParse.ignored.length > 0 &&
+                ` · ${bioParse.ignored.length} campo(s) ignorado(s)`}
+            </p>
+            {bioParse.errors.length > 0 && (
+              <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
+                {bioParse.errors.map((er, i) => (
+                  <p key={i}>{er}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={handleBioSave}
+          disabled={bioSaving || !bioParse || bioParse.values.weightKg === undefined}
+          className={cn(
+            "mt-3 flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-50",
+            bioSaved ? "bg-zone text-coal" : "bg-ember text-coal hover:bg-ember/85"
+          )}
+          style={{ fontFamily: "var(--font-condensed)" }}
+        >
+          {bioSaved ? <Check size={15} /> : <Activity size={15} />}
+          {bioSaving ? "Salvando…" : bioSaved ? "Salvo" : "Salvar bioimpedância"}
+        </button>
+        {bioError && (
+          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            {bioError}
+          </p>
+        )}
+        <p className="mt-2.5 text-[11px] text-steel-dim">
+          Guarda peso, % gordura, gordura (kg), músculo, água, visceral e metabolismo de
+          uma pesagem só. Confira o preview antes de salvar.
         </p>
       </Card>
 

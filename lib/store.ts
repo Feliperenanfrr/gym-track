@@ -31,6 +31,16 @@ interface BodyRow {
   date: string
   weight_kg: number
   waist_cm: number | null
+  // Colunas de bioimpedância (migration 0004). Opcionais no tipo porque o
+  // select("*") pode rodar antes da migration — aí elas chegam como undefined.
+  body_fat_pct?: number | null
+  fat_mass_kg?: number | null
+  skeletal_muscle_kg?: number | null
+  muscle_mass_kg?: number | null
+  water_pct?: number | null
+  visceral_fat?: number | null
+  bmr_kcal?: number | null
+  bmi?: number | null
 }
 
 interface HydrationRow {
@@ -70,11 +80,24 @@ function sortWorkouts(workouts: WorkoutLog[]) {
   return [...workouts].sort((a, b) => a.date.localeCompare(b.date))
 }
 
+/** null OU undefined (coluna ausente antes da migration) → undefined */
+function numOrUndef(v: number | null | undefined): number | undefined {
+  return v == null ? undefined : Number(v)
+}
+
 function rowToBody(r: BodyRow): BodyLog {
   return {
     date: r.date,
     weightKg: Number(r.weight_kg),
-    waistCm: r.waist_cm !== null ? Number(r.waist_cm) : undefined,
+    waistCm: numOrUndef(r.waist_cm),
+    bodyFatPct: numOrUndef(r.body_fat_pct),
+    fatMassKg: numOrUndef(r.fat_mass_kg),
+    skeletalMuscleKg: numOrUndef(r.skeletal_muscle_kg),
+    muscleMassKg: numOrUndef(r.muscle_mass_kg),
+    waterPct: numOrUndef(r.water_pct),
+    visceralFat: numOrUndef(r.visceral_fat),
+    bmrKcal: numOrUndef(r.bmr_kcal),
+    bmi: numOrUndef(r.bmi),
   }
 }
 
@@ -256,16 +279,32 @@ export function useGymData() {
   const addBodyLog = useCallback(async (log: BodyLog) => {
     setData((prev) => {
       const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
-      const body = [...base.body.filter((b) => b.date !== log.date), log].sort((a, b) =>
+      // merge: um salvamento só de peso não apaga a bioimpedância do mesmo dia
+      const existing = base.body.find((b) => b.date === log.date)
+      const merged = { ...existing, ...log }
+      const body = [...base.body.filter((b) => b.date !== log.date), merged].sort((a, b) =>
         a.date.localeCompare(b.date)
       )
       return { ...base, body }
     })
 
+    // bioimpedância entra no payload só quando preenchida: salvar continua
+    // funcionando antes da migration 0004 e o upsert preserva colunas omitidas
+    const bio: Record<string, unknown> = {}
+    if (log.bodyFatPct !== undefined) bio.body_fat_pct = log.bodyFatPct
+    if (log.fatMassKg !== undefined) bio.fat_mass_kg = log.fatMassKg
+    if (log.skeletalMuscleKg !== undefined) bio.skeletal_muscle_kg = log.skeletalMuscleKg
+    if (log.muscleMassKg !== undefined) bio.muscle_mass_kg = log.muscleMassKg
+    if (log.waterPct !== undefined) bio.water_pct = log.waterPct
+    if (log.visceralFat !== undefined) bio.visceral_fat = log.visceralFat
+    if (log.bmrKcal !== undefined) bio.bmr_kcal = log.bmrKcal
+    if (log.bmi !== undefined) bio.bmi = log.bmi
+
     const payload = {
       date: log.date,
       weight_kg: log.weightKg,
       waist_cm: log.waistCm ?? null,
+      ...bio,
     }
     const enqueueIt = () => {
       enqueue({

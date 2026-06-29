@@ -103,6 +103,27 @@ export interface BodyLog {
   date: string
   weightKg: number
   waistCm?: number
+  /**
+   * Bioimpedância — todos opcionais. Registros antigos e entradas manuais só
+   * de peso não têm. Guardamos o subconjunto com sinal real para recomposição;
+   * os %s de músculo são redundantes com os kg + peso e ficam de fora.
+   */
+  /** Gordura corporal (%) */
+  bodyFatPct?: number
+  /** Peso da gordura (kg) */
+  fatMassKg?: number
+  /** Peso da massa muscular esquelética (kg) — métrica mais limpa p/ músculo */
+  skeletalMuscleKg?: number
+  /** Peso da massa muscular total (kg) — inclui água, mais ruidosa */
+  muscleMassKg?: number
+  /** Água corporal (%) */
+  waterPct?: number
+  /** Gordura visceral (índice da balança) */
+  visceralFat?: number
+  /** Metabolismo basal (kcal/dia) */
+  bmrKcal?: number
+  /** IMC */
+  bmi?: number
 }
 
 export interface HydrationLog {
