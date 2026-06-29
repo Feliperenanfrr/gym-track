@@ -6,7 +6,7 @@ import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
-import { zone2Minutes } from "@/lib/cardio"
+import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import {
   cycleTodayView,
   getScheduleMode,
@@ -95,6 +95,7 @@ function buildWeeks(data: GymData, today: Date) {
     label: string
     volume: number
     z2: number
+    intense: number
     sessions: number
     groups: ReturnType<typeof hardSetsByGroup>
   }[] = []
@@ -109,6 +110,7 @@ function buildWeeks(data: GymData, today: Date) {
       label: weekLabel(monday),
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + zone2Minutes(w), 0),
+      intense: ws.reduce((s, w) => s + intenseMinutes(w), 0),
       sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
       groups: hardSetsByGroup(ws),
     })
@@ -698,7 +700,11 @@ export default function Dashboard() {
         <StatCard
           label={mode === "ciclo" ? "Zona 2 · 7 dias" : "Zona 2 na semana"}
           value={`${mode === "ciclo" ? view.roll.z2 : view.thisWeek.z2}′`}
-          detail={`meta ${Z2_TARGET}–70 min · inegociável`}
+          detail={
+            (mode === "ciclo" ? view.roll.intense : view.thisWeek.intense) > 0
+              ? `meta ${Z2_TARGET}–70′ · +${mode === "ciclo" ? view.roll.intense : view.thisWeek.intense}′ intenso à parte`
+              : `meta ${Z2_TARGET}–70 min · inegociável`
+          }
           accent="zone"
         />
         <StatCard
@@ -870,11 +876,17 @@ export default function Dashboard() {
       <SectionTitle accent="zone">Base aeróbica — min/semana</SectionTitle>
       <Card className="rise rise-6 border-l-4 border-l-zone">
         <ZoneChart
-          data={view.weeks.map((w) => ({ label: w.label, minutes: w.z2 }))}
+          data={view.weeks.map((w) => ({ label: w.label, z2: w.z2, intense: w.intense }))}
           target={Z2_TARGET}
         />
         <p className="mt-2 text-xs text-steel">
           É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B.
+        </p>
+        <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
+          barras = semana fechada (seg–dom); a atual, mais clara, ainda está em
+          andamento. <span className="text-ember">Intenso</span> entra empilhado, fora da
+          meta de Z2 · esporte não conta. O card &ldquo;Zona 2 · 7 dias&rdquo; usa os
+          últimos 7 dias corridos, por isso pode diferir da última barra.
         </p>
       </Card>
 

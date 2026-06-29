@@ -204,23 +204,58 @@ export function StrengthChart({
   )
 }
 
+/** Tooltip aeróbico: separa Zona 2 de intenso e mostra o total */
+function AerobicTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { value: number; dataKey?: string | number }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  const z2 = payload.find((p) => p.dataKey === "z2")?.value ?? 0
+  const intense = payload.find((p) => p.dataKey === "intense")?.value ?? 0
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-1 text-steel">
+        {label} · {z2 + intense} min
+      </p>
+      <p className="flex items-center gap-1.5 text-bone">
+        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ZONE }} />
+        Zona 2: {z2} min
+      </p>
+      {intense > 0 && (
+        <p className="flex items-center gap-1.5 text-bone">
+          <span className="inline-block h-2 w-2 rounded-sm" style={{ background: EMBER }} />
+          Intenso: {intense} min
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Base aeróbica semanal: Zona 2 (base, contra a meta) + intenso empilhado por
+ * cima (visível, mas fora da meta de Z2). A última barra = semana corrente,
+ * ainda em andamento, então entra esmaecida para não competir com as fechadas.
+ */
 export function ZoneChart({
   data,
   target,
 }: {
-  data: { label: string; minutes: number }[]
+  data: { label: string; z2: number; intense: number }[]
   target: number
 }) {
+  const lastIdx = data.length - 1
   return (
     <ResponsiveContainer width="100%" height={170}>
       <BarChart data={data} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} />
-        <Tooltip
-          content={<Tip suffix=" min" />}
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
-        />
+        <Tooltip content={<AerobicTip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
         <ReferenceLine
           y={target}
           stroke={ZONE}
@@ -234,7 +269,16 @@ export function ZoneChart({
             fontFamily: "'JetBrains Mono Variable', monospace",
           }}
         />
-        <Bar dataKey="minutes" fill={ZONE} fillOpacity={0.75} radius={[3, 3, 0, 0]} />
+        <Bar dataKey="z2" name="Zona 2" stackId="aer">
+          {data.map((_, i) => (
+            <Cell key={i} fill={ZONE} fillOpacity={i === lastIdx ? 0.4 : 0.75} />
+          ))}
+        </Bar>
+        <Bar dataKey="intense" name="Intenso" stackId="aer" radius={[3, 3, 0, 0]}>
+          {data.map((_, i) => (
+            <Cell key={i} fill={EMBER} fillOpacity={i === lastIdx ? 0.35 : 0.7} />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )

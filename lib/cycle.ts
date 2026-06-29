@@ -1,5 +1,5 @@
 import { SessionId, WorkoutLog } from "./types"
-import { zone2Minutes } from "./cardio"
+import { intenseMinutes, zone2Minutes } from "./cardio"
 import { countsTowardTrainingTarget } from "./plan"
 import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
 
@@ -161,6 +161,8 @@ export interface Rolling7 {
   volume: number
   /** minutos de Zona 2 (esporte fora) */
   z2: number
+  /** minutos de cardio intenso (fora da meta de Z2) */
+  intense: number
 }
 
 /** Métricas da janela móvel dos últimos 7 dias (hoje incluso) */
@@ -172,6 +174,7 @@ export function rolling7(workouts: WorkoutLog[], today: Date): Rolling7 {
     sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
     volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
     z2: ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0),
+    intense: ws.reduce((sum, workout) => sum + intenseMinutes(workout), 0),
   }
 }
 
