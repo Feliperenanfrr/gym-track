@@ -362,6 +362,122 @@ export function SleepChart({
   )
 }
 
+const FAT = "#fb7185"
+
+/** Tooltip multi-série (sem somar) p/ composição corporal */
+function SeriesTip({
+  active,
+  payload,
+  label,
+  suffix,
+}: {
+  active?: boolean
+  payload?: { value: number; name: string; color?: string }[]
+  label?: string
+  suffix: string
+}) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-1 text-steel">{label}</p>
+      {payload.map((p) => (
+        <p key={p.name} className="flex items-center gap-1.5 text-bone">
+          <span
+            className="inline-block h-2 w-2 rounded-sm"
+            style={{ background: p.color }}
+          />
+          {p.name}: {p.value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+          {suffix}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Composição corporal: gordura (kg) vs músculo esquelético (kg) no tempo.
+ * Gráfico-herói da recomposição — gordura caindo e músculo estável/subindo
+ * conta a história que o peso sozinho esconde.
+ */
+export function CompositionChart({
+  data,
+}: {
+  data: { label: string; gordura: number; musculo: number }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={210}>
+      <LineChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={["dataMin - 2", "dataMax + 2"]}
+          tickFormatter={(v: number) => `${Math.round(v)}`}
+        />
+        <Tooltip content={<SeriesTip suffix=" kg" />} cursor={{ stroke: GRID }} />
+        <Line
+          type="monotone"
+          name="Gordura"
+          dataKey="gordura"
+          stroke={FAT}
+          strokeWidth={2.5}
+          dot={{ r: 2.5, fill: FAT, strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+        />
+        <Line
+          type="monotone"
+          name="Músculo"
+          dataKey="musculo"
+          stroke={ZONE}
+          strokeWidth={2.5}
+          dot={{ r: 2.5, fill: ZONE, strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+/** Tendência de % de gordura corporal */
+export function BodyFatChart({
+  data,
+}: {
+  data: { label: string; gordura: number }[]
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={190}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="fatFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={FAT} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={FAT} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={["dataMin - 1", "dataMax + 1"]}
+          tickFormatter={(v: number) => `${v.toFixed(1)}`}
+        />
+        <Tooltip content={<Tip suffix=" %" />} cursor={{ stroke: GRID }} />
+        <Area
+          type="monotone"
+          dataKey="gordura"
+          stroke={FAT}
+          strokeWidth={2}
+          fill="url(#fatFill)"
+          dot={{ r: 2.5, fill: FAT, strokeWidth: 0 }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
+}
+
 export function WaistChart({
   data,
 }: {
