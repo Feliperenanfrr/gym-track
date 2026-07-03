@@ -45,6 +45,10 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   seatedcurl: "Posterior/Glúteo",
   seatedcalf: "Panturrilha",
   cablecrunch: "Core",
+  // Recomposição (jul/2026) — novos exercícios do plano
+  "db-ohp": "Ombro",
+  crossover: "Peito",
+  hipthrust: "Posterior/Glúteo",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */
