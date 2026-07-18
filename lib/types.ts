@@ -4,9 +4,15 @@ export type SessionId =
   | "lowerA"
   | "upperB"
   | "lowerB"
+  | "competitionLower"
+  | "competitionUpper"
+  | "competitionPower"
+  | "competitionZ2"
   | "free"
   | "sport"
   | "rest"
+
+export type TrainingProgram = "competition" | "hypertrophy"
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 
@@ -45,9 +51,16 @@ export interface SessionPlan {
   weekday: number
   duration: string
   kind: SessionKind
-  accent: "ember" | "zone" | "steel"
+  accent: "ember" | "zone" | "steel" | "gold"
   exercises: ExercisePrescription[]
   cardioAfter?: { minutes: number; label: string }
+  cardioTarget?: {
+    min: number
+    max: number
+    defaultMinutes: number
+    bpmMin?: number
+    bpmMax?: number
+  }
   description?: string
 }
 

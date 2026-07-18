@@ -32,13 +32,16 @@ const extra: CatalogExercise[] = [
 
 const planned: CatalogExercise[] = Object.values(EXERCISES_BY_ID).map((exercise) => ({
   ...exercise,
-  muscleGroup: EXERCISE_GROUP[exercise.id] ?? "Core",
+  muscleGroup: exercise.muscleGroup ?? EXERCISE_GROUP[exercise.id] ?? "Core",
   equipment: "academia",
 }))
 
-export const EXERCISE_CATALOG = [...planned, ...extra].sort((a, b) =>
-  a.name.localeCompare(b.name, "pt-BR")
-)
+const plannedIds = new Set(planned.map((exercise) => exercise.id))
+
+export const EXERCISE_CATALOG = [
+  ...planned,
+  ...extra.filter((exercise) => !plannedIds.has(exercise.id)),
+].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
 
 export const MUSCLE_GROUP_OPTIONS = MUSCLE_GROUPS.map((group) => group.id)
 

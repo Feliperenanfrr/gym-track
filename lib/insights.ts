@@ -1,6 +1,6 @@
-import { countsTowardTrainingTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
+import { countsTowardProgramTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
 import { zone2Minutes } from "./cardio"
-import { GymData, WorkoutLog } from "./types"
+import { GymData, TrainingProgram, WorkoutLog } from "./types"
 import { bestE1RM, toDateKey, workoutVolume } from "./utils"
 
 /* ------------------------------------------------------------------ */
@@ -155,14 +155,18 @@ const LIFT_SESSION_MIN = 60 // duração típica do treino de força
 const FALLBACK_WEIGHT_KG = 85
 
 /** Resumo da semana que começa em `monday` (PRs, frequência, volume, kcal) */
-export function weeklySummary(data: GymData, monday: Date): WeeklySummary {
+export function weeklySummary(
+  data: GymData,
+  monday: Date,
+  program: TrainingProgram = "hypertrophy"
+): WeeklySummary {
   const start = toDateKey(monday)
   const end = toDateKey(
     new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)
   )
   const ws = data.workouts.filter((w) => w.date >= start && w.date <= end)
 
-  const sessions = ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length
+  const sessions = ws.filter((w) => countsTowardProgramTarget(w.sessionId, program)).length
   const volume = ws.reduce((s, w) => s + workoutVolume(w), 0)
   const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 

@@ -4,9 +4,14 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw } from "lucide-react"
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
+import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
+import {
+  competitionPhaseFor,
+  competitionTodayView,
+} from "@/lib/competition-plan"
 import {
   cycleTodayView,
   getScheduleMode,
@@ -17,11 +22,12 @@ import {
 } from "@/lib/cycle"
 import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
-import { countsTowardTrainingTarget, PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
+import { countsTowardProgramTarget, PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
-import { GymData, SessionId } from "@/lib/types"
+import { GymData, SessionId, TrainingProgram } from "@/lib/types"
 import { useOperationalDay } from "@/lib/use-operational-day"
+import { useTrainingProgram } from "@/lib/use-training-program"
 import {
   bestE1RMAdjusted,
   cn,
@@ -43,7 +49,8 @@ const KEY_LIFTS: { id: string; label: string }[] = [
   { id: "row", label: "Remada" },
 ]
 
-const Z2_TARGET = 60 // ter 40–50 min + sex 20 min
+const HYPERTROPHY_Z2_TARGET = { min: 60, max: 70 }
+const COMPETITION_Z2_TARGET = { min: 60, max: 90 }
 
 const READINESS_UI: Record<
   ReadinessLevel,
@@ -88,7 +95,17 @@ function weekLabel(monday: Date): string {
   return `${dayMonth(monday)}-${dayMonth(sunday)}`
 }
 
-function buildWeeks(data: GymData, today: Date) {
+function compactSessionTitle(sessionId: SessionId): string {
+  if (sessionId === "competitionLower") return "A"
+  if (sessionId === "competitionUpper") return "B"
+  if (sessionId === "competitionPower") return "C"
+  if (sessionId === "competitionZ2" || sessionId === "cardioZ2") return "Z2"
+  if (sessionId === "free") return "AVL"
+  if (sessionId === "sport") return "ESP"
+  return PLAN_BY_ID[sessionId].title.replace("Upper ", "U").replace("Lower ", "L")
+}
+
+function buildWeeks(data: GymData, today: Date, program: TrainingProgram) {
   const currentMonday = mondayOf(today)
   const weeks: {
     monday: Date
@@ -111,7 +128,7 @@ function buildWeeks(data: GymData, today: Date) {
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + zone2Minutes(w), 0),
       intense: ws.reduce((s, w) => s + intenseMinutes(w), 0),
-      sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
+      sessions: ws.filter((w) => countsTowardProgramTarget(w.sessionId, program)).length,
       groups: hardSetsByGroup(ws),
     })
   }
@@ -120,6 +137,7 @@ function buildWeeks(data: GymData, today: Date) {
 
 export default function Dashboard() {
   const { data, error, pendingCount, addWater, signOut } = useGymData()
+  const { program, selectProgram } = useTrainingProgram()
   const today = useOperationalDay()
   const [lift, setLift] = useState("bench")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
@@ -137,14 +155,14 @@ export default function Dashboard() {
   }
 
   const view = useMemo(() => {
-    if (!data || !today) return null
+    if (!data || !today || !program) return null
     const todayKey = toDateKey(today)
     const todaySession = sessionForWeekday(isoWeekday(today))
     const todayDone = data.workouts.some(
       (w) => w.date === todayKey && w.sessionId === todaySession.id
     )
 
-    const weeks = buildWeeks(data, today)
+    const weeks = buildWeeks(data, today, program)
     const thisWeek = weeks[weeks.length - 1]
     const lastWeek = weeks[weeks.length - 2]
     const volumeDelta =
@@ -229,7 +247,8 @@ export default function Dashboard() {
 
     const readiness = computeReadiness(data.workouts, today)
     // fechamento de domingo: resumo da semana corrente
-    const weekSummary = isoWeekday(today) === 7 ? weeklySummary(data, monday) : null
+    const weekSummary =
+      isoWeekday(today) === 7 ? weeklySummary(data, monday, program) : null
     const achievements = computeAchievements(data, today)
 
     // hidratação de hoje
@@ -240,31 +259,56 @@ export default function Dashboard() {
     // modo ciclo: próximo da fila + janela móvel de 7 dias
     const cycleView = cycleTodayView(data.workouts, today)
     const cycle = cycleView.suggestion
-    const roll = rolling7(data.workouts, today)
+    const roll = rolling7(data.workouts, today, program)
     const strip = last7Days(data.workouts, today)
+    const competitionView = competitionTodayView(data.workouts, today)
+    const competitionPhase = competitionPhaseFor(today)
 
     // card principal unificado entre os dois modos
+    const competitionHeadSession =
+      competitionPhase.id === "game"
+        ? {
+            ...PLAN_BY_ID.rest,
+            title: "Dia do campeonato",
+            subtitle: "Sem academia · pernas frescas para o jogo",
+          }
+        : PLAN_BY_ID[competitionView.sessionId]
     const headSession =
-      mode === "ciclo" ? PLAN_BY_ID[cycleView.sessionId] : todaySession
-    const headDone = mode === "ciclo" ? cycleView.done : todayDone
+      program === "competition"
+        ? competitionHeadSession
+        : mode === "ciclo"
+          ? PLAN_BY_ID[cycleView.sessionId]
+          : todaySession
+    const headDone =
+      program === "competition" ? competitionView.done : mode === "ciclo" ? cycleView.done : todayDone
     const headKicker =
-      mode === "ciclo"
-        ? cycleView.done
-          ? "Hoje concluído"
-          : "Próximo do ciclo"
-        : "Treino de hoje"
+      program === "competition"
+        ? competitionPhase.id === "game"
+          ? "Hoje é jogo"
+          : competitionView.done
+            ? "Preparação concluída hoje"
+            : "Próximo da preparação"
+        : mode === "ciclo"
+          ? cycleView.done
+            ? "Hoje concluído"
+            : "Próximo do ciclo"
+          : "Treino de hoje"
     const headNote =
-      mode !== "ciclo"
-        ? null
-        : cycleView.completedLiftSessionId
-          ? `Próximo do ciclo: ${PLAN_BY_ID[cycle.nextLiftId].title}.`
-          : cycle.reason === "recovery"
-            ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
-            : cycle.reason === "regression"
-              ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
-              : cycle.reason === "start"
-                ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
-                : null
+      program === "competition"
+        ? competitionView.done
+          ? `Próxima sessão-base: ${PLAN_BY_ID[competitionView.nextSessionId].title}. A sessão C continua opcional.`
+          : competitionPhase.guidance
+        : mode !== "ciclo"
+          ? null
+          : cycleView.completedLiftSessionId
+            ? `Próximo do ciclo: ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+            : cycle.reason === "recovery"
+              ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+              : cycle.reason === "regression"
+                ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
+                : cycle.reason === "start"
+                  ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
+                  : null
 
     return {
       todaySession,
@@ -291,8 +335,9 @@ export default function Dashboard() {
       headDone,
       headKicker,
       headNote,
+      competitionPhase,
     }
-  }, [data, today, lift, mode])
+  }, [data, today, lift, mode, program])
 
   if (error) {
     return (
@@ -305,7 +350,7 @@ export default function Dashboard() {
     )
   }
 
-  if (!view || !today) {
+  if (!view || !today || !program) {
     return (
       <main>
         <PageHeader kicker="GYM//TRACK" title="Painel" />
@@ -328,6 +373,9 @@ export default function Dashboard() {
     day: "2-digit",
     month: "short",
   })
+  const rollingView = program === "competition" || mode === "ciclo"
+  const z2Target =
+    program === "competition" ? COMPETITION_Z2_TARGET : HYPERTROPHY_Z2_TARGET
 
   return (
     <main>
@@ -362,8 +410,20 @@ export default function Dashboard() {
         }
       />
 
+      <ProgramTabs
+        value={program}
+        onChange={selectProgram}
+        compact
+        className="rise mb-4"
+      />
+
       {/* Treino de hoje / próximo do ciclo */}
-      <Card className="rise rise-1 relative overflow-hidden border-l-4 border-l-ember">
+      <Card
+        className={cn(
+          "rise rise-1 relative overflow-hidden border-l-4",
+          program === "competition" ? "border-l-gold" : "border-l-ember"
+        )}
+      >
         <div className="flex justify-between items-center">
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
@@ -396,12 +456,19 @@ export default function Dashboard() {
           </div>
         ) : view.headSession.kind === "rest" ? (
           <p className="mt-4 text-sm text-steel">
-            Descanso total ou caminhada leve. Durma 7–9 h.
+            {program === "competition" && view.competitionPhase.id === "game"
+              ? "Sem academia hoje. Aqueça com o coach e chegue inteiro para competir."
+              : "Descanso total ou caminhada leve. Durma 7–9 h."}
           </p>
         ) : (
           <Link
             href="/treino"
-            className="mt-4 inline-flex items-center gap-2 rounded bg-ember px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-coal transition-colors hover:bg-ember-hot"
+            className={cn(
+              "mt-4 inline-flex items-center gap-2 rounded px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-coal transition-colors",
+              program === "competition"
+                ? "bg-gold hover:bg-amber-300"
+                : "bg-ember hover:bg-ember-hot"
+            )}
             style={{ fontFamily: "var(--font-condensed)" }}
           >
             Registrar treino <ArrowRight size={16} />
@@ -423,7 +490,9 @@ export default function Dashboard() {
               <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Sessões</p>
               <p className="score text-2xl text-bone">
                 {view.weekSummary.sessions}
-                <span className="text-base text-steel-dim">/5</span>
+                <span className="text-base text-steel-dim">
+                  {program === "competition" ? "/2–3" : "/5"}
+                </span>
               </p>
             </div>
             <div>
@@ -458,14 +527,14 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Fita: últimos 7 dias (ciclo) ou semana planejada (calendário) */}
+      {/* Fita: janela móvel no protocolo/ciclo ou semana planejada no calendário */}
       <div className="rise rise-2 mt-4">
         <div className="mb-2 flex items-center justify-between">
           <p
             className="text-[10px] font-semibold uppercase tracking-[0.3em] text-steel"
             style={{ fontFamily: "var(--font-condensed)" }}
           >
-            {mode === "ciclo" ? "Últimos 7 dias" : "Sua semana"}
+            {rollingView ? "Últimos 7 dias" : "Sua semana"}
           </p>
           <div className="flex items-center gap-3 font-mono text-[9px] text-steel-dim">
             <span className="flex items-center gap-1">
@@ -474,21 +543,25 @@ export default function Dashboard() {
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-sm border border-ember" /> hoje
             </span>
-            <button
-              onClick={toggleMode}
-              className="underline decoration-dotted underline-offset-2 transition-colors hover:text-bone"
-              title="Alternar entre ciclo rotativo e semana fixa por dia"
-            >
-              {mode === "ciclo" ? "ver semana fixa" : "ver ciclo"}
-            </button>
+            {program === "hypertrophy" && (
+              <button
+                onClick={toggleMode}
+                className="underline decoration-dotted underline-offset-2 transition-colors hover:text-bone"
+                title="Alternar entre ciclo rotativo e semana fixa por dia"
+              >
+                {mode === "ciclo" ? "ver semana fixa" : "ver ciclo"}
+              </button>
+            )}
           </div>
         </div>
-        {mode === "ciclo" ? (
+        {rollingView ? (
           <div className="grid grid-cols-7 gap-1.5">
             {view.strip.map((d) => {
               const allEasy =
                 d.done.length > 0 &&
-                d.done.every((s) => s === "cardioZ2" || s === "sport")
+                d.done.every(
+                  (s) => s === "cardioZ2" || s === "competitionZ2" || s === "sport"
+                )
               return (
                 <div key={d.key} className="flex flex-col items-center gap-1.5">
                   <span
@@ -518,16 +591,7 @@ export default function Dashboard() {
                     }
                   >
                     {d.done.length > 0
-                      ? d.done
-                          .map((s) =>
-                            PLAN_BY_ID[s].title
-                              .replace("Upper ", "U")
-                              .replace("Lower ", "L")
-                              .replace("Cardio Zona 2", "Z2")
-                              .replace("Avulso", "AVL")
-                              .replace("Esporte", "ESP")
-                          )
-                          .join("·")
+                      ? d.done.map(compactSessionTitle).join("·")
                       : "—"}
                   </div>
                 </div>
@@ -679,14 +743,16 @@ export default function Dashboard() {
       {/* Stats da semana */}
       <div className="rise rise-3 mt-4 grid grid-cols-2 gap-3">
         <StatCard
-          label={mode === "ciclo" ? "Sessões · 7 dias" : "Sessões na semana"}
+          label={rollingView ? "Sessões · 7 dias" : "Sessões na semana"}
           value={
             <>
-              {mode === "ciclo" ? view.roll.sessions : view.thisWeek.sessions}
-              <span className="text-lg text-steel-dim">/5</span>
+              {rollingView ? view.roll.sessions : view.thisWeek.sessions}
+              <span className="text-lg text-steel-dim">
+                {program === "competition" ? "/2–3" : "/5"}
+              </span>
             </>
           }
-          detail={`meta: 4 musc + 1 cardio${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
+          detail={`${program === "competition" ? "meta: A + B · C só se estiver fresco" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"
@@ -698,12 +764,14 @@ export default function Dashboard() {
           }
         />
         <StatCard
-          label={mode === "ciclo" ? "Zona 2 · 7 dias" : "Zona 2 na semana"}
-          value={`${mode === "ciclo" ? view.roll.z2 : view.thisWeek.z2}′`}
+          label={rollingView ? "Zona 2 · 7 dias" : "Zona 2 na semana"}
+          value={`${rollingView ? view.roll.z2 : view.thisWeek.z2}′`}
           detail={
-            (mode === "ciclo" ? view.roll.intense : view.thisWeek.intense) > 0
-              ? `meta ${Z2_TARGET}–70′ · +${mode === "ciclo" ? view.roll.intense : view.thisWeek.intense}′ intenso à parte`
-              : `meta ${Z2_TARGET}–70 min · inegociável`
+            (rollingView ? view.roll.intense : view.thisWeek.intense) > 0
+              ? `meta ${z2Target.min}–${z2Target.max}′ · +${rollingView ? view.roll.intense : view.thisWeek.intense}′ intenso à parte`
+              : program === "competition"
+                ? `meta ${z2Target.min}–${z2Target.max} min · ajuste ao campo`
+                : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
           }
           accent="zone"
         />
@@ -877,10 +945,12 @@ export default function Dashboard() {
       <Card className="rise rise-6 border-l-4 border-l-zone">
         <ZoneChart
           data={view.weeks.map((w) => ({ label: w.label, z2: w.z2, intense: w.intense }))}
-          target={Z2_TARGET}
+          target={z2Target.min}
         />
         <p className="mt-2 text-xs text-steel">
-          É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B.
+          {program === "competition"
+            ? "2–3 sessões de 20–30′, FC 125–140. Se o campo já foi pesado, pule sem culpa."
+            : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
           barras = semana fechada (seg–dom); a atual, mais clara, ainda está em

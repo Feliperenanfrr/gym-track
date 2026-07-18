@@ -1,6 +1,6 @@
-import { SessionId, WorkoutLog } from "./types"
+import { SessionId, TrainingProgram, WorkoutLog } from "./types"
 import { intenseMinutes, zone2Minutes } from "./cardio"
-import { countsTowardTrainingTarget } from "./plan"
+import { countsTowardProgramTarget } from "./plan"
 import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
 
 /**
@@ -166,12 +166,16 @@ export interface Rolling7 {
 }
 
 /** Métricas da janela móvel dos últimos 7 dias (hoje incluso) */
-export function rolling7(workouts: WorkoutLog[], today: Date): Rolling7 {
+export function rolling7(
+  workouts: WorkoutLog[],
+  today: Date,
+  program: TrainingProgram = "hypertrophy"
+): Rolling7 {
   const start = dateKeyDaysAgo(today, 6)
   const end = toDateKey(today)
   const ws = workouts.filter((w) => w.date >= start && w.date <= end)
   return {
-    sessions: ws.filter((w) => countsTowardTrainingTarget(w.sessionId)).length,
+    sessions: ws.filter((w) => countsTowardProgramTarget(w.sessionId, program)).length,
     volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
     z2: ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0),
     intense: ws.reduce((sum, workout) => sum + intenseMinutes(workout), 0),

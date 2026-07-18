@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Trash2 } from "lucide-react"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
+import { isCompetitionSession } from "@/lib/competition-plan"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { cn, formatKg, fromDateKey, workoutVolume } from "@/lib/utils"
@@ -88,6 +89,11 @@ export default function Historico() {
                     <h3 className="stencil mt-1 text-xl text-bone">
                       {session?.title || "Sessão Desconhecida"}
                     </h3>
+                    {isCompetitionSession(w.sessionId) && (
+                      <span className="mt-1 inline-flex rounded-full border border-gold/30 bg-gold/5 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-gold">
+                        competição
+                      </span>
+                    )}
                     <p className="mt-1 font-mono text-xs text-steel-dim">
                       {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`} {w.cardio && `· ${w.cardio.minutes} min ${w.cardio.mode} (${cardioLabel})`}
                     </p>
