@@ -1,6 +1,6 @@
 import { EXERCISES_BY_ID } from "./plan"
 import { EXERCISE_GROUP, MUSCLE_GROUPS } from "./muscles"
-import { ExercisePrescription, MuscleGroup } from "./types"
+import { ExercisePrescription, MuscleGroup, SessionPlan } from "./types"
 
 export interface CatalogExercise extends ExercisePrescription {
   muscleGroup: MuscleGroup
@@ -8,6 +8,7 @@ export interface CatalogExercise extends ExercisePrescription {
 }
 
 const extra: CatalogExercise[] = [
+  { id: "power-clean", name: "Power Clean", nameEn: "Power Clean", muscleGroup: "Posterior/Glúteo", equipment: "academia", sets: 4, repsMin: 3, repsMax: 3, unit: "reps", rest: "2–3 min", note: "Explosão de quadril e recepção firme; encerre quando a velocidade cair" },
   { id: "db-bench", name: "Supino reto com halteres", nameEn: "Dumbbell Bench Press", muscleGroup: "Peito", equipment: "halteres", sets: 4, repsMin: 8, repsMax: 12, unit: "reps", rest: "90 s", note: "Alternativa em casa ou na academia" },
   { id: "db-floor-press", name: "Supino no chão com halteres", nameEn: "Dumbbell Floor Press", muscleGroup: "Peito", equipment: "halteres", sets: 4, repsMin: 8, repsMax: 15, unit: "reps", rest: "90 s", note: "Boa opção quando não há banco" },
   { id: "pushup", name: "Flexão de braço", nameEn: "Push-up", muscleGroup: "Peito", equipment: "peso corporal", sets: 4, repsMin: 8, repsMax: 20, unit: "reps", rest: "60–90 s", note: "Eleve os pés ou use carga para progredir" },
@@ -42,6 +43,20 @@ export const EXERCISE_CATALOG = [
   ...planned,
   ...extra.filter((exercise) => !plannedIds.has(exercise.id)),
 ].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+
+/** Inclui no seletor exercícios personalizados que já vivem em algum template. */
+export function catalogWithTemplates(templates: SessionPlan[]): CatalogExercise[] {
+  const byId = new Map(EXERCISE_CATALOG.map((exercise) => [exercise.id, exercise]))
+  for (const exercise of templates.flatMap((template) => template.exercises)) {
+    if (byId.has(exercise.id)) continue
+    byId.set(exercise.id, {
+      ...exercise,
+      muscleGroup: exercise.muscleGroup ?? EXERCISE_GROUP[exercise.id] ?? "Core",
+      equipment: "academia",
+    })
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+}
 
 export const MUSCLE_GROUP_OPTIONS = MUSCLE_GROUPS.map((group) => group.id)
 

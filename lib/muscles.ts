@@ -17,6 +17,7 @@ export const MUSCLE_GROUPS: { id: MuscleGroup; color: string }[] = [
 ]
 
 export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
+  "power-clean": "Posterior/Glúteo",
   // Upper A
   bench: "Peito",
   row: "Costas",

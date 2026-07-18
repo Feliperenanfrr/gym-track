@@ -149,13 +149,20 @@ export const ALL_PLAN_SESSIONS = [...PLAN, ...COMPETITION_PLAN]
  * Sessões disponíveis no registro para cada objetivo. Avulso e esporte são
  * compartilhados; o protocolo de competição permanece separado do Upper/Lower.
  */
-export function planForProgram(program: TrainingProgram): SessionPlan[] {
-  if (program === "hypertrophy") return PLAN
-  return [
-    ...COMPETITION_PLAN,
-    PLAN.find((session) => session.id === "free")!,
-    PLAN.find((session) => session.id === "sport")!,
-  ]
+const HYPERTROPHY_PLAN_IDS: SessionId[] = PLAN.map((session) => session.id)
+const COMPETITION_PLAN_IDS: SessionId[] = [
+  ...COMPETITION_PLAN.map((session) => session.id),
+  "free",
+  "sport",
+]
+
+export function planForProgram(
+  program: TrainingProgram,
+  templates: SessionPlan[] = ALL_PLAN_SESSIONS
+): SessionPlan[] {
+  const byId = new Map(templates.map((session) => [session.id, session]))
+  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : COMPETITION_PLAN_IDS
+  return ids.map((id) => byId.get(id) ?? PLAN_BY_ID[id])
 }
 
 export const PLAN_BY_ID = Object.fromEntries(ALL_PLAN_SESSIONS.map((s) => [s.id, s])) as Record<
@@ -173,8 +180,13 @@ export function sessionOfExercise(exerciseId: string): SessionPlan | undefined {
 }
 
 /** Sessão planejada para um dia ISO (1=Seg..7=Dom) */
-export function sessionForWeekday(isoWeekday: number): SessionPlan {
-  return PLAN.find((s) => s.weekday === isoWeekday) ?? PLAN_BY_ID.rest
+export function sessionForWeekday(
+  isoWeekday: number,
+  templates: SessionPlan[] = PLAN
+): SessionPlan {
+  return templates.find((s) => s.weekday === isoWeekday) ??
+    templates.find((s) => s.id === "rest") ??
+    PLAN_BY_ID.rest
 }
 
 const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([

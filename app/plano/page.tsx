@@ -1,24 +1,28 @@
 "use client"
 
-import { AlertTriangle } from "lucide-react"
+import { useState } from "react"
+import { AlertTriangle, Pencil } from "lucide-react"
 import { CompetitionPlanView } from "@/components/competition-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
+import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
-import { GOLDEN_RULES, NUTRITION_GUIDELINES, PLAN, TIMELINE } from "@/lib/plan"
+import { GOLDEN_RULES, NUTRITION_GUIDELINES, planForProgram, TIMELINE } from "@/lib/plan"
+import { SessionId } from "@/lib/types"
 import { useTrainingProgram } from "@/lib/use-training-program"
 import { useOperationalDay } from "@/lib/use-operational-day"
+import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 import { cn } from "@/lib/utils"
 
 const WEEKDAY_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
-// Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
-const WEEK_STRUCTURE = PLAN.filter((s) => s.weekday >= 1)
-
 export default function PlanoPage() {
   const { program, selectProgram } = useTrainingProgram()
   const today = useOperationalDay()
+  const { templates, templateById, exerciseCatalog, error, saveTemplate } =
+    useWorkoutTemplates()
+  const [editingId, setEditingId] = useState<SessionId | null>(null)
 
-  if (!program || !today) {
+  if (!program || !today || !templates) {
     return (
       <main>
         <PageHeader kicker="PROGRAMAS" title="O Plano" />
@@ -28,12 +32,38 @@ export default function PlanoPage() {
     )
   }
 
+  const hypertrophyPlan = planForProgram("hypertrophy", templates)
+  const competitionPlan = planForProgram("competition", templates).filter((session) =>
+    session.id.startsWith("competition")
+  )
+  // Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
+  const weekStructure = hypertrophyPlan.filter((session) => session.weekday >= 1)
+  const editingTemplate = editingId ? templateById[editingId] ?? null : null
+  const editor = (
+    <TemplateEditor
+      session={editingTemplate}
+      catalog={exerciseCatalog}
+      onClose={() => setEditingId(null)}
+      onSave={saveTemplate}
+    />
+  )
+
   if (program === "competition") {
     return (
       <main>
         <PageHeader kicker="PREPARAÇÃO · JUL–AGO/2026" title="O Plano" />
         <ProgramTabs value={program} onChange={selectProgram} className="rise" />
-        <CompetitionPlanView today={today} />
+        {error && (
+          <Card className="mt-3 border-l-4 border-l-ember text-xs text-steel">
+            Templates em modo local: {error}
+          </Card>
+        )}
+        <CompetitionPlanView
+          today={today}
+          sessions={competitionPlan}
+          onEditTemplate={(session) => setEditingId(session.id)}
+        />
+        {editor}
       </main>
     )
   }
@@ -43,6 +73,12 @@ export default function PlanoPage() {
       <PageHeader kicker="PREPARADOR FÍSICO · JUN/2026" title="O Plano" />
 
       <ProgramTabs value={program} onChange={selectProgram} className="rise mb-3" />
+
+      {error && (
+        <Card className="mb-3 border-l-4 border-l-ember text-xs text-steel">
+          Templates em modo local: {error}
+        </Card>
+      )}
 
       <Card className="rise rise-1 border-l-4 border-l-ember">
         <p className="text-sm leading-relaxed text-steel">
@@ -80,12 +116,12 @@ export default function PlanoPage() {
 
       <SectionTitle>Estrutura da semana</SectionTitle>
       <Card className="rise rise-3 p-0">
-        {WEEK_STRUCTURE.map((s, i) => (
+        {weekStructure.map((s, i) => (
           <div
             key={s.id}
             className={cn(
               "flex items-center gap-3 px-4 py-2.5",
-              i < WEEK_STRUCTURE.length - 1 && "border-b border-seam"
+              i < weekStructure.length - 1 && "border-b border-seam"
             )}
           >
             <span className="w-16 shrink-0 font-mono text-[10px] uppercase text-steel-dim">
@@ -113,12 +149,24 @@ export default function PlanoPage() {
         ))}
       </Card>
 
-      {PLAN.filter((s) => s.kind === "lift").map((s) => (
+      {hypertrophyPlan.filter((s) => s.kind === "lift").map((s) => (
         <div key={s.id}>
           <SectionTitle>
             {s.title} — {s.subtitle}
           </SectionTitle>
           <Card className="rise p-0">
+            <div className="flex items-center justify-between gap-3 border-b border-seam bg-iron-2/30 px-4 py-2.5">
+              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+                Template persistido
+              </p>
+              <button
+                type="button"
+                onClick={() => setEditingId(s.id)}
+                className="inline-flex items-center gap-1.5 rounded border border-ember/30 px-2.5 py-1.5 text-xs font-semibold text-ember transition-colors hover:bg-ember/10"
+              >
+                <Pencil size={12} /> Editar template
+              </button>
+            </div>
             {s.exercises.map((ex, i) => (
               <div
                 key={ex.id}
@@ -215,6 +263,7 @@ export default function PlanoPage() {
         Plano educativo — não substitui avaliação médica, educador físico presencial ou
         nutricionista. Dor, tontura ou desconforto anormal: pare e procure um profissional.
       </p>
+      {editor}
     </main>
   )
 }

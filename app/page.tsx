@@ -22,12 +22,13 @@ import {
 } from "@/lib/cycle"
 import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
-import { countsTowardProgramTarget, PLAN_BY_ID, sessionForWeekday } from "@/lib/plan"
+import { countsTowardProgramTarget, PLAN_BY_ID, planForProgram, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
-import { GymData, SessionId, TrainingProgram } from "@/lib/types"
+import { GymData, SessionId, SessionPlan, TrainingProgram } from "@/lib/types"
 import { useOperationalDay } from "@/lib/use-operational-day"
 import { useTrainingProgram } from "@/lib/use-training-program"
+import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 import {
   bestE1RMAdjusted,
   cn,
@@ -95,14 +96,19 @@ function weekLabel(monday: Date): string {
   return `${dayMonth(monday)}-${dayMonth(sunday)}`
 }
 
-function compactSessionTitle(sessionId: SessionId): string {
+function compactSessionTitle(
+  sessionId: SessionId,
+  templateById: Partial<Record<SessionId, SessionPlan>>
+): string {
   if (sessionId === "competitionLower") return "A"
   if (sessionId === "competitionUpper") return "B"
   if (sessionId === "competitionPower") return "C"
   if (sessionId === "competitionZ2" || sessionId === "cardioZ2") return "Z2"
   if (sessionId === "free") return "AVL"
   if (sessionId === "sport") return "ESP"
-  return PLAN_BY_ID[sessionId].title.replace("Upper ", "U").replace("Lower ", "L")
+  return (templateById[sessionId] ?? PLAN_BY_ID[sessionId]).title
+    .replace("Upper ", "U")
+    .replace("Lower ", "L")
 }
 
 function buildWeeks(data: GymData, today: Date, program: TrainingProgram) {
@@ -138,6 +144,7 @@ function buildWeeks(data: GymData, today: Date, program: TrainingProgram) {
 export default function Dashboard() {
   const { data, error, pendingCount, addWater, signOut } = useGymData()
   const { program, selectProgram } = useTrainingProgram()
+  const { templates, templateById } = useWorkoutTemplates()
   const today = useOperationalDay()
   const [lift, setLift] = useState("bench")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
@@ -155,9 +162,11 @@ export default function Dashboard() {
   }
 
   const view = useMemo(() => {
-    if (!data || !today || !program) return null
+    if (!data || !templates || !today || !program) return null
+    const sessionById = (id: SessionId) => templateById[id] ?? PLAN_BY_ID[id]
+    const hypertrophyPlan = planForProgram("hypertrophy", templates)
     const todayKey = toDateKey(today)
-    const todaySession = sessionForWeekday(isoWeekday(today))
+    const todaySession = sessionForWeekday(isoWeekday(today), hypertrophyPlan)
     const todayDone = data.workouts.some(
       (w) => w.date === todayKey && w.sessionId === todaySession.id
     )
@@ -176,7 +185,7 @@ export default function Dashboard() {
       const d = new Date(monday)
       d.setDate(d.getDate() + i)
       const key = toDateKey(d)
-      const planned = sessionForWeekday(i + 1)
+      const planned = sessionForWeekday(i + 1, hypertrophyPlan)
       const done = data.workouts.some((w) => w.date === key && w.sessionId === planned.id)
       return {
         label: WEEKDAY_SHORT[i],
@@ -268,16 +277,16 @@ export default function Dashboard() {
     const competitionHeadSession =
       competitionPhase.id === "game"
         ? {
-            ...PLAN_BY_ID.rest,
+            ...sessionById("rest"),
             title: "Dia do campeonato",
             subtitle: "Sem academia · pernas frescas para o jogo",
           }
-        : PLAN_BY_ID[competitionView.sessionId]
+        : sessionById(competitionView.sessionId)
     const headSession =
       program === "competition"
         ? competitionHeadSession
         : mode === "ciclo"
-          ? PLAN_BY_ID[cycleView.sessionId]
+          ? sessionById(cycleView.sessionId)
           : todaySession
     const headDone =
       program === "competition" ? competitionView.done : mode === "ciclo" ? cycleView.done : todayDone
@@ -296,16 +305,16 @@ export default function Dashboard() {
     const headNote =
       program === "competition"
         ? competitionView.done
-          ? `Próxima sessão-base: ${PLAN_BY_ID[competitionView.nextSessionId].title}. A sessão C continua opcional.`
+          ? `Próxima sessão-base: ${sessionById(competitionView.nextSessionId).title}. A sessão C continua opcional.`
           : competitionPhase.guidance
         : mode !== "ciclo"
           ? null
           : cycleView.completedLiftSessionId
-            ? `Próximo do ciclo: ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+            ? `Próximo do ciclo: ${sessionById(cycle.nextLiftId).title}.`
             : cycle.reason === "recovery"
-              ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${PLAN_BY_ID[cycle.nextLiftId].title}.`
+              ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
               : cycle.reason === "regression"
-                ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${PLAN_BY_ID[cycle.sessionId].title} com ~90% da carga.`
+                ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${sessionById(cycle.sessionId).title} com ~90% da carga.`
                 : cycle.reason === "start"
                   ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
                   : null
@@ -337,7 +346,7 @@ export default function Dashboard() {
       headNote,
       competitionPhase,
     }
-  }, [data, today, lift, mode, program])
+  }, [data, templates, templateById, today, lift, mode, program])
 
   if (error) {
     return (
@@ -350,7 +359,7 @@ export default function Dashboard() {
     )
   }
 
-  if (!view || !today || !program) {
+  if (!view || !templates || !today || !program) {
     return (
       <main>
         <PageHeader kicker="GYM//TRACK" title="Painel" />
@@ -586,12 +595,12 @@ export default function Dashboard() {
                     style={{ fontFamily: "var(--font-condensed)" }}
                     title={
                       d.done.length > 0
-                        ? d.done.map((s) => PLAN_BY_ID[s].title).join(" + ")
+                        ? d.done.map((s) => (templateById[s] ?? PLAN_BY_ID[s]).title).join(" + ")
                         : "Sem registro"
                     }
                   >
                     {d.done.length > 0
-                      ? d.done.map(compactSessionTitle).join("·")
+                      ? d.done.map((id) => compactSessionTitle(id, templateById)).join("·")
                       : "—"}
                   </div>
                 </div>

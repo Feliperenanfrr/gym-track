@@ -423,11 +423,14 @@ export function competitionPhaseFor(date: Date): CompetitionPhase {
 }
 
 /** Prescrição enxuta exibida no registro durante a semana de taper. */
-export function competitionPlanForDate(date: Date): SessionPlan[] {
+export function competitionPlanForDate(
+  date: Date,
+  templates: SessionPlan[] = COMPETITION_PLAN
+): SessionPlan[] {
   const phase = competitionPhaseFor(date)
-  if (phase.id !== "taper" && phase.id !== "game") return COMPETITION_PLAN
+  if (phase.id !== "taper" && phase.id !== "game") return templates
 
-  return COMPETITION_PLAN.map((session) => {
+  return templates.map((session) => {
     if (session.id === "competitionZ2") {
       return {
         ...session,

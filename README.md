@@ -31,13 +31,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 
 ## Dados & Auth
 
-- **Supabase** (Postgres + Auth). Tabelas `workouts`, `body_logs`,
-  `hydration_logs` e `sleep_logs`, todas com RLS por usuário
+- **Supabase** (Postgres + Auth). Tabelas `workouts`, `workout_templates`,
+  `body_logs`, `hydration_logs` e `sleep_logs`, todas com RLS por usuário
   (`auth.uid() = user_id`) e upsert por dia/sessão.
 - Login por e-mail/senha; **cadastro desabilitado** no projeto (acesso restrito).
 - O middleware redireciona qualquer rota para `/login` sem sessão.
 - `workouts.entries` é JSONB com as séries (`[{ exerciseId, sets: [{weight, reps}] }]`);
   `cardio` é JSONB (`{ minutes, avgBpm?, mode }`).
+- `workout_templates.template` guarda o plano editável de cada sessão. O treino do
+  dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
+  mudanças permanentes são feitas em **Plano → Editar template**.
 
 ## Na academia (fluidez)
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, ShieldCheck, Trophy } from "lucide-react"
+import { AlertTriangle, CalendarDays, Pencil, ShieldCheck, Trophy } from "lucide-react"
 import {
   COMPETITION_COORDINATION_RULES,
   COMPETITION_GAME_DATE,
@@ -7,10 +7,11 @@ import {
   competitionPhaseFor,
   LAST_HEAVY_GYM_DATE,
 } from "@/lib/competition-plan"
+import { ExercisePrescription, SessionPlan } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Card, SectionTitle } from "./ui"
 
-function prescription(exercise: (typeof COMPETITION_PLAN)[number]["exercises"][number]) {
+function prescription(exercise: ExercisePrescription) {
   const reps =
     exercise.repsMin === exercise.repsMax
       ? String(exercise.repsMin)
@@ -18,10 +19,18 @@ function prescription(exercise: (typeof COMPETITION_PLAN)[number]["exercises"][n
   return `${exercise.sets} × ${reps}${exercise.unit === "seconds" ? "s" : ""}`
 }
 
-export function CompetitionPlanView({ today }: { today: Date }) {
+export function CompetitionPlanView({
+  today,
+  sessions = COMPETITION_PLAN,
+  onEditTemplate,
+}: {
+  today: Date
+  sessions?: SessionPlan[]
+  onEditTemplate?: (session: SessionPlan) => void
+}) {
   const phase = competitionPhaseFor(today)
-  const liftSessions = COMPETITION_PLAN.filter((session) => session.kind === "lift")
-  const zone2 = COMPETITION_PLAN.find((session) => session.id === "competitionZ2")!
+  const liftSessions = sessions.filter((session) => session.kind === "lift")
+  const zone2 = sessions.find((session) => session.id === "competitionZ2")!
 
   return (
     <>
@@ -88,9 +97,18 @@ export function CompetitionPlanView({ today }: { today: Date }) {
             <div className="border-b border-gold/20 bg-gold/5 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="stencil text-xl text-bone">{session.title}</h3>
-                <span className="shrink-0 font-mono text-[9px] text-gold">
-                  {session.duration}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-mono text-[9px] text-gold">{session.duration}</span>
+                  {onEditTemplate && (
+                    <button
+                      type="button"
+                      onClick={() => onEditTemplate(session)}
+                      className="inline-flex items-center gap-1 rounded border border-gold/30 px-2 py-1 font-mono text-[9px] uppercase text-gold transition-colors hover:bg-gold/10"
+                    >
+                      <Pencil size={11} /> Editar
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="mt-1 text-xs text-gold">{session.subtitle}</p>
               <p className="mt-1.5 text-xs leading-relaxed text-steel">

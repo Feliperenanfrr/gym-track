@@ -16,7 +16,6 @@ import { useGymData } from "@/lib/store"
 import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
 import {
   CatalogExercise,
-  EXERCISE_CATALOG,
   groupOfExercise,
   makeCustomExercise,
   MUSCLE_GROUP_OPTIONS,
@@ -37,6 +36,7 @@ import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
 import { tapFeedback } from "@/lib/haptics"
 import { useTrainingProgram } from "@/lib/use-training-program"
+import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 
 const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Pular corda", "Natação", "Remo"]
 const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu", "Natação", "Outro esporte"]
@@ -70,6 +70,7 @@ const ICON_BTN =
 export default function TreinoPage() {
   const { data, addWorkout, pendingCount } = useGymData()
   const { program, selectProgram } = useTrainingProgram()
+  const { templates, templateById, exerciseCatalog } = useWorkoutTemplates()
   const restTimer = useRestTimer()
   const [today, setToday] = useState<Date | null>(null)
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
@@ -102,15 +103,16 @@ export default function TreinoPage() {
 
   const availableSessions = useMemo(
     () => {
-      if (!program) return []
-      const base = planForProgram(program)
+      if (!program || !templates) return []
+      const base = planForProgram(program, templates)
       if (program !== "competition" || !today) return base
       const shared = base.filter(
         (candidate) => candidate.id === "free" || candidate.id === "sport"
       )
-      return [...competitionPlanForDate(today), ...shared]
+      const competition = base.filter((candidate) => candidate.id.startsWith("competition"))
+      return [...competitionPlanForDate(today, competition), ...shared]
     },
-    [program, today]
+    [program, templates, today]
   )
 
   const setPopRef = useCallback((key: string) => (el: HTMLButtonElement | null) => {
@@ -126,7 +128,7 @@ export default function TreinoPage() {
   // Ao trocar de programa, muda apenas o catálogo exibido; os registros e o
   // rascunho de cada sessão continuam isolados pelo sessionId.
   useEffect(() => {
-    if (!program || !today || initializedProgramRef.current === program) return
+    if (!program || !templates || !today || initializedProgramRef.current === program) return
     initializedProgramRef.current = program
     sessionPickedRef.current = false
     cycleInitRef.current = false
@@ -135,11 +137,11 @@ export default function TreinoPage() {
       setSessionId(competitionPhaseFor(today).id === "game" ? "sport" : "competitionLower")
       return
     }
-    const planned = planForProgram("hypertrophy").find(
+    const planned = planForProgram("hypertrophy", templates).find(
       (candidate) => candidate.weekday === isoWeekday(today)
     )
     setSessionId(planned && planned.kind !== "rest" ? planned.id : "upperA")
-  }, [program, today])
+  }, [program, templates, today])
 
   // Quando os dados chegam, escolhe a próxima sessão uma vez por visita. A
   // escolha manual no seletor sempre tem prioridade.
@@ -161,7 +163,9 @@ export default function TreinoPage() {
   }, [data, today, program])
 
   const session = sessionId
-    ? availableSessions.find((candidate) => candidate.id === sessionId) ?? PLAN_BY_ID[sessionId]
+    ? availableSessions.find((candidate) => candidate.id === sessionId) ??
+      templateById[sessionId] ??
+      PLAN_BY_ID[sessionId]
     : null
 
   /** último registro desta sessão (para prefill e comparação) */
@@ -355,7 +359,7 @@ export default function TreinoPage() {
     return { volume, setsDone, setsTotal }
   }, [rows, activeExercises])
 
-  if (!data || !session || !today || !program) {
+  if (!data || !templates || !session || !today || !program) {
     return (
       <main>
         <PageHeader kicker="REGISTRO" title="Treino" />
@@ -469,7 +473,7 @@ export default function TreinoPage() {
     const usedIds = new Set<string>()
     const exercises = activeExercises.map((current) => {
       const group = groupOfExercise(current)
-      const options = EXERCISE_CATALOG.filter(
+      const options = exerciseCatalog.filter(
         (exercise) => exercise.muscleGroup === group && exercise.equipment === "halteres"
       )
       const selected = options.find((exercise) => !usedIds.has(exercise.id)) ?? current
@@ -879,7 +883,7 @@ export default function TreinoPage() {
           </label>
 
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {EXERCISE_CATALOG.filter((exercise) => exercise.muscleGroup === pickerGroup).map((exercise) => (
+            {exerciseCatalog.filter((exercise) => exercise.muscleGroup === pickerGroup).map((exercise) => (
               <button
                 key={exercise.id}
                 onClick={() => applyExerciseChoice(exercise)}
@@ -922,29 +926,38 @@ export default function TreinoPage() {
 
       {/* musculação */}
       {isLift && (
-        <div className="rise mb-3 mt-6 flex items-center justify-between gap-3">
-          <h2
-            className="text-xs font-semibold uppercase tracking-[0.3em] text-ember"
-            style={{ fontFamily: "var(--font-condensed)" }}
-          >
-            Exercícios
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => openExercisePicker("new")}
-              className={cn(GHOST_BTN, "hover:border-ember/50 hover:text-bone")}
+        <div className="rise mb-3 mt-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              className="text-xs font-semibold uppercase tracking-[0.3em] text-ember"
+              style={{ fontFamily: "var(--font-condensed)" }}
             >
-              <Plus size={14} /> Adicionar
-            </button>
-            {activeExercises.length > 0 && (
+              Exercícios
+            </h2>
+            <div className="flex gap-2">
               <button
-                onClick={useDumbbellVersion}
-                className={cn(GHOST_BTN, "hover:border-gold/50 hover:text-bone")}
+                onClick={() => openExercisePicker("new")}
+                className={cn(GHOST_BTN, "hover:border-ember/50 hover:text-bone")}
               >
-                <Dumbbell size={14} /> Halteres
+                <Plus size={14} /> Adicionar
               </button>
-            )}
+              {activeExercises.length > 0 && (
+                <button
+                  onClick={useDumbbellVersion}
+                  className={cn(GHOST_BTN, "hover:border-gold/50 hover:text-bone")}
+                >
+                  <Dumbbell size={14} /> Halteres
+                </button>
+              )}
+            </div>
           </div>
+          <p className="mt-1.5 text-[11px] text-steel-dim">
+            Mudanças aqui valem só para este treino. Para os próximos, use{" "}
+            <Link href="/plano" className="font-semibold text-steel hover:text-ember">
+              Editar template em Plano
+            </Link>
+            .
+          </p>
         </div>
       )}
 
