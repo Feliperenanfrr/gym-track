@@ -1,6 +1,12 @@
+"use client"
+
 import { AlertTriangle } from "lucide-react"
-import { Card, PageHeader, SectionTitle } from "@/components/ui"
+import { CompetitionPlanView } from "@/components/competition-plan-view"
+import { ProgramTabs } from "@/components/program-tabs"
+import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { GOLDEN_RULES, NUTRITION_GUIDELINES, PLAN, TIMELINE } from "@/lib/plan"
+import { useTrainingProgram } from "@/lib/use-training-program"
+import { useOperationalDay } from "@/lib/use-operational-day"
 import { cn } from "@/lib/utils"
 
 const WEEKDAY_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -9,9 +15,34 @@ const WEEKDAY_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado
 const WEEK_STRUCTURE = PLAN.filter((s) => s.weekday >= 1)
 
 export default function PlanoPage() {
+  const { program, selectProgram } = useTrainingProgram()
+  const today = useOperationalDay()
+
+  if (!program || !today) {
+    return (
+      <main>
+        <PageHeader kicker="PROGRAMAS" title="O Plano" />
+        <Skeleton className="mb-3 h-12 w-full" />
+        <Card><Skeleton className="h-32 w-full" /></Card>
+      </main>
+    )
+  }
+
+  if (program === "competition") {
+    return (
+      <main>
+        <PageHeader kicker="PREPARAÇÃO · JUL–AGO/2026" title="O Plano" />
+        <ProgramTabs value={program} onChange={selectProgram} className="rise" />
+        <CompetitionPlanView today={today} />
+      </main>
+    )
+  }
+
   return (
     <main>
       <PageHeader kicker="PREPARADOR FÍSICO · JUN/2026" title="O Plano" />
+
+      <ProgramTabs value={program} onChange={selectProgram} className="rise mb-3" />
 
       <Card className="rise rise-1 border-l-4 border-l-ember">
         <p className="text-sm leading-relaxed text-steel">

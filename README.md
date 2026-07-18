@@ -1,7 +1,8 @@
 # GYM//TRACK
 
-Tracker pessoal do plano de treino (Upper/Lower A-B + Zona 2 + recomposição corporal),
-gerado a partir do `Plano_de_Treino_Felipe.pdf`.
+Tracker pessoal com dois programas preservados: Upper/Lower A-B para hipertrofia e
+recomposição corporal, mais o protocolo temporário de competição para cornerback até
+15/08/2026.
 
 ## Rodar
 
@@ -24,8 +25,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | Aba | O que faz |
 | --- | --- |
 | **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado e minutos de base aeróbica |
-| **Treino** | Registro de séries (kg × reps) com prescrição do plano, números da última sessão e alerta de sobrecarga progressiva ("topo da faixa → suba 2,5–5 kg") |
-| **Plano** | O plano completo do preparador: estrutura da semana, exercícios, regras de ouro, nutrição e linha do tempo |
+| **Treino** | Abas Competição/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, rascunho automático e histórico compartilhado |
+| **Plano** | Os dois programas em abas separadas; o protocolo de competição inclui A/B/C, Zona 2, coordenação com o campo, progressão e taper |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
 
 ## Dados & Auth
@@ -60,6 +61,7 @@ Barlow / JetBrains Mono via Fontsource.
 app/            páginas (painel, treino, plano, medidas, login)
 components/     bottom-nav, cards/ui, gráficos recharts
 lib/plan.ts     o plano do PDF como dados tipados
+lib/competition-plan.ts  protocolo temporário até o campeonato
 lib/store.ts    hook useGymData (Supabase: fetch + upsert)
 lib/supabase/   browser client (@supabase/ssr)
 middleware.ts   proteção de rotas via sessão

@@ -1,4 +1,10 @@
-import { SessionId, SessionPlan } from "./types"
+import {
+  COMPETITION_GYM_SESSION_IDS,
+  COMPETITION_PLAN,
+} from "./competition-plan"
+import { SessionId, SessionPlan, TrainingProgram } from "./types"
+
+export { COMPETITION_PLAN } from "./competition-plan"
 
 /**
  * Plano de Treino — Felipe (Junho/2026)
@@ -33,6 +39,13 @@ export const PLAN: SessionPlan[] = [
     duration: "30–40 min",
     kind: "cardio",
     accent: "zone",
+    cardioTarget: {
+      min: 30,
+      max: 40,
+      defaultMinutes: 40,
+      bpmMin: 125,
+      bpmMax: 140,
+    },
     description:
       "Ritmo de conversa a 125–140 bpm (os ~130 bpm que você já registra na bike estão perfeitos). Bike, esteira inclinada ou corrida leve — consistência > modalidade. É o remédio da gordura visceral.",
     exercises: [],
@@ -130,18 +143,33 @@ export const PLAN: SessionPlan[] = [
   },
 ]
 
-export const PLAN_BY_ID = Object.fromEntries(PLAN.map((s) => [s.id, s])) as Record<
+export const ALL_PLAN_SESSIONS = [...PLAN, ...COMPETITION_PLAN]
+
+/**
+ * Sessões disponíveis no registro para cada objetivo. Avulso e esporte são
+ * compartilhados; o protocolo de competição permanece separado do Upper/Lower.
+ */
+export function planForProgram(program: TrainingProgram): SessionPlan[] {
+  if (program === "hypertrophy") return PLAN
+  return [
+    ...COMPETITION_PLAN,
+    PLAN.find((session) => session.id === "free")!,
+    PLAN.find((session) => session.id === "sport")!,
+  ]
+}
+
+export const PLAN_BY_ID = Object.fromEntries(ALL_PLAN_SESSIONS.map((s) => [s.id, s])) as Record<
   SessionId,
   SessionPlan
 >
 
 export const EXERCISES_BY_ID = Object.fromEntries(
-  PLAN.flatMap((s) => s.exercises.map((e) => [e.id, e]))
+  ALL_PLAN_SESSIONS.flatMap((s) => s.exercises.map((e) => [e.id, e]))
 )
 
 /** Sessões em que cada exercício aparece (para achar histórico) */
 export function sessionOfExercise(exerciseId: string): SessionPlan | undefined {
-  return PLAN.find((s) => s.exercises.some((e) => e.id === exerciseId))
+  return ALL_PLAN_SESSIONS.find((s) => s.exercises.some((e) => e.id === exerciseId))
 }
 
 /** Sessão planejada para um dia ISO (1=Seg..7=Dom) */
@@ -155,10 +183,32 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "lowerA",
   "upperB",
   "lowerB",
+  "competitionLower",
+  "competitionUpper",
+  "competitionPower",
+  "competitionZ2",
 ])
 
 export function countsTowardTrainingTarget(sessionId: SessionId): boolean {
   return TRAINING_TARGET_SESSION_IDS.has(sessionId)
+}
+
+const HYPERTROPHY_TARGET_SESSION_IDS = new Set<SessionId>([
+  "upperA",
+  "cardioZ2",
+  "lowerA",
+  "upperB",
+  "lowerB",
+])
+
+/** Frequência exibida no painel: 5 sessões no plano atual ou 2–3 de sala no protocolo. */
+export function countsTowardProgramTarget(
+  sessionId: SessionId,
+  program: TrainingProgram
+): boolean {
+  return program === "competition"
+    ? COMPETITION_GYM_SESSION_IDS.includes(sessionId)
+    : HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
 }
 
 export const GOLDEN_RULES = [
