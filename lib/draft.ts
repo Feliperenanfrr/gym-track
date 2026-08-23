@@ -14,6 +14,8 @@ export interface WorkoutDraft {
   cardioMode: string
   cardioPurpose?: CardioPurpose
   finisherMin: string
+  /** false = pular o finisher de Zona 2 (nada de cardio é salvo) */
+  finisherDone?: boolean
   savedAt: number
   /** epoch ms da primeira série marcada (p/ duração real da sessão) */
   startedAt?: number
