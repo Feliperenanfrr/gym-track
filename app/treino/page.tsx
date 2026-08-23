@@ -55,6 +55,11 @@ function hasCardioForm(kind: SessionKind): boolean {
   return kind === "cardio" || kind === "sport" || kind === "mixed"
 }
 
+/** minúsculas sem acento, para busca tolerante no seletor */
+function normalizeName(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+}
+
 function shortDate(key: string): string {
   const d = fromDateKey(key)
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
@@ -81,8 +86,11 @@ export default function TreinoPage() {
   const [cardioMode, setCardioMode] = useState(CARDIO_MODES[0])
   const [cardioPurpose, setCardioPurpose] = useState<CardioPurpose>("zone2")
   const [finisherMin, setFinisherMin] = useState("20")
+  /** finisher Z2 (cardioAfter): false = pular o cardio neste treino */
+  const [finisherDone, setFinisherDone] = useState(true)
   const [pickerFor, setPickerFor] = useState<string | "new" | null>(null)
   const [pickerGroup, setPickerGroup] = useState<MuscleGroup>("Peito")
+  const [pickerSearch, setPickerSearch] = useState("")
   const [customName, setCustomName] = useState("")
   const [saved, setSaved] = useState(false)
   const [savedOffline, setSavedOffline] = useState(false)
@@ -275,6 +283,7 @@ export default function TreinoPage() {
         ll?.cardio?.mode ?? (s!.kind === "sport" ? SPORT_MODES[0] : CARDIO_MODES[0]),
       cardioPurpose: defaultPurpose,
       finisherMin: s!.cardioAfter ? String(s!.cardioAfter.minutes) : "20",
+      finisherDone: true,
     }
   }
 
@@ -285,6 +294,7 @@ export default function TreinoPage() {
     setCardioMode(p.cardioMode)
     setCardioPurpose(p.cardioPurpose)
     setFinisherMin(p.finisherMin)
+    setFinisherDone(p.finisherDone ?? true)
   }
 
   /** fator de carga do ciclo para a sessão atual (0.9 ao voltar de pausa) */
@@ -312,6 +322,7 @@ export default function TreinoPage() {
           : draft.cardioPurpose ?? (session.kind === "sport" ? "sport" : "zone2")
       )
       setFinisherMin(draft.finisherMin)
+      setFinisherDone(draft.finisherDone ?? true)
       startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
       setRegressionApplied(false)
@@ -337,11 +348,12 @@ export default function TreinoPage() {
       cardioMode,
       cardioPurpose,
       finisherMin,
+      finisherDone,
       savedAt: Date.now(),
       startedAt: startedAtRef.current ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin])
+  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin, finisherDone])
 
   const totals = useMemo(() => {
     let volume = 0
@@ -394,6 +406,7 @@ export default function TreinoPage() {
     const current = target === "new" ? null : activeExercises.find((ex) => ex.id === target)
     setPickerFor(target)
     setPickerGroup(current ? groupOfExercise(current) : "Peito")
+    setPickerSearch("")
     setCustomName("")
   }
 
@@ -547,6 +560,10 @@ export default function TreinoPage() {
       setSaveError("Adicione cardio ou pelo menos um exercício no avulso.")
       return
     }
+    if ((session.kind === "cardio" || session.kind === "sport") && cardioMinutes <= 0) {
+      setSaveError("Informe os minutos de cardio para salvar esta sessão.")
+      return
+    }
 
     const workoutDay =
       isStrengthKind(session.kind) && startedAtRef.current
@@ -569,20 +586,18 @@ export default function TreinoPage() {
       )
     }
 
-    if (hasCardioForm(session.kind)) {
-      if (session.kind !== "mixed" || cardioMinutes > 0) {
-        log.cardio = {
-          minutes: cardioMinutes,
-          avgBpm: session.kind !== "sport" ? parseInt(cardioBpm) || undefined : undefined,
-          mode: cardioMode,
-          purpose: session.id === "competitionZ2" ? "zone2" : cardioPurpose,
-        }
+    if (hasCardioForm(session.kind) && cardioMinutes > 0) {
+      log.cardio = {
+        minutes: cardioMinutes,
+        avgBpm: session.kind !== "sport" ? parseInt(cardioBpm) || undefined : undefined,
+        mode: cardioMode,
+        purpose: session.id === "competitionZ2" ? "zone2" : cardioPurpose,
       }
       log.durationMin =
         session.kind === "mixed"
           ? Math.min(480, (log.durationMin ?? 0) + cardioMinutes)
           : cardioMinutes
-    } else if (session.cardioAfter) {
+    } else if (session.cardioAfter && finisherDone) {
       const minutes = parseInt(finisherMin) || 0
       if (minutes > 0) {
         log.cardio = { minutes, mode: "Cardio após musculação", purpose: "zone2" }
@@ -646,6 +661,14 @@ export default function TreinoPage() {
     totals.setsTotal > 0 ? Math.round((totals.setsDone / totals.setsTotal) * 100) : 0
   const isLift = isStrengthKind(session.kind)
   const competitionPhase = program === "competition" ? competitionPhaseFor(today) : null
+  /** busca no seletor: com texto, procura em todos os grupos; sem, filtra pelo grupo */
+  const pickerQuery = normalizeName(pickerSearch.trim())
+  const pickerList = exerciseCatalog.filter((exercise) =>
+    pickerQuery
+      ? normalizeName(exercise.name).includes(pickerQuery) ||
+        normalizeName(exercise.nameEn).includes(pickerQuery)
+      : exercise.muscleGroup === pickerGroup
+  )
 
   return (
     <main className="pb-24">
@@ -872,18 +895,31 @@ export default function TreinoPage() {
           </div>
 
           <label className="mt-3 block">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Grupo muscular</span>
-            <select
-              value={pickerGroup}
-              onChange={(event) => setPickerGroup(event.target.value as MuscleGroup)}
+            <span className="font-mono text-[10px] uppercase text-steel-dim">Buscar</span>
+            <input
+              type="text"
+              value={pickerSearch}
+              onChange={(event) => setPickerSearch(event.target.value)}
+              placeholder="Ex.: shoulder, abdutora, crunch..."
               className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-gold"
-            >
-              {MUSCLE_GROUP_OPTIONS.map((group) => <option key={group}>{group}</option>)}
-            </select>
+            />
           </label>
 
+          {!pickerQuery && (
+            <label className="mt-3 block">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Grupo muscular</span>
+              <select
+                value={pickerGroup}
+                onChange={(event) => setPickerGroup(event.target.value as MuscleGroup)}
+                className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-gold"
+              >
+                {MUSCLE_GROUP_OPTIONS.map((group) => <option key={group}>{group}</option>)}
+              </select>
+            </label>
+          )}
+
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {exerciseCatalog.filter((exercise) => exercise.muscleGroup === pickerGroup).map((exercise) => (
+            {pickerList.map((exercise) => (
               <button
                 key={exercise.id}
                 onClick={() => applyExerciseChoice(exercise)}
@@ -891,11 +927,17 @@ export default function TreinoPage() {
               >
                 <span className="block text-sm font-semibold text-bone">{exercise.name}</span>
                 <span className="font-mono text-[9px] uppercase text-steel-dim">
-                  {exercise.equipment} · {exercise.sets} × {exercise.repsMin}–{exercise.repsMax}
+                  {exercise.muscleGroup} · {exercise.equipment} · {exercise.sets} × {exercise.repsMin}–{exercise.repsMax}
                 </span>
               </button>
             ))}
           </div>
+          {pickerList.length === 0 && (
+            <p className="mt-3 rounded border border-seam bg-coal px-3 py-2.5 text-xs text-steel-dim">
+              Nada encontrado em <span className="text-bone">{pickerSearch}</span> — cadastre
+              manualmente em “Outro exercício” abaixo.
+            </p>
+          )}
 
           <div className="mt-4 border-t border-seam pt-3">
             <p className="font-mono text-[10px] uppercase text-steel-dim">Outro exercício</p>
@@ -1325,21 +1367,39 @@ export default function TreinoPage() {
         </>
       )}
 
-      {/* finisher Z2 do Lower B */}
+      {/* finisher Z2 do Lower A/B — opcional: desmarque se não fizer o cardio */}
       {session.cardioAfter && (
         <>
           <SectionTitle accent="zone">Finisher — {session.cardioAfter.label}</SectionTitle>
           <Card className="rise mb-3 border-l-4 border-l-zone">
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-2.5 text-sm font-semibold text-bone">
               <input
-                type="number"
-                inputMode="numeric"
-                value={finisherMin}
-                onChange={(e) => setCardio(setFinisherMin, e.target.value)}
-                className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
+                type="checkbox"
+                checked={finisherDone}
+                onChange={(e) => {
+                  dirtyRef.current = true
+                  setFinisherDone(e.target.checked)
+                }}
+                className="h-4 w-4 accent-zone"
               />
-              <span className="font-mono text-xs text-steel">min em Zona 2</span>
+              Fiz o cardio hoje
             </label>
+            {finisherDone ? (
+              <label className="mt-3 flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={finisherMin}
+                  onChange={(e) => setCardio(setFinisherMin, e.target.value)}
+                  className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
+                />
+                <span className="font-mono text-xs text-steel">min em Zona 2</span>
+              </label>
+            ) : (
+              <p className="mt-3 rounded border border-gold/30 bg-gold/5 px-2.5 py-2 font-mono text-xs text-gold">
+                Finisher pulado — nenhum cardio será salvo neste treino.
+              </p>
+            )}
           </Card>
         </>
       )}
