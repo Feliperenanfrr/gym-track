@@ -742,10 +742,11 @@ export default function Dashboard() {
           </div>
         </div>
         <Link
-          href="/medidas"
-          className="mt-3 inline-flex text-xs font-semibold text-[#a78bfa] underline decoration-dotted underline-offset-4"
+          href="/medidas#registrar-sono"
+          className="mt-3 inline-flex items-center gap-1.5 rounded bg-[#a78bfa] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-coal transition-colors hover:bg-[#c4b5fd]"
+          style={{ fontFamily: "var(--font-condensed)" }}
         >
-          registrar sono
+          <Moon size={13} /> Registrar sono
         </Link>
       </Card>
 
@@ -853,9 +854,17 @@ export default function Dashboard() {
             </button>
           )}
         </div>
-        <p className="mt-2 font-mono text-[9px] text-steel-dim">
-          meta ~37 ml/kg pelo último peso · desidratação piora fôlego e causa tontura
-        </p>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className="font-mono text-[9px] text-steel-dim">
+            meta ~37 ml/kg pelo último peso · desidratação piora fôlego e causa tontura
+          </p>
+          <Link
+            href="/medidas#hidratacao"
+            className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#38bdf8] transition-colors hover:text-bone"
+          >
+            corrigir outro dia
+          </Link>
+        </div>
       </Card>
 
       {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}

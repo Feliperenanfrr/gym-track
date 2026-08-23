@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, Minus, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
@@ -69,6 +70,7 @@ const ICON_BTN =
 
 export default function TreinoPage() {
   const { data, addWorkout, pendingCount } = useGymData()
+  const router = useRouter()
   const { program, selectProgram } = useTrainingProgram()
   const { templates, templateById, exerciseCatalog } = useWorkoutTemplates()
   const restTimer = useRestTimer()
@@ -121,8 +123,17 @@ export default function TreinoPage() {
   }, [])
 
   useEffect(() => {
-    const now = operationalDay(new Date())
-    setToday(now)
+    // ?data=yyyy-mm-dd → registro retroativo (treino esquecido, jogo não
+    // anotado). Datas no futuro caem para o dia operacional de hoje.
+    let day = operationalDay(new Date())
+    const raw = new URLSearchParams(window.location.search).get("data")
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const parsed = fromDateKey(raw)
+      if (!Number.isNaN(parsed.getTime()) && toDateKey(parsed) <= toDateKey(day)) {
+        day = parsed
+      }
+    }
+    setToday(day)
   }, [])
 
   // Ao trocar de programa, muda apenas o catálogo exibido; os registros e o
@@ -555,7 +566,7 @@ export default function TreinoPage() {
 
     const log: WorkoutLog = {
       id: `log-${Date.now()}`,
-      date: toOperationalDateKey(workoutDay),
+      date: backdated ? toDateKey(today) : toOperationalDateKey(workoutDay),
       sessionId: session.id,
       entries,
     }
@@ -646,6 +657,13 @@ export default function TreinoPage() {
     totals.setsTotal > 0 ? Math.round((totals.setsDone / totals.setsTotal) * 100) : 0
   const isLift = isStrengthKind(session.kind)
   const competitionPhase = program === "competition" ? competitionPhaseFor(today) : null
+  /** registro retroativo (?data=): salva na data escolhida, não em hoje */
+  const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
+
+  const backToToday = () => {
+    router.replace("/treino")
+    setToday(operationalDay(new Date()))
+  }
 
   return (
     <main className="pb-24">
@@ -660,6 +678,27 @@ export default function TreinoPage() {
         compact
         className="rise mb-3"
       />
+
+      {backdated && (
+        <div className="rise mb-3 flex items-center justify-between gap-3 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2.5">
+          <p className="text-xs leading-relaxed text-gold">
+            Registro retroativo — salvando como{" "}
+            <span className="font-semibold">
+              {fromDateKey(toDateKey(today)).toLocaleDateString("pt-BR", {
+                weekday: "long",
+                day: "2-digit",
+                month: "2-digit",
+              })}
+            </span>
+          </p>
+          <button
+            onClick={backToToday}
+            className="shrink-0 font-mono text-[10px] font-semibold uppercase tracking-wider text-gold underline underline-offset-4 transition-colors hover:text-bone"
+          >
+            hoje
+          </button>
+        </div>
+      )}
 
       {competitionPhase && !saved && (
         <div className="rise mb-3 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2.5">
