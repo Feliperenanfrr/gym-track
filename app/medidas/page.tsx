@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Activity, Check, Moon, Plus } from "lucide-react"
 import {
   BodyFatChart,
@@ -32,6 +32,12 @@ function shortDate(key: string): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
+function dayOptionLabel(key: string): string {
+  const d = fromDateKey(key)
+  const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")
+  return `${weekday} ${shortDate(key)}`
+}
+
 type WeightQuality = {
   /** variação de peso (kg) do 1º ao último registro com peso + gordura */
   dWeight: number
@@ -56,7 +62,7 @@ function qualityVerdict(q: WeightQuality): string {
 }
 
 export default function MedidasPage() {
-  const { data, addBodyLog, addSleepLog } = useGymData()
+  const { data, addBodyLog, addSleepLog, addWater } = useGymData()
   const today = useOperationalDay()
   const [weight, setWeight] = useState("")
   const [waist, setWaist] = useState("")
@@ -66,6 +72,8 @@ export default function MedidasPage() {
   const [sleepStart, setSleepStart] = useState("")
   const [sleepEnd, setSleepEnd] = useState("")
   const [sleepHours, setSleepHours] = useState("")
+  /** dia do registro de sono (yyyy-MM-dd) — retroativo para noites esquecidas */
+  const [sleepDate, setSleepDate] = useState("")
   const [sleepLoadedDate, setSleepLoadedDate] = useState<string | null>(null)
   const [sleepSaved, setSleepSaved] = useState(false)
   const [sleepSaving, setSleepSaving] = useState(false)
@@ -74,6 +82,18 @@ export default function MedidasPage() {
   const [bioSaving, setBioSaving] = useState(false)
   const [bioSaved, setBioSaved] = useState(false)
   const [bioError, setBioError] = useState<string | null>(null)
+  /** seção destacada ao chegar por deep-link (#registrar-sono, #hidratacao) */
+  const [flashId, setFlashId] = useState<string | null>(null)
+  const flashTimerRef = useRef<number | null>(null)
+  /** correção de água em dia passado */
+  const [waterDay, setWaterDay] = useState("")
+  const [waterMl, setWaterMl] = useState("")
+  const [waterSaving, setWaterSaving] = useState(false)
+  const [waterOk, setWaterOk] = useState(false)
+  const [waterError, setWaterError] = useState<string | null>(null)
+  /** destaque do formulário de sono ao chegar por deep-link (#registrar-sono) */
+  const [sonoFlash, setSonoFlash] = useState(false)
+  const sonoTimerRef = useRef<number | null>(null)
 
   const bioParse = useMemo(
     () => (bioText.trim() ? parseBioimpedanceCsv(bioText) : null),
@@ -163,6 +183,7 @@ export default function MedidasPage() {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
       const key = toDateKey(d)
       return {
+        key,
         label: shortDate(key),
         ml: data.hydration.find((h) => h.date === key)?.ml ?? 0,
       }
@@ -208,22 +229,66 @@ export default function MedidasPage() {
     }
   }, [data, today])
 
-  useEffect(() => {
-    if (!data || !today) return
-    const todayKey = toDateKey(today)
-    if (sleepLoadedDate === todayKey) return
-    const todaySleep = data.sleep.find((s) => s.date === todayKey)
-    if (todaySleep) {
-      setSleepStart(todaySleep.sleptAt)
-      setSleepEnd(todaySleep.wokeAt)
-      setSleepHours(minutesToSleepInput(todaySleep.durationMin))
+  /** carrega nos campos o sono já registrado do dia (ou os valores padrão) */
+  const loadSleepFields = (key: string) => {
+    const log = data?.sleep.find((s) => s.date === key)
+    if (log) {
+      setSleepStart(log.sleptAt)
+      setSleepEnd(log.wokeAt)
+      setSleepHours(minutesToSleepInput(log.durationMin))
     } else {
       setSleepStart("23:30")
       setSleepEnd("07:30")
       setSleepHours("8,0")
     }
+  }
+
+  useEffect(() => {
+    if (!data || !today) return
+    const todayKey = toDateKey(today)
+    if (sleepLoadedDate === todayKey) return
+    if (!sleepDate) loadSleepFields(todayKey)
+    setSleepDate((current) => current || todayKey)
     setSleepLoadedDate(todayKey)
   }, [data, sleepLoadedDate, today])
+
+  // sugere para correção de água o dia mais recente sem registro (hoje fica
+  // com os botões rápidos do painel; correção é coisa de dias passados)
+  useEffect(() => {
+    if (!view || waterDay) return
+    const reversed = [...view.hydration7].reverse()
+    const missing = reversed.find((d, idx) => idx > 0 && d.ml === 0)
+    const fallback = view.hydration7[Math.max(0, view.hydration7.length - 2)]
+    setWaterDay(missing?.key ?? fallback.key)
+  }, [view, waterDay])
+
+  // deep-links do painel ("Registrar sono", "corrigir outro dia"): rolam até a
+  // seção, focam o primeiro campo e piscam o cartão — nada de caçar na página
+  const DEEP_LINK_IDS = ["registrar-sono", "hidratacao"]
+  useEffect(() => {
+    if (!view) return
+    const goToHash = () => {
+      const id = window.location.hash.replace("#", "")
+      if (!DEEP_LINK_IDS.includes(id)) return
+      const el = document.getElementById(id)
+      if (!el) return
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+      if (id === "registrar-sono") {
+        document.getElementById("sleep-start")?.focus({ preventScroll: true })
+      }
+      setFlashId(null)
+      requestAnimationFrame(() => setFlashId(id))
+      if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current)
+      flashTimerRef.current = window.setTimeout(() => setFlashId(null), 2400)
+    }
+    goToHash()
+    window.addEventListener("hashchange", goToHash)
+    return () => {
+      window.removeEventListener("hashchange", goToHash)
+      if (flashTimerRef.current !== null) clearTimeout(flashTimerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view])
 
   if (!view) {
     return (
@@ -304,6 +369,14 @@ export default function MedidasPage() {
     if (sleepStart && value) syncSleepHours(sleepStart, value)
   }
 
+  /** troca o dia do sono: recarrega o registro daquele dia (ou os padrões) */
+  const changeSleepDate = (value: string) => {
+    setSleepDate(value)
+    setSleepSaved(false)
+    setSleepError(null)
+    if (value) loadSleepFields(value)
+  }
+
   const handleSleepSave = async () => {
     if (!sleepStart || !sleepEnd) {
       setSleepError("Informe a hora que dormiu e a hora que acordou.")
@@ -325,7 +398,7 @@ export default function MedidasPage() {
     setSleepError(null)
     try {
       await addSleepLog({
-        date: toOperationalDateKey(new Date()),
+        date: sleepDate || toOperationalDateKey(new Date()),
         sleptAt: sleepStart,
         wokeAt: sleepEnd,
         durationMin,
@@ -336,6 +409,32 @@ export default function MedidasPage() {
       setSleepError(e instanceof Error ? e.message : "Erro ao salvar sono no banco")
     } finally {
       setSleepSaving(false)
+    }
+  }
+
+  /** grava o total de água de um dia passado (substitui o total registrado) */
+  const handleWaterSave = async () => {
+    if (!waterDay) {
+      setWaterError("Escolha o dia.")
+      return
+    }
+    const ml = Math.round(parseFloat(waterMl.replace(",", ".")) || 0)
+    if (ml < 0 || ml > 15000) {
+      setWaterError("Total inválido — use entre 0 e 15.000 ml.")
+      return
+    }
+    setWaterSaving(true)
+    setWaterError(null)
+    try {
+      const current = data?.hydration.find((h) => h.date === waterDay)?.ml ?? 0
+      await addWater(ml - current, waterDay)
+      setWaterMl("")
+      setWaterOk(true)
+      setTimeout(() => setWaterOk(false), 2500)
+    } catch (e) {
+      setWaterError(e instanceof Error ? e.message : "Erro ao salvar hidratação")
+    } finally {
+      setWaterSaving(false)
     }
   }
 
@@ -613,60 +712,81 @@ export default function MedidasPage() {
         </p>
       </Card>
 
-      <SectionTitle accent="steel">Registrar sono</SectionTitle>
-      <Card className="rise rise-3 border-l-4 border-l-[#a78bfa]">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Dormi às</span>
-            <input
-              type="time"
-              value={sleepStart}
-              onChange={(e) => handleSleepStartChange(e.target.value)}
-              className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Acordei às</span>
-            <input
-              type="time"
-              value={sleepEnd}
-              onChange={(e) => handleSleepEndChange(e.target.value)}
-              className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Horas</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="7,5"
-              value={sleepHours}
-              onChange={(e) => setSleepHours(e.target.value)}
-              className="w-24 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
-            />
-          </label>
-          <button
-            onClick={handleSleepSave}
-            disabled={sleepSaving}
-            className={cn(
-              "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
-              sleepSaved ? "bg-zone text-coal" : "bg-[#a78bfa] text-coal hover:bg-[#c4b5fd]"
-            )}
-            style={{ fontFamily: "var(--font-condensed)" }}
-          >
-            {sleepSaved ? <Check size={15} /> : <Moon size={15} />}
-            {sleepSaving ? "Salvando…" : sleepSaved ? "Salvo" : "Salvar"}
-          </button>
-        </div>
-        {sleepError && (
-          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
-            {sleepError}
+      <div id="registrar-sono" className="scroll-mt-4">
+        <SectionTitle accent="steel">Registrar sono</SectionTitle>
+        <Card
+          className={cn(
+            "rise rise-3 border-l-4 border-l-[#a78bfa]",
+            flashId === "registrar-sono" && "arrive-flash"
+          )}
+        >
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">
+                Dia (que acordou)
+              </span>
+              <input
+                type="date"
+                value={sleepDate}
+                max={today ? toDateKey(today) : undefined}
+                onChange={(e) => changeSleepDate(e.target.value)}
+                className="w-40 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Dormi às</span>
+              <input
+                id="sleep-start"
+                type="time"
+                value={sleepStart}
+                onChange={(e) => handleSleepStartChange(e.target.value)}
+                className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Acordei às</span>
+              <input
+                id="sleep-end"
+                type="time"
+                value={sleepEnd}
+                onChange={(e) => handleSleepEndChange(e.target.value)}
+                className="w-28 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Horas</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="7,5"
+                value={sleepHours}
+                onChange={(e) => setSleepHours(e.target.value)}
+                className="w-24 rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-[#a78bfa]"
+              />
+            </label>
+            <button
+              onClick={handleSleepSave}
+              disabled={sleepSaving}
+              className={cn(
+                "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
+                sleepSaved ? "bg-zone text-coal" : "bg-[#a78bfa] text-coal hover:bg-[#c4b5fd]"
+              )}
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              {sleepSaved ? <Check size={15} /> : <Moon size={15} />}
+              {sleepSaving ? "Salvando…" : sleepSaved ? "Salvo" : "Salvar"}
+            </button>
+          </div>
+          {sleepError && (
+            <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+              {sleepError}
+            </p>
+          )}
+          <p className="mt-2.5 text-[11px] text-steel-dim">
+            O registro fica no dia em que você acordou.
           </p>
-        )}
-        <p className="mt-2.5 text-[11px] text-steel-dim">
-          O registro fica no dia em que você acordou.
-        </p>
-      </Card>
+        </Card>
+      </div>
 
       <SectionTitle>Registrar medidas</SectionTitle>
       <Card className="rise rise-3">
@@ -822,13 +942,80 @@ export default function MedidasPage() {
         />
       </div>
 
-      <SectionTitle accent="zone">Água — últimos 7 dias</SectionTitle>
-      <Card className="rise rise-4 mb-6 border-l-4 border-l-[#38bdf8]">
-        <HydrationChart data={view.hydration7} target={view.waterGoal} />
-        <p className="mt-2 font-mono text-[10px] text-steel-dim">
-          registre no painel com os botões rápidos · meta ~37 ml/kg
-        </p>
-      </Card>
+      <div id="hidratacao" className="scroll-mt-4">
+        <SectionTitle accent="zone">Água — últimos 7 dias</SectionTitle>
+        <Card className="rise rise-4 border-l-4 border-l-[#38bdf8]">
+          <HydrationChart data={view.hydration7} target={view.waterGoal} />
+          <p className="mt-2 font-mono text-[10px] text-steel-dim">
+            registre no painel com os botões rápidos · meta ~37 ml/kg
+          </p>
+        </Card>
+
+        {/* correção retroativa: total exato de um dia esquecido ou errado */}
+        <Card
+          className={cn(
+            "rise rise-4 mt-3 border-l-4 border-l-[#38bdf8]",
+            flashId === "hidratacao" && "arrive-flash"
+          )}
+        >
+          <p className="text-sm font-semibold text-bone">Corrigir outro dia</p>
+          <p className="mt-0.5 text-xs text-steel-dim">
+            Esqueceu de anotar? Salve o total daquele dia — substitui o que estiver registrado.
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Dia</span>
+              <select
+                value={waterDay}
+                onChange={(e) => {
+                  setWaterDay(e.target.value)
+                  setWaterOk(false)
+                  setWaterError(null)
+                }}
+                className="rounded border border-seam bg-coal px-2.5 py-2 text-sm text-bone outline-none focus:border-zone"
+              >
+                {[...view.hydration7].reverse().map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {dayOptionLabel(d.key)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex w-28 flex-col gap-1">
+              <span className="font-mono text-[10px] uppercase text-steel-dim">Total (ml)</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                step={50}
+                placeholder={String(view.hydration7.find((d) => d.key === waterDay)?.ml ?? 0)}
+                value={waterMl}
+                onChange={(e) => setWaterMl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleWaterSave()
+                }}
+                className="w-full rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-zone"
+              />
+            </label>
+            <button
+              onClick={handleWaterSave}
+              disabled={waterSaving || !waterDay}
+              className={cn(
+                "flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-60",
+                waterOk ? "bg-zone text-coal" : "bg-[#38bdf8] text-coal hover:bg-sky-300"
+              )}
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              {waterOk ? <Check size={15} /> : <Plus size={15} />}
+              {waterSaving ? "Salvando…" : waterOk ? "Salvo" : "Salvar"}
+            </button>
+          </div>
+          {waterError && (
+            <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+              {waterError}
+            </p>
+          )}
+        </Card>
+      </div>
 
       <SectionTitle accent="steel">Últimos registros</SectionTitle>
       <Card className="rise rise-5 p-0">
