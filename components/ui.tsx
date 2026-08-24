@@ -1,3 +1,7 @@
+"use client"
+
+import { useState } from "react"
+import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Cabeçalho de página com marca e faixa industrial */
@@ -72,6 +76,61 @@ export function SectionTitle({
     >
       {children}
     </h2>
+  )
+}
+
+/**
+ * Seção recolhível para encurtar telas longas: o cabeçalho substitui o
+ * SectionTitle e o conteúdo só monta quando aberto (menos peso no scroll).
+ * Estado local por visita — sem persistência de propósito.
+ */
+export function CollapsibleSection({
+  title,
+  accent = "ember",
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  title: React.ReactNode
+  accent?: "ember" | "zone" | "steel" | "gold"
+  /** contador/etiqueta à direita do título (ex.: "3/16") */
+  badge?: React.ReactNode
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const color =
+    accent === "zone"
+      ? "text-zone"
+      : accent === "gold"
+        ? "text-gold"
+        : accent === "steel"
+          ? "text-steel"
+          : "text-ember"
+  return (
+    <section className="mt-7">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="mb-3 flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-[0.3em] transition-colors hover:text-bone"
+        style={{ fontFamily: "var(--font-condensed)" }}
+      >
+        <span className={color}>{title}</span>
+        {badge != null && (
+          <span className="rounded border border-seam bg-iron px-1.5 py-0.5 font-mono text-[10px] tracking-normal text-steel">
+            {badge}
+          </span>
+        )}
+        <ChevronDown
+          size={14}
+          className={cn(
+            "ml-auto shrink-0 text-steel-dim transition-transform duration-200",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      {open && children}
+    </section>
   )
 }
 

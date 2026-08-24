@@ -445,6 +445,97 @@ export function useGymData() {
     }
   }, [])
 
+  /**
+   * Remove o registro corporal de um dia (peso, cintura, bioimpedância —
+   * a linha inteira). Upsert por (user_id, date) faz o par com addBodyLog.
+   */
+  const deleteBodyLog = useCallback(async (date: string) => {
+    const previous = dataRef.current?.body.find((b) => b.date === date) ?? null
+
+    setData((prev) => {
+      if (!prev) return prev
+      return { ...prev, body: prev.body.filter((b) => b.date !== date) }
+    })
+
+    const enqueueIt = () => {
+      enqueue({
+        action: "delete",
+        table: "body_logs",
+        onConflict: "user_id,date",
+        logicalKey: `delete-body-${date}`,
+        payload: { date },
+        deleteEq: { date },
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const { error } = await supabase.from("body_logs").delete().eq("date", date)
+      if (error) throw new Error(error.message)
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      if (previous) {
+        setData((prev) => {
+          if (!prev || prev.body.some((b) => b.date === date)) return prev
+          return { ...prev, body: [...prev.body, previous].sort((a, b) => a.date.localeCompare(b.date)) }
+        })
+      }
+      throw e
+    }
+  }, [])
+
+  /** Remove o registro de sono de uma noite (chave: dia em que acordou). */
+  const deleteSleepLog = useCallback(async (date: string) => {
+    const previous = dataRef.current?.sleep.find((s) => s.date === date) ?? null
+
+    setData((prev) => {
+      if (!prev) return prev
+      return { ...prev, sleep: prev.sleep.filter((s) => s.date !== date) }
+    })
+
+    const enqueueIt = () => {
+      enqueue({
+        action: "delete",
+        table: "sleep_logs",
+        onConflict: "user_id,date",
+        logicalKey: `delete-sleep-${date}`,
+        payload: { date },
+        deleteEq: { date },
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      const { error } = await supabase.from("sleep_logs").delete().eq("date", date)
+      if (error) throw new Error(error.message)
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      if (previous) {
+        setData((prev) => {
+          if (!prev || prev.sleep.some((s) => s.date === date)) return prev
+          return { ...prev, sleep: [...prev.sleep, previous].sort((a, b) => a.date.localeCompare(b.date)) }
+        })
+      }
+      throw e
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
     const supabase = getSupabaseBrowserClient()
     await supabase.auth.signOut()
@@ -505,6 +596,8 @@ export function useGymData() {
     addWater,
     addSleepLog,
     deleteWorkout,
+    deleteBodyLog,
+    deleteSleepLog,
     signOut,
   }
 }

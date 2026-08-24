@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw } from "lucide-react"
 import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
 import { ProgramTabs } from "@/components/program-tabs"
-import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
+import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import {
@@ -16,11 +16,10 @@ import {
   cycleTodayView,
   getScheduleMode,
   last7Days,
-  rolling7,
   ScheduleMode,
   setScheduleMode,
 } from "@/lib/cycle"
-import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary } from "@/lib/insights"
+import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary, weightTrend7d } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { countsTowardProgramTarget, PLAN_BY_ID, planForProgram, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
@@ -111,10 +110,8 @@ function compactSessionTitle(
     .replace("Lower ", "L")
 }
 
-function buildWeeks(data: GymData, today: Date, program: TrainingProgram) {
-  const currentMonday = mondayOf(today)
+function buildWeeks(data: GymData, today: Date, program: TrainingProgram, rolling: boolean) {
   const weeks: {
-    monday: Date
     label: string
     volume: number
     z2: number
@@ -123,14 +120,21 @@ function buildWeeks(data: GymData, today: Date, program: TrainingProgram) {
     groups: ReturnType<typeof hardSetsByGroup>
   }[] = []
   for (let i = 5; i >= 0; i--) {
-    const monday = new Date(currentMonday)
-    monday.setDate(monday.getDate() - i * 7)
-    const start = toDateKey(monday)
-    const end = toDateKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6))
-    const ws = data.workouts.filter((w) => w.date >= start && w.date <= end)
+    // mesma régua dos cards: no ciclo/competição cada barra cobre os últimos
+    // 7 dias corridos (a mais recente termina hoje); na semana fixa, seg-dom
+    let end: Date
+    if (rolling) {
+      end = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i * 7)
+    } else {
+      end = mondayOf(today)
+      end.setDate(end.getDate() - i * 7 + 6)
+    }
+    const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6)
+    const startKey = toDateKey(start)
+    const endKey = toDateKey(end)
+    const ws = data.workouts.filter((w) => w.date >= startKey && w.date <= endKey)
     weeks.push({
-      monday,
-      label: weekLabel(monday),
+      label: weekLabel(start),
       volume: ws.reduce((s, w) => s + workoutVolume(w), 0),
       z2: ws.reduce((s, w) => s + zone2Minutes(w), 0),
       intense: ws.reduce((s, w) => s + intenseMinutes(w), 0),
@@ -150,10 +154,26 @@ export default function Dashboard() {
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
   const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
   const [mode, setMode] = useState<ScheduleMode>("ciclo")
+  /** nudge de calibração (sem peso no banco) dispensado pelo usuário */
+  const [nudgeDismissed, setNudgeDismissed] = useState(true)
 
   useEffect(() => {
     setMode(getScheduleMode())
+    try {
+      setNudgeDismissed(localStorage.getItem("gym-track:weight-nudge") === "off")
+    } catch {
+      /* ignore */
+    }
   }, [])
+
+  const dismissWeightNudge = () => {
+    setNudgeDismissed(true)
+    try {
+      localStorage.setItem("gym-track:weight-nudge", "off")
+    } catch {
+      /* ignore */
+    }
+  }
 
   const toggleMode = () => {
     const next: ScheduleMode = mode === "ciclo" ? "calendario" : "ciclo"
@@ -171,7 +191,9 @@ export default function Dashboard() {
       (w) => w.date === todayKey && w.sessionId === todaySession.id
     )
 
-    const weeks = buildWeeks(data, today, program)
+    // régua única: gráficos e cards usam a mesma janela em todos os modos
+    const rolling = program === "competition" || mode === "ciclo"
+    const weeks = buildWeeks(data, today, program, rolling)
     const thisWeek = weeks[weeks.length - 1]
     const lastWeek = weeks[weeks.length - 2]
     const volumeDelta =
@@ -196,14 +218,10 @@ export default function Dashboard() {
       }
     })
 
-    // peso
+    // peso: tendência por médias móveis de 7 dias (média atual vs anterior)
     const weights = data.body.filter((b) => (b.weightKg ?? 0) > 0)
     const currentWeight = weights[weights.length - 1]?.weightKg
-    const firstWeight = weights[0]?.weightKg
-    const weightDelta =
-      currentWeight !== undefined && firstWeight !== undefined
-        ? currentWeight - firstWeight
-        : null
+    const weightTrend = weightTrend7d(data.body, today)
 
     // progressão de força do exercício selecionado
     const strength = data.workouts
@@ -265,10 +283,9 @@ export default function Dashboard() {
     const waterGoal = waterGoalMl(data.body)
     const sleepMetrics = computeSleepMetrics(data.sleep, today)
 
-    // modo ciclo: próximo da fila + janela móvel de 7 dias
+    // modo ciclo: próximo da fila + fita dos últimos 7 dias
     const cycleView = cycleTodayView(data.workouts, today)
     const cycle = cycleView.suggestion
-    const roll = rolling7(data.workouts, today, program)
     const strip = last7Days(data.workouts, today)
     const competitionView = competitionTodayView(data.workouts, today)
     const competitionPhase = competitionPhaseFor(today)
@@ -327,7 +344,7 @@ export default function Dashboard() {
       volumeDelta,
       days,
       currentWeight,
-      weightDelta,
+      weightTrend,
       strength,
       daysActive,
       streak,
@@ -338,7 +355,6 @@ export default function Dashboard() {
       waterToday,
       waterGoal,
       sleepMetrics,
-      roll,
       strip,
       headSession,
       headDone,
@@ -441,7 +457,7 @@ export default function Dashboard() {
             {view.headKicker}
           </p>
           {view.daysActive > 0 && (
-            <span className="font-mono text-[9px] text-steel-dim" title="Dias desde o primeiro treino">
+            <span className="font-mono text-[10px] text-steel-dim" title="Dias desde o primeiro treino">
               Dia {view.daysActive}
             </span>
           )}
@@ -496,7 +512,7 @@ export default function Dashboard() {
           </p>
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Sessões</p>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">Sessões</p>
               <p className="score text-2xl text-bone">
                 {view.weekSummary.sessions}
                 <span className="text-base text-steel-dim">
@@ -505,16 +521,25 @@ export default function Dashboard() {
               </p>
             </div>
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">PRs batidos</p>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">PRs batidos</p>
               <p className="score text-2xl text-ember-hot">{view.weekSummary.prs.length}</p>
             </div>
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Volume</p>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">Volume</p>
               <p className="score text-2xl text-bone">{formatKg(view.weekSummary.volume)}</p>
             </div>
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">Calorias (est.)</p>
-              <p className="score text-2xl text-gold">~{view.weekSummary.kcal.toLocaleString("pt-BR")}</p>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">Calorias (est.)</p>
+              {view.weekSummary.kcal !== null ? (
+                <p className="score text-2xl text-gold">
+                  ~{view.weekSummary.kcal.toLocaleString("pt-BR")}
+                </p>
+              ) : (
+                <>
+                  <p className="score text-2xl text-steel-dim">—</p>
+                  <p className="font-mono text-[10px] text-steel-dim">registre seu peso p/ estimar</p>
+                </>
+              )}
             </div>
           </div>
           {view.weekSummary.prs.length > 0 && (
@@ -529,8 +554,10 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-          <p className="mt-3 font-mono text-[9px] text-steel-dim">
-            kcal estimadas por METs (musculação ~60 min/sessão + cardio e esporte por minutos)
+          <p className="mt-3 font-mono text-[10px] text-steel-dim">
+            {view.weekSummary.kcal !== null
+              ? "kcal estimadas por METs (musculação ~60 min/sessão + cardio e esporte por minutos)"
+              : "calorias precisam do seu peso no banco (aba Medidas)"}
             {view.weekSummary.z2Minutes > 0 && ` · ${view.weekSummary.z2Minutes}′ de Zona 2`}
           </p>
         </Card>
@@ -545,7 +572,7 @@ export default function Dashboard() {
           >
             {rollingView ? "Últimos 7 dias" : "Sua semana"}
           </p>
-          <div className="flex items-center gap-3 font-mono text-[9px] text-steel-dim">
+          <div className="flex items-center gap-3 font-mono text-[10px] text-steel-dim">
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-sm bg-ember" /> feito
             </span>
@@ -575,7 +602,7 @@ export default function Dashboard() {
                 <div key={d.key} className="flex flex-col items-center gap-1.5">
                   <span
                     className={cn(
-                      "font-mono text-[9px]",
+                      "font-mono text-[10px]",
                       d.isToday ? "font-bold text-ember" : "text-steel-dim"
                     )}
                   >
@@ -613,7 +640,7 @@ export default function Dashboard() {
               <div key={d.label} className="flex flex-col items-center gap-1.5">
                 <span
                   className={cn(
-                    "font-mono text-[9px]",
+                    "font-mono text-[10px]",
                     d.isToday ? "font-bold text-ember" : "text-steel-dim"
                   )}
                 >
@@ -663,6 +690,35 @@ export default function Dashboard() {
         </p>
       )}
 
+      {/* onboarding-lite: sem peso no banco, metas de kcal/água/proteína ficam cegas */}
+      {!nudgeDismissed && !data?.body.some((b) => (b.weightKg ?? 0) > 0) && (
+          <Card className="rise mt-4 border-l-4 border-l-gold">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-bone">Calibre suas metas</p>
+                <p className="mt-1 text-xs leading-relaxed text-steel">
+                  Sem peso registrado, calorias, água e proteína ficam sem referência.
+                  Uma pesagem basta — de manhã, em jejum.
+                </p>
+              </div>
+              <button
+                onClick={dismissWeightNudge}
+                className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-steel-dim transition-colors hover:text-bone"
+                aria-label="Dispensar aviso"
+              >
+                ✕
+              </button>
+            </div>
+            <Link
+              href="/medidas#registrar-medidas"
+              className="mt-3 inline-flex items-center gap-1.5 rounded bg-gold px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-coal transition-colors hover:bg-gold/85"
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              Registrar peso agora
+            </Link>
+          </Card>
+        )}
+
       {/* Readiness / fadiga — razão carga aguda : base crônica */}
       <Card
         className={cn(
@@ -691,7 +747,7 @@ export default function Dashboard() {
               <p className="score text-2xl text-bone">
                 {Math.round(view.readiness.ratio * 100)}%
               </p>
-              <p className="font-mono text-[9px] text-steel-dim">
+              <p className="font-mono text-[10px] text-steel-dim">
                 da base de {Math.round(view.readiness.chronic).toLocaleString("pt-BR")} AU/sem
               </p>
             </div>
@@ -724,7 +780,7 @@ export default function Dashboard() {
             <p className="score text-2xl text-bone">
               {formatSleepDuration(view.sleepMetrics.avg7Min)}
             </p>
-            <p className="font-mono text-[9px] text-steel-dim">
+            <p className="font-mono text-[10px] text-steel-dim">
               média 7d · {view.sleepMetrics.registered7}/7
             </p>
           </div>
@@ -750,13 +806,13 @@ export default function Dashboard() {
         </Link>
       </Card>
 
-      {/* Stats da semana */}
+      {/* Stats da semana — mesma janela dos gráficos abaixo */}
       <div className="rise rise-3 mt-4 grid grid-cols-2 gap-3">
         <StatCard
           label={rollingView ? "Sessões · 7 dias" : "Sessões na semana"}
           value={
             <>
-              {rollingView ? view.roll.sessions : view.thisWeek.sessions}
+              {view.thisWeek.sessions}
               <span className="text-lg text-steel-dim">
                 {program === "competition" ? "/2–3" : "/5"}
               </span>
@@ -775,10 +831,10 @@ export default function Dashboard() {
         />
         <StatCard
           label={rollingView ? "Zona 2 · 7 dias" : "Zona 2 na semana"}
-          value={`${rollingView ? view.roll.z2 : view.thisWeek.z2}′`}
+          value={`${view.thisWeek.z2}′`}
           detail={
-            (rollingView ? view.roll.intense : view.thisWeek.intense) > 0
-              ? `meta ${z2Target.min}–${z2Target.max}′ · +${rollingView ? view.roll.intense : view.thisWeek.intense}′ intenso à parte`
+            view.thisWeek.intense > 0
+              ? `meta ${z2Target.min}–${z2Target.max}′ · +${view.thisWeek.intense}′ intenso à parte`
               : program === "competition"
                 ? `meta ${z2Target.min}–${z2Target.max} min · ajuste ao campo`
                 : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
@@ -793,9 +849,9 @@ export default function Dashboard() {
               : "—"
           }
           detail={
-            view.weightDelta !== null
-              ? `${view.weightDelta > 0 ? "+" : ""}${view.weightDelta.toFixed(1).replace(".", ",")} kg desde o início`
-              : "registre na aba Medidas"
+            view.weightTrend.delta !== null
+              ? `${view.weightTrend.delta > 0 ? "+" : ""}${view.weightTrend.delta.toFixed(1).replace(".", ",")} kg vs média anterior`
+              : "média 7d sem base comparável ainda"
           }
           accent="gold"
         />
@@ -855,7 +911,7 @@ export default function Dashboard() {
           )}
         </div>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="font-mono text-[9px] text-steel-dim">
+          <p className="font-mono text-[10px] text-steel-dim">
             meta ~37 ml/kg pelo último peso · desidratação piora fôlego e causa tontura
           </p>
           <Link
@@ -868,8 +924,8 @@ export default function Dashboard() {
       </Card>
 
       {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
-      <SectionTitle>Treino — 6 semanas</SectionTitle>
-      <Card className="rise rise-4">
+      <CollapsibleSection title="Treino — 6 semanas">
+        <Card className="rise rise-4">
         <div className="mb-3 flex gap-1.5">
           {(["grupos", "total"] as const).map((v) => (
             <button
@@ -893,7 +949,9 @@ export default function Dashboard() {
               data={view.weeks.map((w) => ({ label: w.label, volume: w.volume }))}
             />
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
-              cada barra representa uma semana calendário (seg-dom)
+              {rollingView
+                ? "cada barra cobre 7 dias corridos · a mais recente termina hoje e ainda está em andamento"
+                : "cada barra representa uma semana calendário (seg-dom)"}
             </p>
           </>
         ) : (
@@ -920,15 +978,19 @@ export default function Dashboard() {
               ))}
             </div>
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
-              barras por semana calendário (seg-dom) · % das séries duras nas últimas 4 semanas · RIR 4+ não conta como série dura
+              {rollingView
+                ? "barras de 7 dias corridos, a última terminando hoje · "
+                : "barras por semana calendário (seg-dom) · "}
+              % das séries duras nas últimas 4 semanas · RIR 4+ não conta como série dura
             </p>
           </>
         )}
-      </Card>
+        </Card>
+      </CollapsibleSection>
 
       {/* Progressão de força */}
-      <SectionTitle>Força — 1RM estimada</SectionTitle>
-      <Card className="rise rise-5">
+      <CollapsibleSection title="Força — 1RM estimada">
+        <Card className="rise rise-5">
         <div className="mb-3 flex flex-wrap gap-1.5">
           {KEY_LIFTS.map((k) => (
             <button
@@ -956,11 +1018,12 @@ export default function Dashboard() {
         <p className="mt-2 font-mono text-[10px] text-steel-dim">
           Epley com reps ajustadas por RIR quando informado · PRs continuam pela fórmula clássica
         </p>
-      </Card>
+        </Card>
+      </CollapsibleSection>
 
       {/* Zona 2 */}
-      <SectionTitle accent="zone">Base aeróbica — min/semana</SectionTitle>
-      <Card className="rise rise-6 border-l-4 border-l-zone">
+      <CollapsibleSection title="Base aeróbica — min/semana" accent="zone">
+        <Card className="rise rise-6 border-l-4 border-l-zone">
         <ZoneChart
           data={view.weeks.map((w) => ({ label: w.label, z2: w.z2, intense: w.intense }))}
           target={z2Target.min}
@@ -971,19 +1034,21 @@ export default function Dashboard() {
             : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
-          barras = semana fechada (seg–dom); a atual, mais clara, ainda está em
-          andamento. <span className="text-ember">Intenso</span> entra empilhado, fora da
-          meta de Z2 · esporte não conta. O card &ldquo;Zona 2 · 7 dias&rdquo; usa os
-          últimos 7 dias corridos, por isso pode diferir da última barra.
+          barras usam a mesma janela dos cards acima
+          {rollingView ? " (7 dias corridos)" : " (seg–dom)"}; a atual, mais clara,
+          ainda está em andamento. <span className="text-ember">Intenso</span> entra
+          empilhado, fora da meta de Z2 · esporte não conta.
         </p>
-      </Card>
+        </Card>
+      </CollapsibleSection>
 
       {/* Conquistas Xbox-style */}
-      <SectionTitle accent="steel">
-        Conquistas — {view.achievements.filter((a) => a.unlocked).length}/
-        {view.achievements.length}
-      </SectionTitle>
-      <div className="grid grid-cols-2 gap-2">
+      <CollapsibleSection
+        title="Conquistas"
+        accent="gold"
+        badge={`${view.achievements.filter((a) => a.unlocked).length}/${view.achievements.length}`}
+      >
+        <div className="grid grid-cols-2 gap-2">
         {view.achievements.map((a) => (
           <div
             key={a.id}
@@ -1010,7 +1075,7 @@ export default function Dashboard() {
               </div>
             </div>
             {a.unlocked ? (
-              <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-gold">
+              <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-gold">
                 ✓ Desbloqueada
               </p>
             ) : (
@@ -1023,18 +1088,19 @@ export default function Dashboard() {
                     }}
                   />
                 </div>
-                <p className="mt-1 font-mono text-[9px] text-steel-dim">
-                  {a.unit === "kg"
-                    ? `${formatKg(Math.round(a.current))} / ${formatKg(a.target)}`
-                    : a.unit === "min"
-                      ? `${a.current}′ / ${a.target}′`
-                      : `${a.current} / ${a.target}`}
-                </p>
+                 <p className="mt-1 font-mono text-[10px] text-steel-dim">
+                   {a.unit === "kg"
+                     ? `${formatKg(Math.round(a.current))} / ${formatKg(a.target)}`
+                     : a.unit === "min"
+                       ? `${a.current}′ / ${a.target}′`
+                       : `${a.current} / ${a.target}`}
+                 </p>
               </div>
             )}
           </div>
         ))}
-      </div>
+        </div>
+      </CollapsibleSection>
 
     </main>
   )

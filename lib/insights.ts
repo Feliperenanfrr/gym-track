@@ -1,7 +1,7 @@
 import { countsTowardProgramTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
 import { zone2Minutes } from "./cardio"
 import { GymData, TrainingProgram, WorkoutLog } from "./types"
-import { bestE1RM, toDateKey, workoutVolume } from "./utils"
+import { bestE1RM, fromDateKey, toDateKey, workoutVolume } from "./utils"
 
 /* ------------------------------------------------------------------ */
 /* Hidratação                                                           */
@@ -130,6 +130,62 @@ export function computeReadiness(workouts: WorkoutLog[], today: Date): Readiness
 }
 
 /* ------------------------------------------------------------------ */
+/* Tendência de peso (médias móveis de 7 dias)                          */
+/* ------------------------------------------------------------------ */
+
+export interface WeightTrend {
+  /** média das pesagens dos últimos 7 dias (kg) */
+  currentAvg: number | null
+  /** média da janela comparável anterior (kg) */
+  previousAvg: number | null
+  /** currentAvg − previousAvg; null sem base comparável */
+  delta: number | null
+}
+
+/**
+ * Comparação de peso por média móvel: janela atual (hoje−6 … hoje) contra a
+ * anterior (hoje−13 … hoje−7). Pesagem oscila com água/sal/intestino, então
+ * média de janela > comparação de pontos isolados (ou "desde o início", que
+ * vira ruído com o tempo).
+ * Janela anterior vazia (peso esporádico)? Usa as até 4 pesagens mais
+ * recentes anteriores a ela (limite de 60 dias) como referência. Nada
+ * comparável → delta null e a UI mostra "—" em vez de inventar número.
+ */
+export function weightTrend7d(
+  body: { date: string; weightKg?: number }[],
+  today: Date
+): WeightTrend {
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const points = body
+    .filter((b) => (b.weightKg ?? 0) > 0)
+    .map((b) => ({ time: fromDateKey(b.date).getTime(), kg: b.weightKg! }))
+    .filter((p) => !Number.isNaN(p.time) && p.time <= t0)
+    .sort((a, b) => a.time - b.time)
+
+  const winStart = t0 - 6 * DAY_MS
+  const prevEnd = winStart - DAY_MS
+  const prevStart = t0 - 13 * DAY_MS
+  const current = points.filter((p) => p.time >= winStart)
+  let previous = points.filter((p) => p.time >= prevStart && p.time <= prevEnd)
+  if (previous.length === 0 && current.length > 0) {
+    previous = points
+      .filter((p) => p.time < winStart && p.time >= t0 - 60 * DAY_MS)
+      .slice(-4)
+  }
+
+  const avg = (xs: { kg: number }[]) =>
+    xs.length > 0 ? xs.reduce((s, p) => s + p.kg, 0) / xs.length : null
+
+  const currentAvg = avg(current)
+  const previousAvg = avg(previous)
+  return {
+    currentAvg,
+    previousAvg,
+    delta: currentAvg !== null && previousAvg !== null ? currentAvg - previousAvg : null,
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Resumo semanal                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -142,8 +198,12 @@ export interface WeeklySummary {
   volume: number
   /** minutos de Zona 2 (cardio + finisher, esporte fora) */
   z2Minutes: number
-  /** gasto calórico estimado por METs (arredondado a dezenas) */
-  kcal: number
+  /**
+   * gasto calórico estimado por METs (arredondado a dezenas).
+   * null sem peso registrado — inventar 85 kg produzia número com
+   * precisão que não existe; melhor "—" do que caloria falsa.
+   */
+  kcal: number | null
 }
 
 // METs aproximados (Compendium of Physical Activities)
@@ -152,7 +212,6 @@ const MET_Z2 = 6.5 // bike/esteira em ritmo moderado
 const MET_INTENSE = 8.5 // corda, tiros ou natação vigorosa
 const MET_SPORT = 8 // futsal/flag/jiu-jitsu recreativo
 const LIFT_SESSION_MIN = 60 // duração típica do treino de força
-const FALLBACK_WEIGHT_KG = 85
 
 /** Resumo da semana que começa em `monday` (PRs, frequência, volume, kcal) */
 export function weeklySummary(
@@ -170,23 +229,26 @@ export function weeklySummary(
   const volume = ws.reduce((s, w) => s + workoutVolume(w), 0)
   const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 
-  const weightKg =
-    [...data.body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg ??
-    FALLBACK_WEIGHT_KG
-  const kcalPerMin = (met: number) => (met * 3.5 * weightKg) / 200
-  let kcal = 0
-  for (const w of ws) {
-    const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
-    if (purpose === "sport") {
-      kcal += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_SPORT)
-    } else {
-      if ((PLAN_BY_ID[w.sessionId]?.kind === "lift" || PLAN_BY_ID[w.sessionId]?.kind === "mixed") && w.entries.length > 0) {
-        kcal += LIFT_SESSION_MIN * kcalPerMin(MET_LIFT)
+  // kcal só com peso real: o MET depende da massa corporal
+  const weightKg = [...data.body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg
+  let kcal: number | null = null
+  if (weightKg) {
+    const kcalPerMin = (met: number) => (met * 3.5 * weightKg) / 200
+    let total = 0
+    for (const w of ws) {
+      const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
+      if (purpose === "sport") {
+        total += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_SPORT)
+      } else {
+        if ((PLAN_BY_ID[w.sessionId]?.kind === "lift" || PLAN_BY_ID[w.sessionId]?.kind === "mixed") && w.entries.length > 0) {
+          total += LIFT_SESSION_MIN * kcalPerMin(MET_LIFT)
+        }
+        total +=
+          (w.cardio?.minutes ?? 0) *
+          kcalPerMin(purpose === "intense" ? MET_INTENSE : MET_Z2)
       }
-      kcal +=
-        (w.cardio?.minutes ?? 0) *
-        kcalPerMin(purpose === "intense" ? MET_INTENSE : MET_Z2)
     }
+    kcal = Math.round(total / 10) * 10
   }
 
   const prNames = prEvents(data.workouts)
@@ -198,6 +260,6 @@ export function weeklySummary(
     prs: [...new Set(prNames)],
     volume,
     z2Minutes,
-    kcal: Math.round(kcal / 10) * 10,
+    kcal,
   }
 }

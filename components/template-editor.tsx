@@ -142,7 +142,7 @@ export function TemplateEditor({
       <div className="max-h-[94dvh] w-full max-w-2xl overflow-y-auto rounded-t-xl border border-seam bg-coal shadow-2xl sm:rounded-xl">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-seam bg-coal/95 px-4 py-4 backdrop-blur">
           <div>
-            <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-gold">
+            <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-gold">
               Próximos treinos
             </p>
             <h2 id="template-editor-title" className="stencil mt-1 text-2xl text-bone">
@@ -226,7 +226,7 @@ export function TemplateEditor({
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
-                <label className="text-[9px] uppercase text-steel-dim">
+                <label className="text-[10px] uppercase text-steel-dim">
                   Séries
                   <input
                     type="number"
@@ -238,7 +238,7 @@ export function TemplateEditor({
                     className="mt-1 w-full rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-gold"
                   />
                 </label>
-                <label className="text-[9px] uppercase text-steel-dim">
+                <label className="text-[10px] uppercase text-steel-dim">
                   Reps mín.
                   <input
                     type="number"
@@ -250,7 +250,7 @@ export function TemplateEditor({
                     className="mt-1 w-full rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-gold"
                   />
                 </label>
-                <label className="text-[9px] uppercase text-steel-dim">
+                <label className="text-[10px] uppercase text-steel-dim">
                   Reps máx.
                   <input
                     type="number"
@@ -262,7 +262,7 @@ export function TemplateEditor({
                     className="mt-1 w-full rounded border border-seam bg-coal px-2 py-2 text-center font-mono text-sm text-bone outline-none focus:border-gold"
                   />
                 </label>
-                <label className="text-[9px] uppercase text-steel-dim">
+                <label className="text-[10px] uppercase text-steel-dim">
                   Unidade
                   <select
                     value={exercise.unit}
@@ -277,7 +277,7 @@ export function TemplateEditor({
                     <option value="seconds">segundos</option>
                   </select>
                 </label>
-                <label className="col-span-2 text-[9px] uppercase text-steel-dim">
+                <label className="col-span-2 text-[10px] uppercase text-steel-dim">
                   Descanso
                   <input
                     value={exercise.rest}
@@ -288,7 +288,7 @@ export function TemplateEditor({
               </div>
 
               <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                <label className="text-[9px] uppercase text-steel-dim">
+                <label className="text-[10px] uppercase text-steel-dim">
                   Grupo
                   <select
                     value={groupOfExercise(exercise)}
@@ -304,7 +304,7 @@ export function TemplateEditor({
                     ))}
                   </select>
                 </label>
-                <label className="sm:col-span-2 text-[9px] uppercase text-steel-dim">
+                <label className="sm:col-span-2 text-[10px] uppercase text-steel-dim">
                   Orientação
                   <input
                     value={exercise.note}

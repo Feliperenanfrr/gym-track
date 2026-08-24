@@ -13,6 +13,11 @@ export interface PendingMutation {
   /** chave lógica para deduplicar (date+session ou date) */
   logicalKey: string
   payload: Record<string, unknown>
+  /**
+   * Filtros do delete (coluna → valor). Ausente = delete por id
+   * (payload.id), padrão dos treinos. Medidas/sono removem por date.
+   */
+  deleteEq?: Record<string, unknown>
   queuedAt?: number
 }
 
@@ -60,7 +65,12 @@ export async function flushQueue(supabase: SupabaseClient): Promise<number> {
   for (const item of [...items]) {
     try {
       if (item.action === "delete") {
-        const { error } = await supabase.from(item.table).delete().eq("id", item.payload.id)
+        let query = supabase.from(item.table).delete()
+        const filters = item.deleteEq ?? { id: item.payload.id }
+        for (const [column, value] of Object.entries(filters)) {
+          query = query.eq(column, value)
+        }
+        const { error } = await query
         if (error) {
           items = items.filter((m) => m !== item)
           write(items)

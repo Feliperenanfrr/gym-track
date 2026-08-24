@@ -90,6 +90,8 @@ export default function TreinoPage() {
   const [finisherMin, setFinisherMin] = useState("20")
   /** finisher Z2 (cardioAfter): false = pular o cardio neste treino */
   const [finisherDone, setFinisherDone] = useState(true)
+  /** observações livres da sessão — vão no log e no rascunho */
+  const [notes, setNotes] = useState("")
   const [pickerFor, setPickerFor] = useState<string | "new" | null>(null)
   const [pickerGroup, setPickerGroup] = useState<MuscleGroup>("Peito")
   const [pickerSearch, setPickerSearch] = useState("")
@@ -334,6 +336,7 @@ export default function TreinoPage() {
       )
       setFinisherMin(draft.finisherMin)
       setFinisherDone(draft.finisherDone ?? true)
+      setNotes(draft.notes ?? "")
       startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
       setRegressionApplied(false)
@@ -341,6 +344,7 @@ export default function TreinoPage() {
       const factor = currentFactor()
       setActiveExercises(session.exercises)
       applyPrefill(buildPrefill(session, lastLog, factor))
+      setNotes("")
       startedAtRef.current = null
       setDraftRestored(false)
       setRegressionApplied(factor < 1)
@@ -360,11 +364,12 @@ export default function TreinoPage() {
       cardioPurpose,
       finisherMin,
       finisherDone,
+      notes,
       savedAt: Date.now(),
       startedAt: startedAtRef.current ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin, finisherDone])
+  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin, finisherDone, notes])
 
   const totals = useMemo(() => {
     let volume = 0
@@ -546,6 +551,7 @@ export default function TreinoPage() {
     const factor = currentFactor()
     setActiveExercises(session.exercises)
     applyPrefill(buildPrefill(session, lastLog, factor))
+    setNotes("")
     setDraftRestored(false)
     setRegressionApplied(factor < 1)
   }
@@ -586,6 +592,7 @@ export default function TreinoPage() {
       date: backdated ? toDateKey(today) : toOperationalDateKey(workoutDay),
       sessionId: session.id,
       entries,
+      ...(notes.trim() ? { notes: notes.trim() } : {}),
     }
 
     // duração real da musculação: 1ª série marcada → salvar
@@ -729,7 +736,7 @@ export default function TreinoPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-gold">
               {competitionPhase.label}
             </p>
-            <span className="shrink-0 font-mono text-[9px] text-steel-dim">
+            <span className="shrink-0 font-mono text-[10px] text-steel-dim">
               {competitionPhase.dates}
             </span>
           </div>
@@ -821,7 +828,7 @@ export default function TreinoPage() {
                   </button>
                 ))}
               </div>
-              <p className="mt-1.5 font-mono text-[9px] text-steel-dim">
+              <p className="mt-1.5 font-mono text-[10px] text-steel-dim">
                 1 = muito leve · 10 = esforço máximo — calibra o sinal de fadiga
               </p>
             </div>
@@ -965,7 +972,7 @@ export default function TreinoPage() {
                 className="rounded border border-seam bg-coal px-3 py-2 text-left transition-colors hover:border-gold/60"
               >
                 <span className="block text-sm font-semibold text-bone">{exercise.name}</span>
-                <span className="font-mono text-[9px] uppercase text-steel-dim">
+                <span className="font-mono text-[10px] uppercase text-steel-dim">
                   {exercise.muscleGroup} · {exercise.equipment} · {exercise.sets} × {exercise.repsMin}–{exercise.repsMax}
                 </span>
               </button>
@@ -1210,7 +1217,7 @@ export default function TreinoPage() {
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember disabled:opacity-40"
                         disabled={ex.unit === "seconds"}
                       />
-                      <span className="text-center font-mono text-[9px] uppercase tracking-wide text-steel-dim">
+                      <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
                         kg
                       </span>
                     </label>
@@ -1234,7 +1241,7 @@ export default function TreinoPage() {
                         }}
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
                       />
-                      <span className="text-center font-mono text-[9px] uppercase tracking-wide text-steel-dim">
+                      <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
                         {ex.unit === "seconds" ? "seg" : "reps"}
                       </span>
                     </label>
@@ -1259,7 +1266,7 @@ export default function TreinoPage() {
                   {/* RIR — reps em reserva, 1 tap depois de concluir a série */}
                   {row.done && ex.unit === "reps" && (
                     <div className="mt-2 flex items-center gap-1.5 border-t border-seam pt-2">
-                      <span className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
                         RIR
                       </span>
                       {["0", "1", "2", "3", "4"].map((v) => (
@@ -1278,7 +1285,7 @@ export default function TreinoPage() {
                           {v === "4" ? "4+" : v}
                         </button>
                       ))}
-                      <span className="ml-auto font-mono text-[8px] text-steel-dim">
+                      <span className="ml-auto font-mono text-[10px] text-steel-dim">
                         quantas sobraram?
                       </span>
                     </div>
@@ -1449,6 +1456,27 @@ export default function TreinoPage() {
             ? "Sem falha e sem grind: RIR 2–3. Pare o explosivo quando a velocidade cair."
             : "Toda série a 1–3 reps da falha. Anote tudo — sobrecarga progressiva."}
         </p>
+      )}
+
+      {/* notas da sessão — vão junto no log (e aparecem no Histórico) */}
+      {!saved && (
+        <Card className="rise mt-3">
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+              Notas da sessão
+            </span>
+            <textarea
+              value={notes}
+              onChange={(e) => {
+                dirtyRef.current = true
+                setNotes(e.target.value)
+              }}
+              rows={2}
+              placeholder="Sensações, substituições, dor, condição do equipamento… (opcional)"
+              className="mt-1 w-full resize-y rounded-md border border-seam bg-coal px-3 py-2 text-sm text-bone outline-none focus:border-ember"
+            />
+          </label>
+        </Card>
       )}
 
       {/* barra de salvar fixa — sempre ao alcance do polegar */}

@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isCompetitionSession } from "@/lib/competition-plan"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, WorkoutLog } from "@/lib/types"
+import { CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { cn, formatKg, fromDateKey, toDateKey, workoutVolume } from "@/lib/utils"
 
 const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
@@ -17,17 +18,85 @@ const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
   { id: "sport", label: "Esporte", hint: "jogo/luta — não conta como Zona 2" },
 ]
 
+/** série editável no histórico (strings cruas dos inputs; rir "" = não informado) */
+interface EditableSet {
+  weight: string
+  reps: string
+  rir: string
+}
+
+interface EditableEntry {
+  exerciseId: string
+  exerciseName?: string
+  muscleGroup?: MuscleGroup
+  sets: EditableSet[]
+}
+
+function editableEntriesFrom(log: WorkoutLog): EditableEntry[] {
+  return log.entries.map((entry) => ({
+    exerciseId: entry.exerciseId,
+    ...(entry.exerciseName !== undefined ? { exerciseName: entry.exerciseName } : {}),
+    ...(entry.muscleGroup !== undefined ? { muscleGroup: entry.muscleGroup } : {}),
+    sets: entry.sets.map((s) => ({
+      weight: String(s.weight),
+      reps: String(s.reps),
+      rir: s.rir !== undefined ? String(s.rir) : "",
+    })),
+  }))
+}
+
+/* ---------------------------------------------------------------- */
+/* Filtros por tipo de sessão                                        */
+/* ---------------------------------------------------------------- */
+
+const KIND_FILTERS = [
+  { id: "all", label: "Todos" },
+  { id: "lift", label: "Musculação" },
+  { id: "cardio", label: "Cardio" },
+  { id: "sport", label: "Esporte" },
+] as const
+
+type KindFilter = (typeof KIND_FILTERS)[number]["id"]
+
+/** família do registro para os chips de filtro (lift/mixed → musculação) */
+function sessionKind(w: WorkoutLog): Exclude<KindFilter, "all"> {
+  const kind = PLAN_BY_ID[w.sessionId]?.kind
+  if (kind === "sport") return "sport"
+  if (w.entries.length > 0) return "lift"
+  if (w.cardio?.purpose === "sport") return "sport"
+  if (kind === "mixed" || kind === "cardio") return "cardio"
+  return "lift"
+}
+
+function monthLabel(dateKey: string): string {
+  const d = fromDateKey(dateKey)
+  const raw = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
 export default function Historico() {
   const { data, error, deleteWorkout, addWorkout } = useGymData()
   const router = useRouter()
+  /** treino aguardando confirmação no diálogo de exclusão */
+  const [pendingDelete, setPendingDelete] = useState<WorkoutLog | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  /** exclusão concluída — snackbar com desfazer */
+  const [undoState, setUndoState] = useState<{
+    message: string
+    restore: () => Promise<void>
+  } | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  /** filtro ativo por tipo de sessão */
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all")
 
-  /** editor de cardio do registro aberto (null = fechado) */
+  /** editor do registro aberto (null = fechado): cardio + séries completas */
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editEntries, setEditEntries] = useState<EditableEntry[] | null>(null)
   const [editHasCardio, setEditHasCardio] = useState(false)
   const [editMinutes, setEditMinutes] = useState("")
   const [editMode, setEditMode] = useState("")
   const [editPurpose, setEditPurpose] = useState<CardioPurpose>("zone2")
+  const [editNotes, setEditNotes] = useState("")
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   /** data escolhida para registrar um treino esquecido */
@@ -38,21 +107,114 @@ export default function Historico() {
     return [...data.workouts].sort((a, b) => b.date.localeCompare(a.date))
   }, [data])
 
+  const filtered = useMemo(
+    () =>
+      kindFilter === "all"
+        ? workouts
+        : workouts.filter((w) => sessionKind(w) === kindFilter),
+    [workouts, kindFilter]
+  )
+
+  /** lista cortada em blocos por mês (mais recente primeiro) */
+  const groups = useMemo(() => {
+    const out: { label: string; items: WorkoutLog[] }[] = []
+    for (const w of filtered) {
+      const label = monthLabel(w.date)
+      const last = out[out.length - 1]
+      if (last && last.label === label) last.items.push(w)
+      else out.push({ label, items: [w] })
+    }
+    return out
+  }, [filtered])
+
   const openEditor = (w: WorkoutLog) => {
     if (editingId === w.id) {
       setEditingId(null)
+      setEditEntries(null)
       return
     }
     setEditingId(w.id)
     setEditError(null)
+    setEditEntries(editableEntriesFrom(w))
     setEditHasCardio(Boolean(w.cardio))
     setEditMinutes(w.cardio ? String(w.cardio.minutes) : "")
     setEditMode(w.cardio?.mode ?? "Bike ergométrica")
     setEditPurpose(w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2"))
+    setEditNotes(w.notes ?? "")
+  }
+
+  const closeEditor = () => {
+    setEditingId(null)
+    setEditEntries(null)
+  }
+
+  const updateEditableSet = (ei: number, si: number, patch: Partial<EditableSet>) => {
+    setEditEntries((prev) =>
+      prev
+        ? prev.map((entry, i) =>
+            i !== ei
+              ? entry
+              : { ...entry, sets: entry.sets.map((s, j) => (j !== si ? s : { ...s, ...patch })) }
+          )
+        : prev
+    )
+  }
+
+  const addEditableSet = (ei: number) => {
+    setEditEntries((prev) =>
+      prev
+        ? prev.map((entry, i) => {
+            if (i !== ei) return entry
+            const last = entry.sets[entry.sets.length - 1]
+            return {
+              ...entry,
+              sets: [...entry.sets, { weight: last?.weight ?? "", reps: last?.reps ?? "", rir: "" }],
+            }
+          })
+        : prev
+    )
+  }
+
+  const removeEditableSet = (ei: number) => {
+    setEditEntries((prev) =>
+      prev
+        ? prev.map((entry, i) =>
+            i !== ei || entry.sets.length <= 1
+              ? entry
+              : { ...entry, sets: entry.sets.slice(0, -1) }
+          )
+        : prev
+    )
+  }
+
+  const removeEditableEntry = (ei: number) => {
+    setEditEntries((prev) => (prev ? prev.filter((_, i) => i !== ei) : prev))
   }
 
   const saveEdit = async (w: WorkoutLog) => {
     const minutes = parseInt(editMinutes) || 0
+    const hasCardio = editHasCardio && minutes > 0
+
+    // mesmas regras de sanitização do registro na aba Treino
+    const entries: ExerciseLog[] = (editEntries ?? [])
+      .map((e) => ({
+        exerciseId: e.exerciseId,
+        ...(e.exerciseName !== undefined ? { exerciseName: e.exerciseName } : {}),
+        ...(e.muscleGroup !== undefined ? { muscleGroup: e.muscleGroup } : {}),
+        sets: e.sets
+          .map((s) => ({
+            weight: parseFloat(s.weight.replace(",", ".")) || 0,
+            reps: parseInt(s.reps) || 0,
+            ...(s.rir !== "" ? { rir: parseInt(s.rir) } : {}),
+          }))
+          .filter((s) => s.reps > 0),
+      }))
+      .filter((e) => e.sets.length > 0)
+
+    if (entries.length === 0 && !hasCardio) {
+      setEditError("Sem séries nem cardio para salvar — use Excluir para remover o treino.")
+      return
+    }
     if (editHasCardio && minutes <= 0) {
       setEditError("Informe os minutos de cardio.")
       return
@@ -66,7 +228,9 @@ export default function Historico() {
     try {
       await addWorkout({
         ...w,
-        ...(editHasCardio
+        entries,
+        ...(editNotes.trim() ? { notes: editNotes.trim() } : { notes: undefined }),
+        ...(hasCardio
           ? {
               cardio: {
                 minutes,
@@ -77,7 +241,7 @@ export default function Historico() {
             }
           : { cardio: undefined }),
       })
-      setEditingId(null)
+      closeEditor()
     } catch (e) {
       setEditError(e instanceof Error ? e.message : "Erro ao salvar alteração")
     } finally {
@@ -85,13 +249,28 @@ export default function Historico() {
     }
   }
 
-  const handleDelete = async (id: string, date: string, sessionId: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este treino? Essa ação não pode ser desfeita.")) {
-      return
-    }
-    setDeletingId(id)
+  /** sRPE retroativo: 1 tap regrava o log (upsert por data+sessão); tap no mesmo valor limpa */
+  const rateSrpe = (w: WorkoutLog, value: number | null) => {
+    addWorkout({ ...w, ...(value === null ? { srpe: undefined } : { srpe: value }) }).catch(() => {
+      setActionError("Não foi possível salvar o esforço — verifique a conexão.")
+    })
+  }
+
+  /** diálogo confirmou: exclui e arma o desfazer */
+  const confirmDelete = async () => {
+    const w = pendingDelete
+    if (!w) return
+    setPendingDelete(null)
+    if (editingId === w.id) closeEditor()
+    setDeletingId(w.id)
     try {
-      await deleteWorkout(id, date, sessionId)
+      await deleteWorkout(w.id, w.date, w.sessionId)
+      setUndoState({
+        message: `Treino de ${fromDateKey(w.date).toLocaleDateString("pt-BR")} excluído.`,
+        restore: () => addWorkout(w),
+      })
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Erro ao excluir treino")
     } finally {
       setDeletingId(null)
     }
@@ -158,11 +337,50 @@ export default function Historico() {
         </div>
       </Card>
 
+      {/* filtros por tipo */}
+      <div className="rise -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {KIND_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setKindFilter(f.id)}
+            className={cn(
+              "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors",
+              kindFilter === f.id
+                ? "border-ember bg-ember/15 text-ember"
+                : "border-seam bg-iron-2/40 text-steel hover:border-steel/40 hover:text-bone"
+            )}
+            style={{ fontFamily: "var(--font-condensed)" }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {actionError && (
+        <p className="rise mb-3 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          {actionError}
+        </p>
+      )}
+
       <div className="flex flex-col gap-3">
-        {workouts.length === 0 ? (
-          <p className="text-center text-sm text-steel-dim py-10">Nenhum treino registrado ainda.</p>
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-steel-dim">
+            {workouts.length === 0
+              ? "Nenhum treino registrado ainda."
+              : "Nada neste filtro — tente outro tipo."}
+          </p>
         ) : (
-          workouts.map((w, i) => {
+          groups.map((group) => (
+            <div key={group.label} className="flex flex-col gap-3">
+              {/* cabeçalho do mês */}
+              <p
+                className="mt-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-steel-dim first:mt-0"
+              >
+                {group.label}
+                <span className="h-px flex-1 bg-seam" />
+                <span className="text-bone">{group.items.length}</span>
+              </p>
+              {group.items.map((w, i) => {
             const date = fromDateKey(w.date)
             const session = PLAN_BY_ID[w.sessionId]
             const volume = workoutVolume(w)
@@ -185,7 +403,7 @@ export default function Historico() {
                       {session?.title || "Sessão Desconhecida"}
                     </h3>
                     {isCompetitionSession(w.sessionId) && (
-                      <span className="mt-1 inline-flex rounded-full border border-gold/30 bg-gold/5 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-gold">
+                      <span className="mt-1 inline-flex rounded-full border border-gold/30 bg-gold/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-gold">
                         competição
                       </span>
                     )}
@@ -206,6 +424,11 @@ export default function Historico() {
                         ))}
                       </ul>
                     )}
+                    {w.notes && (
+                      <p className="mt-2 border-t border-seam pt-2 text-xs leading-relaxed text-steel">
+                        {w.notes}
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <button
@@ -214,13 +437,13 @@ export default function Historico() {
                         "p-2 transition-colors",
                         editing ? "text-ember" : "text-steel-dim hover:text-bone"
                       )}
-                      aria-label="Editar cardio deste treino"
-                      title="Editar cardio"
+                      aria-label="Editar este treino"
+                      title="Editar treino"
                     >
                       <Pencil size={18} />
                     </button>
                     <button
-                      onClick={() => handleDelete(w.id, w.date, w.sessionId)}
+                      onClick={() => setPendingDelete(w)}
                       disabled={deletingId === w.id}
                       className="p-2 text-steel-dim hover:text-ember transition-colors disabled:opacity-50"
                       aria-label="Excluir treino"
@@ -230,12 +453,116 @@ export default function Historico() {
                   </div>
                 </div>
 
-                {/* editor inline do cardio — corrige o Z2 fantasma sem refazer o treino */}
+                {/* editor inline — corrige séries e cardio sem apagar o treino */}
                 {editing && (
                   <div className="mt-3 space-y-2.5 rounded-lg border border-seam bg-coal/60 p-3">
-                    <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
-                      Cardio desta sessão
-                    </p>
+                    {/* séries */}
+                    {editEntries && editEntries.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                          Séries
+                        </p>
+                        {editEntries.map((entry, ei) => (
+                          <div
+                            key={`${entry.exerciseId}-${ei}`}
+                            className="rounded-lg border border-seam p-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="min-w-0 truncate text-xs font-semibold text-bone">
+                                {entry.exerciseName ??
+                                  EXERCISES_BY_ID[entry.exerciseId]?.name ??
+                                  entry.exerciseId}
+                              </p>
+                              <button
+                                onClick={() => removeEditableEntry(ei)}
+                                className="shrink-0 rounded p-1 text-steel-dim transition-colors hover:text-red-400"
+                                aria-label={`Remover exercício ${
+                                  entry.exerciseName ?? entry.exerciseId
+                                }`}
+                                title="Remover exercício"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            <div className="mt-1.5 space-y-1.5">
+                              {entry.sets.map((s, si) => (
+                                <div key={si} className="flex items-center gap-1.5">
+                                  <span className="w-4 shrink-0 text-center font-mono text-[10px] text-steel-dim">
+                                    {si + 1}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.5"
+                                    value={s.weight}
+                                    onChange={(e) =>
+                                      updateEditableSet(ei, si, { weight: e.target.value })
+                                    }
+                                    aria-label={`Peso da série ${si + 1}`}
+                                    className="w-16 rounded border border-seam bg-coal px-1 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                                  />
+                                  <span className="text-xs text-steel-dim">×</span>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={s.reps}
+                                    onChange={(e) =>
+                                      updateEditableSet(ei, si, { reps: e.target.value })
+                                    }
+                                    aria-label={`Repetições da série ${si + 1}`}
+                                    className="w-14 rounded border border-seam bg-coal px-1 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                                  />
+                                  <select
+                                    value={s.rir}
+                                    onChange={(e) =>
+                                      updateEditableSet(ei, si, { rir: e.target.value })
+                                    }
+                                    aria-label={`RIR da série ${si + 1}`}
+                                    title="Reps em reserva"
+                                    className="w-16 rounded border border-seam bg-coal px-1 py-1.5 text-center font-mono text-xs text-bone outline-none focus:border-gold"
+                                  >
+                                    <option value="">RIR —</option>
+                                    {["0", "1", "2", "3", "4"].map((v) => (
+                                      <option key={v} value={v}>
+                                        {v === "4" ? "4+" : v}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-2 flex justify-end gap-1.5">
+                              <button
+                                onClick={() => removeEditableSet(ei)}
+                                disabled={entry.sets.length <= 1}
+                                className="inline-flex items-center gap-1 rounded-md border border-seam px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-steel-dim transition-colors hover:text-bone disabled:opacity-30"
+                              >
+                                <Minus size={11} /> Série
+                              </button>
+                              <button
+                                onClick={() => addEditableSet(ei)}
+                                className="inline-flex items-center gap-1 rounded-md border border-seam px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-steel transition-colors hover:border-gold/50 hover:text-bone"
+                              >
+                                <Plus size={11} /> Série
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <p className="font-mono text-[10px] text-steel-dim">
+                          Séries sem reps válidas são descartadas ao salvar.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-steel-dim">
+                        Este registro não tem exercícios de musculação — só o cardio abaixo.
+                      </p>
+                    )}
+
+                    {/* cardio */}
+                    <div className="border-t border-seam pt-2.5">
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                        Cardio desta sessão
+                      </p>
                     <label className="flex items-center gap-2 text-sm font-semibold text-bone">
                       <input
                         type="checkbox"
@@ -291,6 +618,52 @@ export default function Historico() {
                         O cardio será removido deste registro ao salvar.
                       </p>
                     )}
+                    </div>
+
+                    {/* sRPE retroativo — salva na hora, sem passar por "Salvar alterações" */}
+                    <div className="border-t border-seam pt-2.5">
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                        Esforço da sessão (sRPE)
+                        {w.srpe ? ` · atual ${w.srpe}` : " · não avaliado"}
+                      </p>
+                      <div className="mt-2 flex gap-1">
+                        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => rateSrpe(w, w.srpe === n ? null : n)}
+                            className={cn(
+                              "h-8 flex-1 rounded border font-mono text-xs transition-colors",
+                              w.srpe === n
+                                ? "border-ember bg-ember font-bold text-coal"
+                                : "border-seam text-steel hover:text-bone"
+                            )}
+                            aria-label={`Esforço ${n} de 10`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1.5 font-mono text-[10px] text-steel-dim">
+                        1 = muito leve · 10 = máximo · calibra o sinal de fadiga
+                      </p>
+                    </div>
+
+                    {/* notas */}
+                    <div className="border-t border-seam pt-2.5">
+                      <label className="block">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                          Notas
+                        </span>
+                        <textarea
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          rows={2}
+                          placeholder="Como foi a sessão? (opcional)"
+                          className="mt-1 w-full resize-y rounded-md border border-seam bg-coal px-3 py-2 text-sm text-bone outline-none focus:border-gold"
+                        />
+                      </label>
+                    </div>
+
                     {editError && (
                       <p className="rounded border border-red-500/30 bg-red-500/5 px-2 py-1.5 text-xs text-red-400">
                         {editError}
@@ -305,7 +678,7 @@ export default function Historico() {
                         <Check size={14} /> {editSaving ? "Salvando…" : "Salvar alterações"}
                       </button>
                       <button
-                        onClick={() => setEditingId(null)}
+                        onClick={closeEditor}
                         className="rounded border border-seam px-3.5 py-2 text-xs font-semibold uppercase tracking-wider text-steel transition-colors hover:text-bone"
                       >
                         Cancelar
@@ -314,10 +687,41 @@ export default function Historico() {
                   </div>
                 )}
               </Card>
-            )
-          })
+              )
+              })}
+            </div>
+          ))
         )}
       </div>
+
+      {/* confirmação própria — o confirm nativo não existe em PWA iOS standalone */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Excluir este treino?"
+        message={
+          pendingDelete
+            ? `${(PLAN_BY_ID[pendingDelete.sessionId]?.title ?? "Sessão")} de ${fromDateKey(
+                pendingDelete.date
+              ).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })} sai do histórico e de todos os cálculos. Você pode desfazer logo após excluir.`
+            : ""
+        }
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      {undoState && (
+        <UndoToast
+          message={undoState.message}
+          onUndo={() => {
+            const restore = undoState.restore
+            setUndoState(null)
+            restore().catch(() => {
+              setActionError("Não foi possível desfazer — verifique a conexão.")
+            })
+          }}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
     </main>
   )
 }
