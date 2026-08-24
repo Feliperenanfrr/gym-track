@@ -96,7 +96,7 @@ export default function PlanoPage() {
             <div key={t} className="rounded border border-seam bg-iron-2 p-2">
               <p className="score text-lg text-ember">{n}</p>
               <p className="text-xs font-semibold text-bone">{t}</p>
-              <p className="font-mono text-[9px] text-steel-dim">{s}</p>
+              <p className="font-mono text-[10px] text-steel-dim">{s}</p>
             </div>
           ))}
         </div>
@@ -156,7 +156,7 @@ export default function PlanoPage() {
           </SectionTitle>
           <Card className="rise p-0">
             <div className="flex items-center justify-between gap-3 border-b border-seam bg-iron-2/30 px-4 py-2.5">
-              <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
                 Template persistido
               </p>
               <button
@@ -259,7 +259,7 @@ export default function PlanoPage() {
         ))}
       </div>
 
-      <p className="mt-6 text-center font-mono text-[9px] leading-relaxed text-steel-dim">
+      <p className="mt-6 text-center font-mono text-[10px] leading-relaxed text-steel-dim">
         Plano educativo — não substitui avaliação médica, educador físico presencial ou
         nutricionista. Dor, tontura ou desconforto anormal: pare e procure um profissional.
       </p>

@@ -16,6 +16,8 @@ export interface WorkoutDraft {
   finisherMin: string
   /** false = pular o finisher de Zona 2 (nada de cardio é salvo) */
   finisherDone?: boolean
+  /** observações livres da sessão (salvas junto no log) */
+  notes?: string
   savedAt: number
   /** epoch ms da primeira série marcada (p/ duração real da sessão) */
   startedAt?: number
@@ -49,10 +51,15 @@ export function clearDraft(date: string, sessionId: string) {
   }
 }
 
-/** Há algo digitado que valha restaurar? (carga, reps ou série marcada) */
+/** Há algo digitado que valha restaurar? (carga, reps, série marcada ou notas) */
 export function draftHasContent(draft: WorkoutDraft): boolean {
   const rowsFilled = Object.values(draft.rows ?? {}).some((sets) =>
     sets.some((s) => s.weight.trim() !== "" || s.reps.trim() !== "" || s.done)
   )
-  return rowsFilled || Boolean(draft.cardioMin?.trim()) || draft.exercises !== undefined
+  return (
+    rowsFilled ||
+    Boolean(draft.cardioMin?.trim()) ||
+    draft.exercises !== undefined ||
+    Boolean(draft.notes?.trim())
+  )
 }

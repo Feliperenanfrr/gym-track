@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Activity, Check, Moon, Plus } from "lucide-react"
+import { Activity, Check, Moon, Pencil, Plus, Trash2 } from "lucide-react"
+import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import {
   BodyFatChart,
   CompositionChart,
@@ -14,7 +15,7 @@ import {
 } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
-import { waterGoalMl } from "@/lib/insights"
+import { waterGoalMl, weightTrend7d } from "@/lib/insights"
 import { BodyLog } from "@/lib/types"
 import {
   computeSleepMetrics,
@@ -62,7 +63,7 @@ function qualityVerdict(q: WeightQuality): string {
 }
 
 export default function MedidasPage() {
-  const { data, addBodyLog, addSleepLog, addWater } = useGymData()
+  const { data, addBodyLog, addSleepLog, addWater, deleteBodyLog, deleteSleepLog } = useGymData()
   const today = useOperationalDay()
   const [weight, setWeight] = useState("")
   const [waist, setWaist] = useState("")
@@ -94,6 +95,22 @@ export default function MedidasPage() {
   /** destaque do formulário de sono ao chegar por deep-link (#registrar-sono) */
   const [sonoFlash, setSonoFlash] = useState(false)
   const sonoTimerRef = useRef<number | null>(null)
+  /** correção de um registro corporal salvo (linha aberta em "Últimos registros") */
+  const [editingBodyDate, setEditingBodyDate] = useState<string | null>(null)
+  const [editBodyWeight, setEditBodyWeight] = useState("")
+  const [editBodyWaist, setEditBodyWaist] = useState("")
+  const [editBodySaving, setEditBodySaving] = useState(false)
+  const [editBodyError, setEditBodyError] = useState<string | null>(null)
+  /** exclusão via diálogo próprio + snackbar de desfazer */
+  const [pendingDelete, setPendingDelete] = useState<{
+    kind: "body" | "sleep"
+    date: string
+  } | null>(null)
+  const [undoState, setUndoState] = useState<{
+    message: string
+    restore: () => Promise<void>
+  } | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const bioParse = useMemo(
     () => (bioText.trim() ? parseBioimpedanceCsv(bioText) : null),
@@ -106,9 +123,8 @@ export default function MedidasPage() {
     // peso agora é opcional: só conta quem registrou peso
     const weighed = body.filter((b) => b.weightKg !== undefined)
     const current = weighed[weighed.length - 1]
-    const first = weighed[0]
-    const weightDelta =
-      current && first && current !== first ? current.weightKg! - first.weightKg! : null
+    // tendência por médias móveis de 7 dias (não primeiro-vs-último)
+    const weightTrend = weightTrend7d(body, today)
     const waists = body.filter((b) => b.waistCm !== undefined)
     const currentWaist = waists[waists.length - 1]?.waistCm
     const firstWaist = waists[0]?.waistCm
@@ -175,8 +191,9 @@ export default function MedidasPage() {
       const fatShare = Math.abs(dWeight) > 0.05 ? (dFat / dWeight) * 100 : null
       weightQuality = { dWeight, dFat, dLean, fatShare, losing: dWeight < 0 }
     }
-    // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg)
-    const kg = current?.weightKg ?? 93
+    // metas do plano calculadas pelo peso atual (1,8–2,2 g/kg; 35–40 ml/kg).
+    // Sem peso: null — "—" honesto em vez de inventar uma balança fantasma.
+    const kg = current?.weightKg ?? null
     // água dos últimos 7 dias (dias sem registro = 0, sinceridade > vaidade)
     const now = today
     const hydration7 = Array.from({ length: 7 }, (_, i) => {
@@ -204,7 +221,7 @@ export default function MedidasPage() {
       sleepMetrics,
       waterGoal: waterGoalMl(body),
       current,
-      weightDelta,
+      weightTrend,
       currentWaist,
       waistDelta,
       chart,
@@ -222,8 +239,8 @@ export default function MedidasPage() {
       muscleDelta: bioDelta("skeletalMuscleKg"),
       visceralDelta: bioDelta("visceralFat"),
       waterDelta: bioDelta("waterPct"),
-      protein: [Math.round(kg * 1.8), Math.round(kg * 2.2)],
-      water: [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)],
+      protein: kg ? [Math.round(kg * 1.8), Math.round(kg * 2.2)] : null,
+      water: kg ? [(kg * 0.035).toFixed(1), (kg * 0.04).toFixed(1)] : null,
       recent: [...body].reverse().slice(0, 8),
       recentSleep: [...data.sleep].reverse().slice(0, 8),
     }
@@ -377,6 +394,85 @@ export default function MedidasPage() {
     if (value) loadSleepFields(value)
   }
 
+  /** abre a linha de medidas para correção inline */
+  const openBodyEdit = (b: BodyLog) => {
+    if (editingBodyDate === b.date) {
+      setEditingBodyDate(null)
+      return
+    }
+    setEditingBodyDate(b.date)
+    setEditBodyWeight(b.weightKg !== undefined ? String(b.weightKg).replace(".", ",") : "")
+    setEditBodyWaist(b.waistCm !== undefined ? String(b.waistCm).replace(".", ",") : "")
+    setEditBodyError(null)
+  }
+
+  const saveBodyEdit = async () => {
+    if (!editingBodyDate) return
+    const w = parseFloat(editBodyWeight.replace(",", "."))
+    const wa = parseFloat(editBodyWaist.replace(",", "."))
+    const hasWeight = !isNaN(w) && w > 0
+    const hasWaist = !isNaN(wa) && wa > 0
+    if (!hasWeight && !hasWaist) {
+      setEditBodyError("Informe peso, cintura, ou os dois.")
+      return
+    }
+    setEditBodySaving(true)
+    setEditBodyError(null)
+    try {
+      // merge por dia preserva bioimpedância e demais campos já gravados
+      await addBodyLog({
+        date: editingBodyDate,
+        ...(hasWeight ? { weightKg: Math.round(w * 10) / 10 } : {}),
+        ...(hasWaist ? { waistCm: Math.round(wa * 10) / 10 } : {}),
+      })
+      setEditingBodyDate(null)
+    } catch (e) {
+      setEditBodyError(e instanceof Error ? e.message : "Erro ao salvar no banco")
+    } finally {
+      setEditBodySaving(false)
+    }
+  }
+
+  /** diálogo confirmou: exclui e arma o desfazer com o log capturado */
+  const runDelete = async () => {
+    const target = pendingDelete
+    if (!target) return
+    setPendingDelete(null)
+    setDeleteError(null)
+    try {
+      if (target.kind === "body") {
+        const log = data?.body.find((b) => b.date === target.date)
+        await deleteBodyLog(target.date)
+        setUndoState({
+          message: `Registro de ${shortDate(target.date)} excluído.`,
+          restore: async () => {
+            if (log) await addBodyLog(log)
+          },
+        })
+      } else {
+        const log = data?.sleep.find((s) => s.date === target.date)
+        await deleteSleepLog(target.date)
+        setUndoState({
+          message: `Sono de ${shortDate(target.date)} excluído.`,
+          restore: async () => {
+            if (log) await addSleepLog(log)
+          },
+        })
+      }
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Erro ao excluir registro")
+    }
+  }
+
+  /** carrega uma noite antiga no formulário principal para correção */
+  const editSleepDay = (date: string) => {
+    changeSleepDate(date)
+    document.getElementById("registrar-sono")?.scrollIntoView({ behavior: "smooth", block: "start" })
+    window.setTimeout(() => {
+      document.getElementById("sleep-start")?.focus({ preventScroll: true })
+    }, 400)
+  }
+
   const handleSleepSave = async () => {
     if (!sleepStart || !sleepEnd) {
       setSleepError("Informe a hora que dormiu e a hora que acordou.")
@@ -455,7 +551,11 @@ export default function MedidasPage() {
         <StatCard
           label="Peso"
           value={fmt1(view.current?.weightKg)}
-          detail={fmtDelta(view.weightDelta, "kg")}
+          detail={
+            view.weightTrend.delta !== null
+              ? `${view.weightTrend.delta > 0 ? "+" : ""}${view.weightTrend.delta.toFixed(1).replace(".", ",")} kg vs média anterior`
+              : "média 7d sem base comparável ainda"
+          }
           accent="gold"
         />
         <StatCard
@@ -476,7 +576,7 @@ export default function MedidasPage() {
           <Card className="rise rise-2 mb-6">
             <WeightChart data={view.chart} />
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
-              alvo do plano: −0,4 a −0,7 kg/semana · lento e sustentável preserva músculo
+              tendência do card compara médias de 7 dias · alvo do plano: −0,4 a −0,7 kg/semana
             </p>
           </Card>
         </>
@@ -788,7 +888,8 @@ export default function MedidasPage() {
         </Card>
       </div>
 
-      <SectionTitle>Registrar medidas</SectionTitle>
+      <div id="registrar-medidas" className="scroll-mt-4">
+        <SectionTitle>Registrar medidas</SectionTitle>
       <Card className="rise rise-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
@@ -842,6 +943,7 @@ export default function MedidasPage() {
           balança. Cintura: meça no umbigo, relaxado. Peso: de manhã, em jejum.
         </p>
       </Card>
+      </div>
 
       <SectionTitle accent="ember">Registrar bioimpedância</SectionTitle>
       <Card className="rise rise-3">
@@ -922,22 +1024,34 @@ export default function MedidasPage() {
         <StatCard
           label="Proteína"
           value={
-            <>
-              {view.protein[0]}–{view.protein[1]}
-              <span className="text-base text-steel-dim"> g</span>
-            </>
+            view.protein ? (
+              <>
+                {view.protein[0]}–{view.protein[1]}
+                <span className="text-base text-steel-dim"> g</span>
+              </>
+            ) : (
+              "—"
+            )
           }
-          detail="1,8–2,2 g/kg — protege músculo no déficit"
+          detail={
+            view.protein
+              ? "1,8–2,2 g/kg — protege músculo no déficit"
+              : "registre seu peso para calibrar"
+          }
         />
         <StatCard
           label="Água"
           value={
-            <>
-              {String(view.water[0]).replace(".", ",")}–{String(view.water[1]).replace(".", ",")}
-              <span className="text-base text-steel-dim"> L</span>
-            </>
+            view.water ? (
+              <>
+                {String(view.water[0]).replace(".", ",")}–{String(view.water[1]).replace(".", ",")}
+                <span className="text-base text-steel-dim"> L</span>
+              </>
+            ) : (
+              "—"
+            )
           }
-          detail="35–40 ml/kg — desidratação piora fôlego"
+          detail={view.water ? "35–40 ml/kg — desidratação piora fôlego" : "registre seu peso para calibrar"}
           accent="zone"
         />
       </div>
@@ -1019,33 +1133,191 @@ export default function MedidasPage() {
 
       <SectionTitle accent="steel">Últimos registros</SectionTitle>
       <Card className="rise rise-5 p-0">
-        {view.recent.map((b, i) => (
-          <div
-            key={b.date}
-            className={cn(
-              "flex items-center justify-between px-4 py-2.5",
-              i < view.recent.length - 1 && "border-b border-seam"
-            )}
-          >
-            <span className="font-mono text-xs text-steel-dim">{shortDate(b.date)}</span>
-            <span className="font-mono text-sm text-bone">
-              {b.weightKg !== undefined
-                ? `${b.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} kg`
-                : "—"}
-            </span>
-            <span className="w-24 text-right font-mono text-xs text-steel">
-              {b.bodyFatPct !== undefined && (
-                <span className="mr-2" style={{ color: "#fb7185" }}>
-                  {b.bodyFatPct.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%
-                </span>
+        {view.recent.map((b, i) => {
+          const editing = editingBodyDate === b.date
+          return (
+            <div key={b.date} className={cn(i < view.recent.length - 1 && "border-b border-seam")}>
+              <div className="flex items-center justify-between gap-2 px-4 py-2.5">
+                <span className="font-mono text-xs text-steel-dim">{shortDate(b.date)}</span>
+                {editing ? (
+                  <span className="font-mono text-xs text-gold">editando…</span>
+                ) : (
+                  <>
+                    <span className="font-mono text-sm text-bone">
+                      {b.weightKg !== undefined
+                        ? `${b.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} kg`
+                        : "—"}
+                    </span>
+                    <span className="w-24 text-right font-mono text-xs text-steel">
+                      {b.bodyFatPct !== undefined && (
+                        <span className="mr-2" style={{ color: "#fb7185" }}>
+                          {b.bodyFatPct.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}%
+                        </span>
+                      )}
+                      {b.waistCm !== undefined
+                        ? `${b.waistCm.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} cm`
+                        : "—"}
+                    </span>
+                  </>
+                )}
+                {!editing && (
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      onClick={() => openBodyEdit(b)}
+                      className="p-1.5 text-steel-dim transition-colors hover:text-bone"
+                      aria-label={`Corrigir registro de ${shortDate(b.date)}`}
+                      title="Corrigir peso/cintura"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => setPendingDelete({ kind: "body", date: b.date })}
+                      className="p-1.5 text-steel-dim transition-colors hover:text-red-400"
+                      aria-label={`Excluir registro de ${shortDate(b.date)}`}
+                      title="Excluir registro do dia"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* correção inline — merge preserva bioimpedância do dia */}
+              {editing && (
+                <div className="border-t border-seam bg-coal/60 px-4 py-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="flex w-24 flex-col gap-1">
+                      <span className="font-mono text-[10px] uppercase text-steel-dim">Peso</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        value={editBodyWeight}
+                        onChange={(e) => setEditBodyWeight(e.target.value)}
+                        className="w-full rounded border border-seam bg-coal px-2 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                      />
+                    </label>
+                    <label className="flex w-24 flex-col gap-1">
+                      <span className="font-mono text-[10px] uppercase text-steel-dim">Cintura</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        value={editBodyWaist}
+                        onChange={(e) => setEditBodyWaist(e.target.value)}
+                        className="w-full rounded border border-seam bg-coal px-2 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                      />
+                    </label>
+                    <button
+                      onClick={saveBodyEdit}
+                      disabled={editBodySaving}
+                      className="flex items-center gap-1.5 rounded bg-zone px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-coal transition-colors hover:bg-zone/85 disabled:opacity-60"
+                    >
+                      <Check size={13} /> {editBodySaving ? "Salvando…" : "Salvar"}
+                    </button>
+                    <button
+                      onClick={() => setEditingBodyDate(null)}
+                      className="rounded border border-seam px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-steel transition-colors hover:text-bone"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                  {editBodyError && (
+                    <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-2 py-1.5 text-xs text-red-400">
+                      {editBodyError}
+                    </p>
+                  )}
+                  <p className="mt-2 text-[10px] text-steel-dim">
+                    Bioimpedância do dia permanece intacta — ajuste pelo campo CSV acima.
+                  </p>
+                </div>
               )}
-              {b.waistCm !== undefined
-                ? `${b.waistCm.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} cm`
-                : "—"}
-            </span>
-          </div>
-        ))}
+            </div>
+          )
+        })}
       </Card>
+
+      {deleteError && (
+        <p className="rise mt-3 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          {deleteError}
+        </p>
+      )}
+
+      <SectionTitle accent="steel">Últimas noites</SectionTitle>
+      <Card className="rise rise-5 p-0">
+        {view.recentSleep.length === 0 ? (
+          <p className="px-4 py-3 text-center text-xs text-steel-dim">
+            Nenhuma noite registrada ainda.
+          </p>
+        ) : (
+          view.recentSleep.map((s, i) => {
+            return (
+              <div
+                key={s.date}
+                className={cn(
+                  "flex items-center justify-between gap-2 px-4 py-2.5",
+                  i < view.recentSleep.length - 1 && "border-b border-seam"
+                )}
+              >
+                <span className="font-mono text-xs text-steel-dim">{shortDate(s.date)}</span>
+                <span className="font-mono text-xs text-steel">
+                  {s.sleptAt} → {s.wokeAt}
+                </span>
+                <span className="w-14 text-right font-mono text-sm text-bone">
+                  {formatSleepDuration(s.durationMin)}
+                </span>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    onClick={() => editSleepDay(s.date)}
+                    className="p-1.5 text-steel-dim transition-colors hover:text-bone"
+                    aria-label={`Corrigir sono de ${shortDate(s.date)}`}
+                    title="Corrigir no formulário acima"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    onClick={() => setPendingDelete({ kind: "sleep", date: s.date })}
+                    className="rounded p-1.5 text-steel-dim transition-colors hover:text-red-400"
+                    aria-label={`Excluir sono de ${shortDate(s.date)}`}
+                    title="Excluir"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </Card>
+
+      {/* confirmação própria + desfazer */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={
+          pendingDelete?.kind === "sleep" ? "Excluir este registro de sono?" : "Excluir este registro?"
+        }
+        message={
+          pendingDelete
+            ? `O registro de ${shortDate(pendingDelete.date)} sai do banco e dos cálculos (médias, gráficos, metas). Você pode desfazer logo após excluir.`
+            : ""
+        }
+        onConfirm={runDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      {undoState && (
+        <UndoToast
+          message={undoState.message}
+          onUndo={() => {
+            const restore = undoState.restore
+            setUndoState(null)
+            restore().catch(() => {
+              setDeleteError("Não foi possível desfazer — verifique a conexão.")
+            })
+          }}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
     </main>
   )
 }

@@ -66,7 +66,7 @@ export function ProgramTabs({
             <Icon size={compact ? 14 : 16} />
             <span className="uppercase tracking-wider">{label}</span>
             {!compact && (
-              <span className="hidden font-mono text-[9px] font-normal lowercase tracking-normal opacity-70 sm:inline">
+              <span className="hidden font-mono text-[10px] font-normal lowercase tracking-normal opacity-70 sm:inline">
                 {detail}
               </span>
             )}

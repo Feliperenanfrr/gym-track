@@ -42,7 +42,7 @@ export function CompetitionPlanView({
             </p>
             <h2 className="stencil mt-1.5 text-2xl text-bone">Cornerback · 15/08</h2>
           </div>
-          <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-1 font-mono text-[9px] text-gold">
+          <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-1 font-mono text-[10px] text-gold">
             temporário
           </span>
         </div>
@@ -53,13 +53,13 @@ export function CompetitionPlanView({
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded border border-seam bg-iron-2 p-2.5">
-            <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
               Academia
             </p>
             <p className="mt-0.5 text-xs font-semibold text-bone">2–3 sessões · baixo volume</p>
           </div>
           <div className="rounded border border-seam bg-iron-2 p-2.5">
-            <p className="font-mono text-[9px] uppercase tracking-wider text-steel-dim">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
               Campo
             </p>
             <p className="mt-0.5 text-xs font-semibold text-bone">Sprint, cortes e coletivo</p>
@@ -73,7 +73,7 @@ export function CompetitionPlanView({
           <div>
             <div className="flex flex-wrap items-baseline gap-x-2">
               <p className="text-sm font-semibold text-gold">{phase.label}</p>
-              <span className="font-mono text-[9px] text-steel-dim">{phase.dates}</span>
+              <span className="font-mono text-[10px] text-steel-dim">{phase.dates}</span>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-steel">{phase.guidance}</p>
           </div>
@@ -98,12 +98,12 @@ export function CompetitionPlanView({
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="stencil text-xl text-bone">{session.title}</h3>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="font-mono text-[9px] text-gold">{session.duration}</span>
+                  <span className="font-mono text-[10px] text-gold">{session.duration}</span>
                   {onEditTemplate && (
                     <button
                       type="button"
                       onClick={() => onEditTemplate(session)}
-                      className="inline-flex items-center gap-1 rounded border border-gold/30 px-2 py-1 font-mono text-[9px] uppercase text-gold transition-colors hover:bg-gold/10"
+                      className="inline-flex items-center gap-1 rounded border border-gold/30 px-2 py-1 font-mono text-[10px] uppercase text-gold transition-colors hover:bg-gold/10"
                     >
                       <Pencil size={11} /> Editar
                     </button>
@@ -130,8 +130,8 @@ export function CompetitionPlanView({
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-baseline justify-between gap-3">
-                  <p className="font-mono text-[9px] text-steel-dim">{exercise.nameEn}</p>
-                  <span className="shrink-0 font-mono text-[9px] text-steel-dim">
+                  <p className="font-mono text-[10px] text-steel-dim">{exercise.nameEn}</p>
+                  <span className="shrink-0 font-mono text-[10px] text-steel-dim">
                     descanso {exercise.rest}
                   </span>
                 </div>
@@ -170,7 +170,7 @@ export function CompetitionPlanView({
                 <p className={cn("text-sm font-semibold", active ? "text-gold" : "text-bone")}>
                   {week.week}
                 </p>
-                <span className="font-mono text-[9px] text-steel-dim">{week.period}</span>
+                <span className="font-mono text-[10px] text-steel-dim">{week.period}</span>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 font-mono text-[10px]">
                 <div><span className="text-steel-dim">Sala:</span> <span className="text-steel">{week.sessions}</span></div>
