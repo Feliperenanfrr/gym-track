@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest"
 import {
   computeReadiness,
   internalLoad,
+  liftMetForSrpe,
   prEvents,
+  sessionKcal,
   waterGoalMl,
   weeklySummary,
+  weightKgOn,
   weightTrend7d,
 } from "../lib/insights"
 import { GymData, WorkoutLog } from "../lib/types"
@@ -216,6 +219,121 @@ describe("weightTrend7d", () => {
 })
 
 /* ---------------------------------------------------------------- */
+/* Calorias por sessão                                               */
+/* ---------------------------------------------------------------- */
+
+describe("liftMetForSrpe", () => {
+  it("sem sRPE mantém o vigoroso típico (5 METs)", () => {
+    expect(liftMetForSrpe(undefined)).toBe(5)
+    expect(liftMetForSrpe(0)).toBe(5)
+  })
+  it("mapeia faixas de esforço para METs da tabela Compendium", () => {
+    expect(liftMetForSrpe(1)).toBe(3)
+    expect(liftMetForSrpe(3)).toBe(3)
+    expect(liftMetForSrpe(4)).toBe(4)
+    expect(liftMetForSrpe(5)).toBe(4)
+    expect(liftMetForSrpe(6)).toBe(5)
+    expect(liftMetForSrpe(7)).toBe(5)
+    expect(liftMetForSrpe(8)).toBe(6)
+    expect(liftMetForSrpe(10)).toBe(6)
+  })
+})
+
+describe("weightKgOn", () => {
+  const body = [
+    { date: dayKey(-30), weightKg: 95 },
+    { date: dayKey(-10), weightKg: 93 },
+    { date: dayKey(-2), weightKg: 91 },
+  ]
+  it("usa a pesagem mais recente anterior ao treino", () => {
+    expect(weightKgOn(body, dayKey(-8))).toBe(93)
+    expect(weightKgOn(body, dayKey(-1))).toBe(91)
+  })
+  it("sem pesagem anterior, cai para a primeira disponível", () => {
+    expect(weightKgOn(body, dayKey(-40))).toBe(95)
+  })
+  it("ignora pesos zerados e retorna undefined sem nada válido", () => {
+    expect(weightKgOn([{ date: dayKey(-3), weightKg: 0 }], dayKey(-1))).toBeUndefined()
+  })
+})
+
+describe("sessionKcal", () => {
+  // 80 kg → kcalPerMin(met) = met * 3.5 * 80 / 200 = met * 1.4
+  it("musculação usa duração real e MET pelo sRPE", () => {
+    const w = workout({
+      date: dayKey(-1),
+      durationMin: 50,
+      srpe: 9,
+      entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+    })
+    const est = sessionKcal(w, 80)!
+    // 50 min × MET 6 × 1.4 = 420 kcal
+    expect(est.mid).toBe(420)
+    expect(est.met).toBe(6)
+    expect(est.minutes).toBe(50)
+    expect(est.low).toBe(Math.round((420 * 0.8) / 10) * 10)
+    expect(est.high).toBe(Math.round((420 * 1.25) / 10) * 10)
+  })
+
+  it("sem duração medida (registro antigo), cai no padrão de 60 min", () => {
+    const w = workout({
+      date: dayKey(-1),
+      entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+    })
+    const est = sessionKcal(w, 80)!
+    expect(est.minutes).toBe(60)
+    expect(est.mid).toBe(60 * 5 * 1.4)
+  })
+
+  it("treino leve (sRPE baixo) usa MET moderado, não o flat de 5", () => {
+    const easy = workout({
+      date: dayKey(-1),
+      durationMin: 45,
+      srpe: 3,
+      entries: [{ exerciseId: "bench", sets: [{ weight: 20, reps: 12 }] }],
+    })
+    const est = sessionKcal(easy, 80)!
+    expect(est.met).toBe(3)
+    expect(est.mid).toBe(Math.round((45 * 3 * 1.4) / 10) * 10)
+  })
+
+  it("sessão mista soma musculação + cardio", () => {
+    const w = workout({
+      date: dayKey(-1),
+      sessionId: "free",
+      durationMin: 40,
+      srpe: 7,
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 10 }] }],
+      cardio: { minutes: 20, mode: "Bike", purpose: "zone2" },
+    })
+    const est = sessionKcal(w, 80)!
+    // lift: 40 × 5 × 1.4 = 280 · cardio Z2: 20 × 6.5 × 1.4 = 182 → 462 → 460
+    expect(est.minutes).toBe(60)
+    expect(est.mid).toBe(460)
+  })
+
+  it("esporte usa minutos × 8 METs; sem cardio não há estimativa", () => {
+    const jogo = workout({
+      date: dayKey(-1),
+      sessionId: "sport",
+      cardio: { minutes: 60, mode: "Futsal", purpose: "sport" },
+    })
+    expect(sessionKcal(jogo, 80)!.mid).toBe(Math.round((60 * 8 * 1.4) / 10) * 10)
+    const vazio = workout({ date: dayKey(-1), sessionId: "sport" })
+    expect(sessionKcal(vazio, 80)).toBeNull()
+  })
+
+  it("sem peso → null (sem caloria inventada)", () => {
+    const w = workout({
+      date: dayKey(-1),
+      entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+    })
+    expect(sessionKcal(w, undefined)).toBeNull()
+    expect(sessionKcal(w, 0)).toBeNull()
+  })
+})
+
+/* ---------------------------------------------------------------- */
 /* Resumo semanal                                                     */
 /* ---------------------------------------------------------------- */
 
@@ -246,6 +364,26 @@ describe("weeklySummary", () => {
     const s = weeklySummary(data, monday)
     const expected = Math.round(((5 * 3.5 * 80) / 200) * 60 / 10) * 10 // MET_LIFT × 60 min @ 80 kg
     expect(s.kcal).toBe(expected)
+  })
+
+  it("soma duração real e sRPE por sessão e expõe a faixa", () => {
+    const monday = new Date(2026, 7, 17)
+    const data: GymData = {
+      ...emptyData,
+      body: [{ date: dayKey(-5), weightKg: 80 }],
+      workouts: [
+        workout({
+          date: dayKey(-3),
+          durationMin: 50,
+          srpe: 9,
+          entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+        }),
+      ],
+    }
+    const s = weeklySummary(data, monday)
+    expect(s.kcal).toBe(420) // 50 min × MET 6 × 1.4
+    expect(s.kcalLow).toBe(Math.round((420 * 0.8) / 10) * 10)
+    expect(s.kcalHigh).toBe(Math.round((420 * 1.25) / 10) * 10)
   })
 
   it("PRs da semana aparecem pelo nome, sem duplicar", () => {

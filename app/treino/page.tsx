@@ -33,6 +33,7 @@ import {
 } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
+import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
 import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
 import { tapFeedback } from "@/lib/haptics"
@@ -681,6 +682,17 @@ export default function TreinoPage() {
   const competitionPhase = program === "competition" ? competitionPhaseFor(today) : null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
+  /**
+   * kcal estimadas do treino salvo — duração real + MET ajustado pelo sRPE.
+   * Recalcula na hora em que o usuário toca um nível de esforço.
+   */
+  const savedKcal = useMemo(
+    () =>
+      savedLog
+        ? sessionKcal(savedLog, weightKgOn(data?.body ?? [], savedLog.date))
+        : null,
+    [savedLog, data]
+  )
 
   const backToToday = () => {
     router.replace("/treino")
@@ -790,6 +802,22 @@ export default function TreinoPage() {
               </p>
             )
           )}
+          {/* estimativa calórica: duração real + MET pelo sRPE (refina ao avaliar) */}
+          {savedKcal && (
+            <p
+              className="mt-1 font-mono text-xs text-gold"
+              title={`Estimativa por METs (${savedKcal.met}) com a duração real da sessão · margem ~±20%`}
+            >
+              ≈ {savedKcal.mid.toLocaleString("pt-BR")} kcal
+              <span className="text-steel-dim">
+                {" "}({savedKcal.low.toLocaleString("pt-BR")}–{savedKcal.high.toLocaleString("pt-BR")})
+                {" "}· {savedKcal.minutes} min
+              </span>
+              {!savedLog?.srpe && (
+                <span className="text-steel-dim"> · toque no esforço abaixo p/ refinar</span>
+              )}
+            </p>
+          )}
           {prCelebrations.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {prCelebrations.map((pr, i) => (
@@ -829,7 +857,7 @@ export default function TreinoPage() {
                 ))}
               </div>
               <p className="mt-1.5 font-mono text-[10px] text-steel-dim">
-                1 = muito leve · 10 = esforço máximo — calibra o sinal de fadiga
+                1 = muito leve · 10 = esforço máximo — calibra a fadiga e refina a estimativa de kcal
               </p>
             </div>
           )}

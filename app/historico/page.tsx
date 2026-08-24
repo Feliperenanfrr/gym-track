@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isCompetitionSession } from "@/lib/competition-plan"
+import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
@@ -391,6 +392,7 @@ export default function Historico() {
                 : w.cardio?.purpose === "sport" || w.sessionId === "sport"
                   ? "esporte"
                   : "Zona 2"
+            const kcalEst = sessionKcal(w, weightKgOn(data.body, w.date))
 
             return (
               <Card key={w.id} className={cn("rise", `rise-${Math.min(6, i + 1)}`, "relative overflow-hidden")}>
@@ -408,7 +410,16 @@ export default function Historico() {
                       </span>
                     )}
                     <p className="mt-1 font-mono text-xs text-steel-dim">
-                      {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`} {w.cardio && `· ${w.cardio.minutes} min ${w.cardio.mode} (${cardioLabel})`}
+                      {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`}{" "}
+                      {w.cardio && `· ${w.cardio.minutes} min ${w.cardio.mode} (${cardioLabel})`}
+                      {kcalEst && (
+                        <span
+                          title={`Estimativa por METs (${kcalEst.met}) · faixa ${kcalEst.low}–${kcalEst.high} kcal`}
+                          className="text-gold"
+                        >
+                          {" "}· ≈{kcalEst.mid.toLocaleString("pt-BR")} kcal
+                        </span>
+                      )}
                     </p>
                     {w.entries.length > 0 && (
                       <ul className="mt-3 space-y-1 border-t border-seam pt-3">

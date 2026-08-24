@@ -199,19 +199,121 @@ export interface WeeklySummary {
   /** minutos de Zona 2 (cardio + finisher, esporte fora) */
   z2Minutes: number
   /**
-   * gasto calórico estimado por METs (arredondado a dezenas).
-   * null sem peso registrado — inventar 85 kg produzia número com
-   * precisão que não existe; melhor "—" do que caloria falsa.
+   * gasto calórico estimado por METs, somando o mid de cada sessão
+   * (arredondado a dezenas). null sem peso registrado — inventar 85 kg
+   * produzia número com precisão que não existe; melhor "—" do que
+   * caloria falsa.
    */
   kcal: number | null
+  /** extremos da faixa somada (~−20% / +25% do mid) */
+  kcalLow: number | null
+  kcalHigh: number | null
 }
 
+/* ------------------------------------------------------------------ */
+/* Calorias por sessão                                                  */
+/* ------------------------------------------------------------------ */
+
 // METs aproximados (Compendium of Physical Activities)
-const MET_LIFT = 5 // musculação vigorosa
 const MET_Z2 = 6.5 // bike/esteira em ritmo moderado
 const MET_INTENSE = 8.5 // corda, tiros ou natação vigorosa
 const MET_SPORT = 8 // futsal/flag/jiu-jitsu recreativo
-const LIFT_SESSION_MIN = 60 // duração típica do treino de força
+const LIFT_SESSION_MIN = 60 // fallback p/ treinos sem duração medida
+
+/** faixa exibida junto ao mid: margem honesta de estimativa sem FC */
+const KCAL_LOW_FACTOR = 0.8
+const KCAL_HIGH_FACTOR = 1.25
+
+/**
+ * MET da musculação ancorado no esforço percebido (sRPE) em vez de fixar
+ * "vigoroso": sRPE baixo ≈ sessão leve/moderada, alto ≈ quase falha.
+ * Tabela Compendium: leve ~3 · moderado ~4 · forte ~5 · vigoroso ~6.
+ * Sem sRPE (registros antigos), mantém os 5 METs de sempre.
+ */
+export function liftMetForSrpe(srpe?: number): number {
+  if (!srpe || srpe <= 0) return 5
+  if (srpe <= 3) return 3
+  if (srpe <= 5) return 4
+  if (srpe <= 7) return 5
+  return 6
+}
+
+/** peso corporal válido mais próximo DE ANTES do dia (fallback: 1ª pesagem) */
+export function weightKgOn(
+  body: { date: string; weightKg?: number }[],
+  dateKey: string
+): number | undefined {
+  const sorted = [...body].sort((a, b) => a.date.localeCompare(b.date))
+  let before: number | undefined
+  for (const b of sorted) {
+    if ((b.weightKg ?? 0) > 0 && b.date <= dateKey) before = b.weightKg!
+  }
+  if (before !== undefined) return before
+  return sorted.find((b) => (b.weightKg ?? 0) > 0)?.weightKg
+}
+
+export interface SessionKcal {
+  /** ponto central da estimativa (kcal) */
+  mid: number
+  /** extremos da faixa honesta (~−20% / +25%) */
+  low: number
+  high: number
+  /** MET efetivo usado na parte de musculação (diagnóstico/tooltip) */
+  met: number
+  /** minutos contabilizados */
+  minutes: number
+}
+
+/**
+ * Estimativa calórica de UM treino por METs:
+ * - musculação usa a duração REAL (1ª série → salvar) e o MET adaptado pelo
+ *   sRPE; sem duração medida (registro antigo/retroativo), cai para 60 min;
+ * - cardio/esporte usam os minutos registrados com os METs fixos de sempre.
+ * null sem peso — a equação do MET depende da massa corporal real.
+ */
+export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | null {
+  if (!weightKg || weightKg <= 0) return null
+  const kcalPerMin = (met: number) => (met * 3.5 * weightKg!) / 200
+  const kind = PLAN_BY_ID[w.sessionId]?.kind
+  const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
+  const cardioMin = w.cardio?.minutes ?? 0
+  const isLiftPart =
+    (kind === "lift" || kind === "mixed") && w.entries.length > 0
+
+  let total = 0
+  let metUsed = 0
+  let minutes = 0
+
+  if (purpose === "sport") {
+    if (cardioMin <= 0) return null
+    metUsed = MET_SPORT
+    total = cardioMin * kcalPerMin(metUsed)
+    minutes = cardioMin
+  } else {
+    if (isLiftPart) {
+      metUsed = liftMetForSrpe(w.srpe)
+      const liftMin = w.durationMin && w.durationMin > 0 ? w.durationMin : LIFT_SESSION_MIN
+      total += liftMin * kcalPerMin(metUsed)
+      minutes += liftMin
+    }
+    if (cardioMin > 0) {
+      const cardioMet = purpose === "intense" ? MET_INTENSE : MET_Z2
+      total += cardioMin * kcalPerMin(cardioMet)
+      minutes += cardioMin
+      if (!isLiftPart) metUsed = cardioMet
+    }
+    if (total <= 0) return null
+  }
+
+  const mid = Math.round(total / 10) * 10
+  return {
+    mid,
+    low: Math.max(10, Math.round((mid * KCAL_LOW_FACTOR) / 10) * 10),
+    high: Math.round((mid * KCAL_HIGH_FACTOR) / 10) * 10,
+    met: Math.round(metUsed * 10) / 10,
+    minutes,
+  }
+}
 
 /** Resumo da semana que começa em `monday` (PRs, frequência, volume, kcal) */
 export function weeklySummary(
@@ -229,37 +331,32 @@ export function weeklySummary(
   const volume = ws.reduce((s, w) => s + workoutVolume(w), 0)
   const z2Minutes = ws.reduce((sum, workout) => sum + zone2Minutes(workout), 0)
 
-  // kcal só com peso real: o MET depende da massa corporal
+  // kcal só com peso real: o MET depende da massa corporal.
+  // Cada sessão soma sua própria estimativa (duração real + sRPE).
   const weightKg = [...data.body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg
-  let kcal: number | null = null
-  if (weightKg) {
-    const kcalPerMin = (met: number) => (met * 3.5 * weightKg) / 200
-    let total = 0
-    for (const w of ws) {
-      const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
-      if (purpose === "sport") {
-        total += (w.cardio?.minutes ?? 0) * kcalPerMin(MET_SPORT)
-      } else {
-        if ((PLAN_BY_ID[w.sessionId]?.kind === "lift" || PLAN_BY_ID[w.sessionId]?.kind === "mixed") && w.entries.length > 0) {
-          total += LIFT_SESSION_MIN * kcalPerMin(MET_LIFT)
-        }
-        total +=
-          (w.cardio?.minutes ?? 0) *
-          kcalPerMin(purpose === "intense" ? MET_INTENSE : MET_Z2)
-      }
-    }
-    kcal = Math.round(total / 10) * 10
+  let midTotal = 0
+  let lowTotal = 0
+  let highTotal = 0
+  for (const w of ws) {
+    const est = sessionKcal(w, weightKg)
+    if (!est) continue
+    midTotal += est.mid
+    lowTotal += est.low
+    highTotal += est.high
   }
 
   const prNames = prEvents(data.workouts)
     .filter((p) => p.date >= start && p.date <= end)
     .map((p) => p.exerciseName ?? EXERCISES_BY_ID[p.exerciseId]?.name ?? p.exerciseId)
 
+  const anyEstimate = ws.some((w) => sessionKcal(w, weightKg) !== null)
   return {
     sessions,
     prs: [...new Set(prNames)],
     volume,
     z2Minutes,
-    kcal,
+    kcal: anyEstimate ? Math.round(midTotal / 10) * 10 : null,
+    kcalLow: anyEstimate ? Math.round(lowTotal / 10) * 10 : null,
+    kcalHigh: anyEstimate ? Math.round(highTotal / 10) * 10 : null,
   }
 }
