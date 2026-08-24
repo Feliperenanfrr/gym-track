@@ -531,9 +531,15 @@ export default function Dashboard() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">Calorias (est.)</p>
               {view.weekSummary.kcal !== null ? (
-                <p className="score text-2xl text-gold">
-                  ~{view.weekSummary.kcal.toLocaleString("pt-BR")}
-                </p>
+                <>
+                  <p className="score text-2xl text-gold">
+                    ~{view.weekSummary.kcal.toLocaleString("pt-BR")}
+                  </p>
+                  <p className="font-mono text-[10px] text-steel-dim">
+                    faixa {view.weekSummary.kcalLow?.toLocaleString("pt-BR")}–
+                    {view.weekSummary.kcalHigh?.toLocaleString("pt-BR")} kcal
+                  </p>
+                </>
               ) : (
                 <>
                   <p className="score text-2xl text-steel-dim">—</p>
@@ -556,7 +562,7 @@ export default function Dashboard() {
           )}
           <p className="mt-3 font-mono text-[10px] text-steel-dim">
             {view.weekSummary.kcal !== null
-              ? "kcal estimadas por METs (musculação ~60 min/sessão + cardio e esporte por minutos)"
+              ? "METs com a duração real e o esforço (sRPE) de cada treino · faixa ~−20%/+25% — estimativa, não medição"
               : "calorias precisam do seu peso no banco (aba Medidas)"}
             {view.weekSummary.z2Minutes > 0 && ` · ${view.weekSummary.z2Minutes}′ de Zona 2`}
           </p>
