@@ -52,12 +52,10 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   crossover: "Peito",
   hipthrust: "Posterior/Glúteo",
   // Jiu-jitsu (ago/2026) — pegada, pescoço e quadril
-  "towel-pullup": "Costas",
-  "grip-hold": "Braço",
-  "neck-bridge": "Pescoço",
+  shrug: "Pescoço",
+  "wrist-curl": "Braço",
+  "push-press": "Ombro",
   "hip-90-90": "Posterior/Glúteo",
-  "turkish-getup": "Ombro",
-  "bear-crawl": "Core",
   "back-extension": "Posterior/Glúteo",
 }
 

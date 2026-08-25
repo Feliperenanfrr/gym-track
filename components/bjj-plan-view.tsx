@@ -212,9 +212,9 @@ export function BjjPlanView({
           <ShieldCheck size={18} className="mt-0.5 shrink-0 text-gold" />
           <p className="text-xs leading-relaxed text-steel">
             <span className="font-semibold text-bone">Pescoço é prevenção, não vaidade.</span>{" "}
-            Comece só com isometria contra a própria mão, 20–30 s por direção, e leve
-            semanas para evoluir. Ponte de pescoço só quando a isometria estiver fácil —
-            e nunca com dor, formigamento ou tontura.
+            Aqui a blindagem cervical é o encolhimento: subida até as orelhas com pausa
+            no topo e descida controlada, sem rodar os ombros. Carga sobe devagar — e se
+            aparecer dor articular, formigamento ou tontura, pare na hora.
           </p>
         </div>
       </Card>
@@ -223,7 +223,7 @@ export function BjjPlanView({
       <div className="grid gap-2 sm:grid-cols-3">
         {[
           ["Verde", "Sono bom, sem rola dura em 24 h e mãos descansadas: faça como planejado.", "border-zone/30 bg-zone/5 text-zone"],
-          ["Amarelo", "Antebraço cansado ou pouco sono: mantenha A sem a isometria de pegada, ou faça B com metade dos acessórios.", "border-gold/30 bg-gold/5 text-gold"],
+          ["Amarelo", "Antebraço cansado ou pouco sono: mantenha A cortando a rosca de punho, ou faça B com metade dos acessórios.", "border-gold/30 bg-gold/5 text-gold"],
           ["Vermelho", "Dor articular, pescoço travado ou 2 noites ruins: mobilidade + Z2 leve ou descanso.", "border-red-500/30 bg-red-500/5 text-red-400"],
         ].map(([label, body, style]) => (
           <Card key={label} className={cn("rise", style)}>
