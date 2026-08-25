@@ -217,7 +217,7 @@ export interface WeeklySummary {
 // METs aproximados (Compendium of Physical Activities)
 const MET_Z2 = 6.5 // bike/esteira em ritmo moderado
 const MET_INTENSE = 8.5 // corda, tiros ou natação vigorosa
-const MET_SPORT = 8 // futsal/flag/jiu-jitsu recreativo
+const MET_SPORT = 8 // jiu-jitsu (aula: drill + rola), futsal e flag recreativos
 const LIFT_SESSION_MIN = 60 // fallback p/ treinos sem duração medida
 
 /** faixa exibida junto ao mid: margem honesta de estimativa sem FC */

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AlertTriangle, Pencil } from "lucide-react"
-import { CompetitionPlanView } from "@/components/competition-plan-view"
+import { BjjPlanView } from "@/components/bjj-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
 import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
@@ -33,8 +33,8 @@ export default function PlanoPage() {
   }
 
   const hypertrophyPlan = planForProgram("hypertrophy", templates)
-  const competitionPlan = planForProgram("competition", templates).filter((session) =>
-    session.id.startsWith("competition")
+  const bjjPlan = planForProgram("bjj", templates).filter((session) =>
+    session.id.startsWith("bjj")
   )
   // Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
   const weekStructure = hypertrophyPlan.filter((session) => session.weekday >= 1)
@@ -48,19 +48,19 @@ export default function PlanoPage() {
     />
   )
 
-  if (program === "competition") {
+  if (program === "bjj") {
     return (
       <main>
-        <PageHeader kicker="PREPARAÇÃO · JUL–AGO/2026" title="O Plano" />
+        <PageHeader kicker="PREPARAÇÃO FÍSICA · JIU-JITSU" title="O Plano" />
         <ProgramTabs value={program} onChange={selectProgram} className="rise" />
         {error && (
           <Card className="mt-3 border-l-4 border-l-ember text-xs text-steel">
             Templates em modo local: {error}
           </Card>
         )}
-        <CompetitionPlanView
+        <BjjPlanView
           today={today}
-          sessions={competitionPlan}
+          sessions={bjjPlan}
           onEditTemplate={(session) => setEditingId(session.id)}
         />
         {editor}
@@ -70,7 +70,7 @@ export default function PlanoPage() {
 
   return (
     <main>
-      <PageHeader kicker="PREPARADOR FÍSICO · JUN/2026" title="O Plano" />
+      <PageHeader kicker="BASE E SHAPE · JUN/2026" title="O Plano" />
 
       <ProgramTabs value={program} onChange={selectProgram} className="rise mb-3" />
 
@@ -83,9 +83,9 @@ export default function PlanoPage() {
       <Card className="rise rise-1 border-l-4 border-l-ember">
         <p className="text-sm leading-relaxed text-steel">
           <span className="font-semibold text-bone">Objetivo:</span> recomposição corporal
-          — perder gordura mantendo músculo, shape estético, fôlego para esportes e força
-          funcional. Cardio vira metade do programa; musculação migra para volume de
-          hipertrofia.
+          — perder gordura mantendo músculo, shape estético e força funcional. Continua
+          disponível como bloco de base; desde agosto/2026 o objetivo principal é a
+          performance no tatame, na aba <span className="text-gold">Jiu-Jitsu</span>.
         </p>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[

@@ -1,10 +1,8 @@
-import {
-  COMPETITION_GYM_SESSION_IDS,
-  COMPETITION_PLAN,
-} from "./competition-plan"
+import { BJJ_GYM_SESSION_IDS, BJJ_PLAN } from "./bjj-plan"
+import { LEGACY_SESSIONS } from "./legacy-plan"
 import { SessionId, SessionPlan, TrainingProgram } from "./types"
 
-export { COMPETITION_PLAN } from "./competition-plan"
+export { BJJ_PLAN } from "./bjj-plan"
 
 /**
  * Plano de Treino — Felipe (Junho/2026)
@@ -122,12 +120,13 @@ export const PLAN: SessionPlan[] = [
   {
     id: "sport",
     title: "Esporte",
-    subtitle: "Futsal / Flag / Jiu-jitsu",
+    subtitle: "Jiu-jitsu / Futsal / Flag",
     weekday: 6,
     duration: "Livre",
     kind: "sport",
     accent: "zone",
-    description: "Diversão — seu intervalado “natural”. Esporte é lazer, não treino.",
+    description:
+      "Tatame e jogos. Registre aqui a rola — é o treino principal do bloco de jiu-jitsu e o seu intervalado “natural”.",
     exercises: [],
   },
   {
@@ -143,15 +142,23 @@ export const PLAN: SessionPlan[] = [
   },
 ]
 
-export const ALL_PLAN_SESSIONS = [...PLAN, ...COMPETITION_PLAN]
+/** Sessões vivas: alimentam seleção, templates persistidos e catálogo. */
+export const ALL_PLAN_SESSIONS = [...PLAN, ...BJJ_PLAN]
+
+/**
+ * Sessões vivas + aposentadas. Só para resolver nome/prescrição de registros
+ * antigos (Histórico); as ativas vêm por último para vencer no caso de ids
+ * de exercício repetidos entre protocolos.
+ */
+const LOOKUP_SESSIONS = [...LEGACY_SESSIONS, ...ALL_PLAN_SESSIONS]
 
 /**
  * Sessões disponíveis no registro para cada objetivo. Avulso e esporte são
- * compartilhados; o protocolo de competição permanece separado do Upper/Lower.
+ * compartilhados; o bloco de jiu-jitsu permanece separado do Upper/Lower.
  */
 const HYPERTROPHY_PLAN_IDS: SessionId[] = PLAN.map((session) => session.id)
-const COMPETITION_PLAN_IDS: SessionId[] = [
-  ...COMPETITION_PLAN.map((session) => session.id),
+const BJJ_PLAN_IDS: SessionId[] = [
+  ...BJJ_PLAN.map((session) => session.id),
   "free",
   "sport",
 ]
@@ -161,17 +168,17 @@ export function planForProgram(
   templates: SessionPlan[] = ALL_PLAN_SESSIONS
 ): SessionPlan[] {
   const byId = new Map(templates.map((session) => [session.id, session]))
-  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : COMPETITION_PLAN_IDS
+  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : BJJ_PLAN_IDS
   return ids.map((id) => byId.get(id) ?? PLAN_BY_ID[id])
 }
 
-export const PLAN_BY_ID = Object.fromEntries(ALL_PLAN_SESSIONS.map((s) => [s.id, s])) as Record<
+export const PLAN_BY_ID = Object.fromEntries(LOOKUP_SESSIONS.map((s) => [s.id, s])) as Record<
   SessionId,
   SessionPlan
 >
 
 export const EXERCISES_BY_ID = Object.fromEntries(
-  ALL_PLAN_SESSIONS.flatMap((s) => s.exercises.map((e) => [e.id, e]))
+  LOOKUP_SESSIONS.flatMap((s) => s.exercises.map((e) => [e.id, e]))
 )
 
 /** Sessões em que cada exercício aparece (para achar histórico) */
@@ -195,6 +202,11 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "lowerA",
   "upperB",
   "lowerB",
+  "bjjPull",
+  "bjjBase",
+  "bjjEngine",
+  "bjjZ2",
+  // protocolo aposentado: continua contando no histórico já registrado
   "competitionLower",
   "competitionUpper",
   "competitionPower",
@@ -213,13 +225,13 @@ const HYPERTROPHY_TARGET_SESSION_IDS = new Set<SessionId>([
   "lowerB",
 ])
 
-/** Frequência exibida no painel: 5 sessões no plano atual ou 2–3 de sala no protocolo. */
+/** Frequência exibida no painel: 5 sessões na hipertrofia ou 2–3 de sala no jiu-jitsu. */
 export function countsTowardProgramTarget(
   sessionId: SessionId,
   program: TrainingProgram
 ): boolean {
-  return program === "competition"
-    ? COMPETITION_GYM_SESSION_IDS.includes(sessionId)
+  return program === "bjj"
+    ? BJJ_GYM_SESSION_IDS.includes(sessionId)
     : HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
 }
 
@@ -238,11 +250,11 @@ export const GOLDEN_RULES = [
   },
   {
     title: "Não pule o cardio",
-    body: "Para o SEU objetivo, a Zona 2 de terça é tão inegociável quanto o treino de segunda. É ela que mata a tontura no futsal.",
+    body: "Para o SEU objetivo, a Zona 2 de terça é tão inegociável quanto o treino de segunda. É ela que mata a tontura e devolve o fôlego entre rounds.",
   },
   {
-    title: "Esporte é lazer, não treino",
-    body: "Futsal, flag e jiu-jitsu são a recompensa. Eles melhoram porque a base melhora — não force performance neles nas primeiras 6 semanas.",
+    title: "O tatame manda na semana",
+    body: "Desde agosto/2026 o jiu-jitsu é o objetivo, não o lazer. A academia serve ao tatame: se a sala custar qualidade técnica no dia seguinte, a sala é que cede.",
   },
   {
     title: "Durma 7–9 horas",
@@ -261,7 +273,7 @@ export const NUTRITION_GUIDELINES = [
 export const TIMELINE = [
   { period: "Semanas 1–4", expect: "Cardio humilhante para o ego de quem levanta 160 kg. Normal. Foque em constância, não intensidade." },
   { period: "Semanas 4–6", expect: "Introduza o intervalado (1x/semana no lugar de uma Zona 2): 8 tiros de 1 min forte / 2 min leve na bike." },
-  { period: "Semanas 6–10", expect: "Futsal e flag ficam confortáveis. Tontura deve ter sumido (se persistir, volte ao médico)." },
+  { period: "Semanas 6–10", expect: "Rola e futsal ficam confortáveis. Tontura deve ter sumido (se persistir, volte ao médico)." },
   { period: "Meses 3–6", expect: "Recomposição visível: menos cintura, mais ombro. Força estabiliza após queda inicial leve." },
-  { period: "Mês 6+", expect: "Reavalie: bioimpedância, ajuste de calorias, possível troca de divisão. Aqui você já corre 5 km e joga 1 h de futsal sem sofrer." },
+  { period: "Mês 6+", expect: "Reavalie: bioimpedância, ajuste de calorias, possível troca de divisão. Aqui você já corre 5 km e aguenta a aula inteira de jiu-jitsu sem apagar." },
 ]

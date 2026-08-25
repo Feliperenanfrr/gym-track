@@ -7,11 +7,7 @@ import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, 
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
-import {
-  competitionPlanForDate,
-  competitionPhaseFor,
-  nextCompetitionSession,
-} from "@/lib/competition-plan"
+import { bjjPlanForDate, bjjPhaseFor, nextBjjSession } from "@/lib/bjj-plan"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
 import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
@@ -41,7 +37,7 @@ import { useTrainingProgram } from "@/lib/use-training-program"
 import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 
 const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Pular corda", "Natação", "Remo"]
-const SPORT_MODES = ["Futsal", "Flag football", "Jiu-jitsu", "Natação", "Outro esporte"]
+const SPORT_MODES = ["Jiu-jitsu", "Futsal", "Flag football", "Natação", "Outro esporte"]
 
 const CARDIO_PURPOSES: { id: CardioPurpose; label: string; hint: string }[] = [
   { id: "zone2", label: "Zona 2", hint: "ritmo contínuo e confortável" },
@@ -118,12 +114,12 @@ export default function TreinoPage() {
     () => {
       if (!program || !templates) return []
       const base = planForProgram(program, templates)
-      if (program !== "competition" || !today) return base
+      if (program !== "bjj" || !today) return base
       const shared = base.filter(
         (candidate) => candidate.id === "free" || candidate.id === "sport"
       )
-      const competition = base.filter((candidate) => candidate.id.startsWith("competition"))
-      return [...competitionPlanForDate(today, competition), ...shared]
+      const bjj = base.filter((candidate) => candidate.id.startsWith("bjj"))
+      return [...bjjPlanForDate(today, bjj), ...shared]
     },
     [program, templates, today]
   )
@@ -155,8 +151,8 @@ export default function TreinoPage() {
     sessionPickedRef.current = false
     cycleInitRef.current = false
     setCycleSug(null)
-    if (program === "competition") {
-      setSessionId(competitionPhaseFor(today).id === "game" ? "sport" : "competitionLower")
+    if (program === "bjj") {
+      setSessionId("bjjPull")
       return
     }
     const planned = planForProgram("hypertrophy", templates).find(
@@ -170,12 +166,8 @@ export default function TreinoPage() {
   useEffect(() => {
     if (!data || !today || !program || cycleInitRef.current || sessionPickedRef.current) return
     cycleInitRef.current = true
-    if (program === "competition") {
-      setSessionId(
-        competitionPhaseFor(today).id === "game"
-          ? "sport"
-          : nextCompetitionSession(data.workouts, today)
-      )
+    if (program === "bjj") {
+      setSessionId(nextBjjSession(data.workouts, today))
       return
     }
     if (getScheduleMode() !== "ciclo") return
@@ -232,12 +224,10 @@ export default function TreinoPage() {
     exercises: ExercisePrescription[] = s!.exercises
   ) => {
     const rows: Record<string, SetRow[]> = {}
-    const tapering =
-      program === "competition" &&
-      today !== null &&
-      ["taper", "game"].includes(competitionPhaseFor(today).id)
+    const adapting =
+      program === "bjj" && today !== null && bjjPhaseFor(today).id === "adaptacao"
     const defaultPurpose: CardioPurpose =
-      s!.id === "competitionZ2"
+      s!.id === "bjjZ2"
         ? "zone2"
         : ll?.cardio?.purpose ?? (s!.kind === "sport" ? "sport" : "zone2")
     for (const ex of exercises) {
@@ -247,7 +237,7 @@ export default function TreinoPage() {
         let suggestedWeight = lastSet ? String(lastSet.weight) : ""
         let suggestedReps = lastSet ? String(lastSet.reps) : ""
 
-        if (lastSet && tapering) {
+        if (lastSet && adapting) {
           suggestedWeight = ""
           suggestedReps = String(ex.repsMin)
         } else if (lastSet && factor < 1) {
@@ -272,12 +262,7 @@ export default function TreinoPage() {
       cardioMin:
         s!.kind === "cardio"
           ? ll?.cardio
-            ? String(
-                Math.min(
-                  s!.cardioTarget?.max ?? 50,
-                  ll.cardio.minutes + (s!.id === "competitionZ2" ? 0 : 2)
-                )
-              )
+            ? String(Math.min(s!.cardioTarget?.max ?? 50, ll.cardio.minutes + 2))
             : String(s!.cardioTarget?.defaultMinutes ?? 45)
           : s!.kind === "sport"
             ? "60"
@@ -331,7 +316,7 @@ export default function TreinoPage() {
       setCardioBpm(draft.cardioBpm)
       setCardioMode(draft.cardioMode)
       setCardioPurpose(
-        session.id === "competitionZ2"
+        session.id === "bjjZ2"
           ? "zone2"
           : draft.cardioPurpose ?? (session.kind === "sport" ? "sport" : "zone2")
       )
@@ -610,7 +595,7 @@ export default function TreinoPage() {
         minutes: cardioMinutes,
         avgBpm: session.kind !== "sport" ? parseInt(cardioBpm) || undefined : undefined,
         mode: cardioMode,
-        purpose: session.id === "competitionZ2" ? "zone2" : cardioPurpose,
+        purpose: session.id === "bjjZ2" ? "zone2" : cardioPurpose,
       }
       log.durationMin =
         session.kind === "mixed"
@@ -679,7 +664,7 @@ export default function TreinoPage() {
   const progressPct =
     totals.setsTotal > 0 ? Math.round((totals.setsDone / totals.setsTotal) * 100) : 0
   const isLift = isStrengthKind(session.kind)
-  const competitionPhase = program === "competition" ? competitionPhaseFor(today) : null
+  const bjjPhase = program === "bjj" ? bjjPhaseFor(today) : null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
   /**
@@ -710,7 +695,7 @@ export default function TreinoPage() {
   return (
     <main className="pb-24">
       <PageHeader
-        kicker={`${program === "competition" ? "COMPETIÇÃO" : "REGISTRO"} · ${shortDate(toDateKey(today))}`}
+        kicker={`${program === "bjj" ? "JIU-JITSU" : "REGISTRO"} · ${shortDate(toDateKey(today))}`}
         title="Treino"
       />
 
@@ -742,19 +727,17 @@ export default function TreinoPage() {
         </div>
       )}
 
-      {competitionPhase && !saved && (
+      {bjjPhase && !saved && (
         <div className="rise mb-3 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2.5">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-gold">
-              {competitionPhase.label}
+              {bjjPhase.label}
             </p>
             <span className="shrink-0 font-mono text-[10px] text-steel-dim">
-              {competitionPhase.dates}
+              {bjjPhase.dates}
             </span>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-steel">
-            {competitionPhase.guidance}
-          </p>
+          <p className="mt-1 text-xs leading-relaxed text-steel">{bjjPhase.guidance}</p>
         </div>
       )}
 
@@ -796,8 +779,8 @@ export default function TreinoPage() {
           ) : (
             totals.volume > 0 && (
               <p className="mt-1 font-mono text-xs text-steel">
-                {formatKg(totals.volume)} movimentados hoje. {program === "competition"
-                  ? "Qualidade registrada — guarde energia para o campo."
+                {formatKg(totals.volume)} movimentados hoje. {program === "bjj"
+                  ? "Qualidade registrada — guarde energia para o tatame."
                   : "Sobrecarga anotada — é assim que o shape vem."}
               </p>
             )
@@ -906,10 +889,10 @@ export default function TreinoPage() {
         </p>
       )}
 
-      {session.id === "competitionPower" && !saved && (
+      {session.id === "bjjEngine" && !saved && (
         <p className="rise mb-4 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs leading-relaxed text-gold">
-          Sessão opcional: faça somente com pernas leves e boa recuperação. Cansou no
-          campo? Troque por mobilidade + 25 min de Zona 2 ou encerre o dia.
+          Sessão opcional: só com corpo leve e boa recuperação. Rolou pesado esta semana?
+          Troque por mobilidade + 30 min de Zona 2 ou encerre o dia.
         </p>
       )}
 
@@ -917,7 +900,7 @@ export default function TreinoPage() {
       <Card
         className={cn(
           "rise rise-1 mb-4 border-l-4",
-          program === "competition" ? "border-l-gold" : "border-l-ember"
+          program === "bjj" ? "border-l-gold" : "border-l-ember"
         )}
       >
         <h2 className="stencil text-2xl text-bone">{session.title}</h2>
@@ -931,7 +914,7 @@ export default function TreinoPage() {
               <span className="text-steel">
                 {totals.setsDone}/{totals.setsTotal} séries
               </span>
-              <span className={program === "competition" ? "text-gold" : "text-ember-hot"}>
+              <span className={program === "bjj" ? "text-gold" : "text-ember-hot"}>
                 {formatKg(totals.volume)}
               </span>
             </div>
@@ -939,7 +922,7 @@ export default function TreinoPage() {
               <div
                 className={cn(
                   "h-full rounded-full transition-all duration-300",
-                  program === "competition" ? "bg-gold" : "bg-ember"
+                  program === "bjj" ? "bg-gold" : "bg-ember"
                 )}
                 style={{ width: `${progressPct}%` }}
               />
@@ -1359,9 +1342,9 @@ export default function TreinoPage() {
                 : " (~120–140 bpm)."}
             </p>
           )}
-          {session.id === "competitionZ2" ? (
+          {session.id === "bjjZ2" ? (
             <p className="mt-2 rounded border border-zone/20 bg-zone/5 px-2.5 py-2 text-xs text-zone">
-              Zero HIIT na academia — os estímulos intensos vêm do campo.
+              Ritmo de conversa — o intervalado você já faz de graça no tatame.
             </p>
           ) : (
             <div className="mt-3 grid grid-cols-3 gap-1.5">
@@ -1480,7 +1463,7 @@ export default function TreinoPage() {
 
       {isLift && (
         <p className="mt-3 text-center font-mono text-[10px] text-steel-dim">
-          {program === "competition"
+          {program === "bjj"
             ? "Sem falha e sem grind: RIR 2–3. Pare o explosivo quando a velocidade cair."
             : "Toda série a 1–3 reps da falha. Anote tudo — sobrecarga progressiva."}
         </p>
@@ -1523,7 +1506,7 @@ export default function TreinoPage() {
             disabled={saving}
             className={cn(
               "flex w-full items-center justify-center gap-2 rounded-lg py-3.5 text-sm font-bold uppercase tracking-[0.2em] text-coal shadow-[0_6px_24px_rgba(0,0,0,0.5)] transition-colors active:scale-[0.99] disabled:opacity-60",
-              program === "competition"
+              program === "bjj"
                 ? "bg-gold hover:bg-amber-300"
                 : "bg-ember hover:bg-ember-hot"
             )}

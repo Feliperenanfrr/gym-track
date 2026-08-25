@@ -1,12 +1,11 @@
-import { AlertTriangle, CalendarDays, Pencil, ShieldCheck, Trophy } from "lucide-react"
+import { AlertTriangle, CalendarDays, Pencil, ShieldCheck, Swords } from "lucide-react"
 import {
-  COMPETITION_COORDINATION_RULES,
-  COMPETITION_GAME_DATE,
-  COMPETITION_PLAN,
-  COMPETITION_PROGRESSION,
-  competitionPhaseFor,
-  LAST_HEAVY_GYM_DATE,
-} from "@/lib/competition-plan"
+  BJJ_MAT_RULES,
+  BJJ_PLAN,
+  BJJ_PROGRESSION,
+  BJJ_VALENCES,
+  bjjPhaseFor,
+} from "@/lib/bjj-plan"
 import { ExercisePrescription, SessionPlan } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Card, SectionTitle } from "./ui"
@@ -19,18 +18,18 @@ function prescription(exercise: ExercisePrescription) {
   return `${exercise.sets} × ${reps}${exercise.unit === "seconds" ? "s" : ""}`
 }
 
-export function CompetitionPlanView({
+export function BjjPlanView({
   today,
-  sessions = COMPETITION_PLAN,
+  sessions = BJJ_PLAN,
   onEditTemplate,
 }: {
   today: Date
   sessions?: SessionPlan[]
   onEditTemplate?: (session: SessionPlan) => void
 }) {
-  const phase = competitionPhaseFor(today)
+  const phase = bjjPhaseFor(today)
   const liftSessions = sessions.filter((session) => session.kind === "lift")
-  const zone2 = sessions.find((session) => session.id === "competitionZ2")!
+  const zone2 = sessions.find((session) => session.id === "bjjZ2")!
 
   return (
     <>
@@ -38,31 +37,34 @@ export function CompetitionPlanView({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-gold">
-              <Trophy size={12} /> Protocolo ativo
+              <Swords size={12} /> Objetivo ativo
             </p>
-            <h2 className="stencil mt-1.5 text-2xl text-bone">Cornerback · 15/08</h2>
+            <h2 className="stencil mt-1.5 text-2xl text-bone">Performance no tatame</h2>
           </div>
           <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-1 font-mono text-[10px] text-gold">
-            temporário
+            bloco aberto
           </span>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-steel">
-          A academia agora serve ao campo: <span className="font-semibold text-bone">manter
-          força, transformar em explosão e preservar o frescor das pernas</span>. Nada de
-          PR, falha ou volume para emagrecer até o campeonato.
+          A academia agora serve ao jiu-jitsu:{" "}
+          <span className="font-semibold text-bone">
+            pegada que não solta, quadril que levanta e pescoço que aguenta
+          </span>
+          . Sua força de powerlifting já está construída — o trabalho é convertê-la em
+          rola e blindar o que quebra em quem começa.
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded border border-seam bg-iron-2 p-2.5">
             <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
               Academia
             </p>
-            <p className="mt-0.5 text-xs font-semibold text-bone">2–3 sessões · baixo volume</p>
+            <p className="mt-0.5 text-xs font-semibold text-bone">2–3 sessões · suporte</p>
           </div>
           <div className="rounded border border-seam bg-iron-2 p-2.5">
             <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
-              Campo
+              Tatame
             </p>
-            <p className="mt-0.5 text-xs font-semibold text-bone">Sprint, cortes e coletivo</p>
+            <p className="mt-0.5 text-xs font-semibold text-bone">Técnica e rola · principal</p>
           </div>
         </div>
       </Card>
@@ -80,9 +82,29 @@ export function CompetitionPlanView({
         </div>
       </Card>
 
-      <SectionTitle accent="steel">Coordenação com o campo</SectionTitle>
+      <SectionTitle>Valências que a sala precisa entregar</SectionTitle>
+      <Card className="rise p-0">
+        {BJJ_VALENCES.map((valence, index) => (
+          <div
+            key={valence.name}
+            className={cn(
+              "px-4 py-3",
+              index < BJJ_VALENCES.length - 1 && "border-b border-seam"
+            )}
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-semibold text-bone">{valence.name}</p>
+              <span className="score shrink-0 text-lg text-gold">{index + 1}</span>
+            </div>
+            <p className="mt-0.5 text-xs leading-relaxed text-steel">{valence.why}</p>
+            <p className="mt-1 font-mono text-[10px] text-steel-dim">{valence.how}</p>
+          </div>
+        ))}
+      </Card>
+
+      <SectionTitle accent="steel">Coordenação com o tatame</SectionTitle>
       <div className="space-y-2">
-        {COMPETITION_COORDINATION_RULES.map((rule, index) => (
+        {BJJ_MAT_RULES.map((rule, index) => (
           <Card key={rule} className="rise flex gap-3 py-3">
             <span className="score mt-0.5 text-xl text-gold">{index + 1}</span>
             <p className="text-xs leading-relaxed text-steel">{rule}</p>
@@ -142,42 +164,43 @@ export function CompetitionPlanView({
         </div>
       ))}
 
-      <SectionTitle accent="zone">Zona 2 · sem HIIT na academia</SectionTitle>
+      <SectionTitle accent="zone">Zona 2 · fôlego entre rounds</SectionTitle>
       <Card className="rise border-l-4 border-l-zone">
         <div className="flex items-baseline justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-bone">{zone2.title}</p>
-            <p className="text-xs text-zone">60–90 min por semana</p>
+            <p className="text-xs text-zone">60–120 min por semana</p>
           </div>
           <span className="score text-2xl text-zone">125–140</span>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-steel">{zone2.description}</p>
         <p className="mt-2 rounded border border-zone/20 bg-zone/5 px-2.5 py-2 text-xs text-zone">
-          Sugestão: 2–3 × 20–30 min. Na semana do jogo, 1 × 20 min fácil ou zero.
+          O intervalado você já faz de graça no tatame — na sala, mantenha o ritmo de
+          conversa. É a base aeróbica que decide se o terceiro round é seu.
         </p>
       </Card>
 
-      <SectionTitle accent="steel">Progressão até o jogo</SectionTitle>
+      <SectionTitle accent="steel">Progressão dos blocos</SectionTitle>
       <div className="space-y-2">
-        {COMPETITION_PROGRESSION.map((week) => {
-          const active = phase.label.startsWith(week.week.split(" · ")[0])
+        {BJJ_PROGRESSION.map((block) => {
+          const active = block.block === phase.label
           return (
             <Card
-              key={week.week}
+              key={block.block}
               className={cn("rise", active && "border-gold/40 bg-gold/5")}
             >
               <div className="flex items-baseline justify-between gap-3">
                 <p className={cn("text-sm font-semibold", active ? "text-gold" : "text-bone")}>
-                  {week.week}
+                  {block.block}
                 </p>
-                <span className="font-mono text-[10px] text-steel-dim">{week.period}</span>
+                <span className="font-mono text-[10px] text-steel-dim">{block.period}</span>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 font-mono text-[10px]">
-                <div><span className="text-steel-dim">Sala:</span> <span className="text-steel">{week.sessions}</span></div>
-                <div><span className="text-steel-dim">Força:</span> <span className="text-steel">{week.strength}</span></div>
-                <div><span className="text-steel-dim">Explosivo:</span> <span className="text-steel">{week.explosive}</span></div>
-                <div><span className="text-steel-dim">Acessórios:</span> <span className="text-steel">{week.accessories}</span></div>
-                <div className="col-span-2"><span className="text-steel-dim">Zona 2:</span> <span className="text-zone">{week.zone2}</span></div>
+                <div><span className="text-steel-dim">Sala:</span> <span className="text-steel">{block.sessions}</span></div>
+                <div><span className="text-steel-dim">Força:</span> <span className="text-steel">{block.strength}</span></div>
+                <div><span className="text-steel-dim">Pegada:</span> <span className="text-steel">{block.grip}</span></div>
+                <div><span className="text-steel-dim">Motor (C):</span> <span className="text-steel">{block.engine}</span></div>
+                <div className="col-span-2"><span className="text-steel-dim">Zona 2:</span> <span className="text-zone">{block.zone2}</span></div>
               </div>
             </Card>
           )
@@ -188,9 +211,10 @@ export function CompetitionPlanView({
         <div className="flex gap-2.5">
           <ShieldCheck size={18} className="mt-0.5 shrink-0 text-gold" />
           <p className="text-xs leading-relaxed text-steel">
-            A última sessão pesada deve ser até <span className="font-semibold text-bone">
-            {LAST_HEAVY_GYM_DATE.split("-").reverse().slice(0, 2).join("/")}</span>. Na semana do
-            campeonato, use apenas carga leve e movimentos rápidos; em {COMPETITION_GAME_DATE.split("-").reverse().slice(0, 2).join("/")}, sem academia.
+            <span className="font-semibold text-bone">Pescoço é prevenção, não vaidade.</span>{" "}
+            Comece só com isometria contra a própria mão, 20–30 s por direção, e leve
+            semanas para evoluir. Ponte de pescoço só quando a isometria estiver fácil —
+            e nunca com dor, formigamento ou tontura.
           </p>
         </div>
       </Card>
@@ -198,9 +222,9 @@ export function CompetitionPlanView({
       <SectionTitle accent="steel">Semáforo antes da sessão</SectionTitle>
       <div className="grid gap-2 sm:grid-cols-3">
         {[
-          ["Verde", "Pernas leves, sono bom e campo tranquilo em 48 h: faça como planejado.", "border-zone/30 bg-zone/5 text-zone"],
-          ["Amarelo", "Pernas pesadas ou pouco sono: mantenha B; corte agacho e acessórios.", "border-gold/30 bg-gold/5 text-gold"],
-          ["Vermelho", "Dor, campo pesado ou 2 noites ruins: mobilidade + Z2 leve ou descanso.", "border-red-500/30 bg-red-500/5 text-red-400"],
+          ["Verde", "Sono bom, sem rola dura em 24 h e mãos descansadas: faça como planejado.", "border-zone/30 bg-zone/5 text-zone"],
+          ["Amarelo", "Antebraço cansado ou pouco sono: mantenha A sem a isometria de pegada, ou faça B com metade dos acessórios.", "border-gold/30 bg-gold/5 text-gold"],
+          ["Vermelho", "Dor articular, pescoço travado ou 2 noites ruins: mobilidade + Z2 leve ou descanso.", "border-red-500/30 bg-red-500/5 text-red-400"],
         ].map(([label, body, style]) => (
           <Card key={label} className={cn("rise", style)}>
             <p className="text-xs font-semibold uppercase tracking-wider">{label}</p>
@@ -212,8 +236,9 @@ export function CompetitionPlanView({
       <div className="rise mt-5 flex gap-2.5 rounded border border-red-500/20 bg-red-500/5 px-3 py-2.5">
         <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-400" />
         <p className="text-[11px] leading-relaxed text-steel">
-          Dor aguda ou articular: pare e avalie com fisioterapeuta ou médico do esporte.
-          A academia complementa o coach; não substitui a avaliação presencial.
+          Dor aguda, articular ou cervical: pare e avalie com fisioterapeuta ou médico do
+          esporte. A academia complementa o professor de jiu-jitsu; não substitui a
+          avaliação presencial.
         </p>
       </div>
     </>

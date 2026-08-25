@@ -1,17 +1,12 @@
-import { SessionId, SessionPlan, WorkoutLog } from "./types"
-import { toDateKey } from "./utils"
-
-export const COMPETITION_START_DATE = "2026-07-18"
-export const COMPETITION_GAME_DATE = "2026-08-15"
-export const HYPERTROPHY_RETURN_DATE = "2026-08-16"
-export const LAST_HEAVY_GYM_DATE = "2026-08-09"
+import { SessionId, SessionPlan } from "./types"
 
 /**
- * Protocolo temporário de academia para a preparação como cornerback.
- * O trabalho de campo continua sob responsabilidade do coach; estas sessões
- * preservam força e transformam parte dela em potência com baixo volume.
+ * Protocolo aposentado da preparação para o campeonato de flag football
+ * (18/07 a 15/08/2026). Não entra em nenhum programa ativo nem no seed de
+ * templates — vive aqui só para que os treinos já registrados continuem
+ * exibindo título, exercícios e prescrição no Histórico.
  */
-export const COMPETITION_PLAN: SessionPlan[] = [
+export const LEGACY_SESSIONS: SessionPlan[] = [
   {
     id: "competitionLower",
     title: "A · Inferior + Potência",
@@ -301,209 +296,11 @@ export const COMPETITION_PLAN: SessionPlan[] = [
   },
 ]
 
-export const COMPETITION_CORE_SESSION_IDS: SessionId[] = [
-  "competitionLower",
-  "competitionUpper",
-]
+const LEGACY_SESSION_IDS = new Set<SessionId>(
+  LEGACY_SESSIONS.map((session) => session.id)
+)
 
-export const COMPETITION_GYM_SESSION_IDS: SessionId[] = [
-  ...COMPETITION_CORE_SESSION_IDS,
-  "competitionPower",
-]
-
-export const COMPETITION_SESSION_IDS: SessionId[] = [
-  ...COMPETITION_GYM_SESSION_IDS,
-  "competitionZ2",
-]
-
-export const COMPETITION_COORDINATION_RULES = [
-  "A sessão A nunca entra no mesmo dia nem na véspera de campo forte; busque 48 h de distância.",
-  "A sessão B é flexível e pode ficar perto do campo porque poupa as pernas.",
-  "Depois de um campo muito puxado, faça B leve, Zona 2/mobilidade ou descanso — nunca A.",
-  "No máximo 2 dias de alto estresse neural por semana, somando campo e academia.",
-]
-
-export const COMPETITION_PROGRESSION = [
-  {
-    period: "18–24 jul",
-    week: "Semana 1",
-    sessions: "2–3",
-    strength: "RIR 3 · manter",
-    explosive: "Baixo · aprender padrão",
-    accessories: "Moderado",
-    zone2: "2–3 × 20–30 min",
-  },
-  {
-    period: "25–31 jul",
-    week: "Semana 2",
-    sessions: "2–3",
-    strength: "RIR 2–3 · manter",
-    explosive: "+ intenção · máxima qualidade",
-    accessories: "Moderado",
-    zone2: "2–3 × 25–30 min",
-  },
-  {
-    period: "01–07 ago",
-    week: "Semana 3",
-    sessions: "2",
-    strength: "1 top set pesado-ish",
-    explosive: "Pico de qualidade",
-    accessories: "Reduzido",
-    zone2: "1–2 × 20–25 min",
-  },
-  {
-    period: "08–14 ago",
-    week: "Semana 4 · taper",
-    sessions: "1–2 leves",
-    strength: "Leve · feel-good",
-    explosive: "Mínimo · só afiar",
-    accessories: "Mínimo",
-    zone2: "1 × 20 min ou zero",
-  },
-]
-
-export type CompetitionPhaseId = "week1" | "week2" | "week3" | "taper" | "game" | "complete"
-
-export interface CompetitionPhase {
-  id: CompetitionPhaseId
-  label: string
-  dates: string
-  guidance: string
-}
-
-export function competitionPhaseFor(date: Date): CompetitionPhase {
-  const key = toDateKey(date)
-  if (key > COMPETITION_GAME_DATE) {
-    return {
-      id: "complete",
-      label: "Protocolo encerrado",
-      dates: "após 15 ago",
-      guidance: "Volte ao programa de hipertrofia e recomposição.",
-    }
-  }
-  if (key === COMPETITION_GAME_DATE) {
-    return {
-      id: "game",
-      label: "Dia do campeonato",
-      dates: "15 ago",
-      guidance: "Sem academia. Chegue com as pernas frescas.",
-    }
-  }
-  if (key >= "2026-08-08") {
-    return {
-      id: "taper",
-      label: "Semana 4 · taper",
-      dates: "08–14 ago",
-      guidance:
-        "Só 1–2 sessões leves de priming. Depois de 09/08, nada de perna pesada; frescor vale mais que volume.",
-    }
-  }
-  if (key >= "2026-08-01") {
-    return {
-      id: "week3",
-      label: "Semana 3 · pico",
-      dates: "01–07 ago",
-      guidance: "Faça 2 sessões, priorize qualidade explosiva e reduza acessórios.",
-    }
-  }
-  if (key >= "2026-07-25") {
-    return {
-      id: "week2",
-      label: "Semana 2 · construção",
-      dates: "25–31 jul",
-      guidance: "Mantenha a força em RIR 2–3 e aumente a intenção dos explosivos, sem aumentar fadiga.",
-    }
-  }
-  return {
-    id: "week1",
-    label: "Semana 1 · entrada",
-    dates: "18–24 jul",
-    guidance: "Use RIR 3, aprenda os padrões explosivos e termine cada sessão sentindo que havia sobra.",
-  }
-}
-
-/** Prescrição enxuta exibida no registro durante a semana de taper. */
-export function competitionPlanForDate(
-  date: Date,
-  templates: SessionPlan[] = COMPETITION_PLAN
-): SessionPlan[] {
-  const phase = competitionPhaseFor(date)
-  if (phase.id !== "taper" && phase.id !== "game") return templates
-
-  return templates.map((session) => {
-    if (session.id === "competitionZ2") {
-      return {
-        ...session,
-        duration: "20 min ou zero",
-        cardioTarget: {
-          ...session.cardioTarget!,
-          min: 20,
-          max: 20,
-          defaultMinutes: 20,
-        },
-        description:
-          "Taper: no máximo 20 min muito fáceis. Se as pernas pedirem descanso, pule a sessão.",
-      }
-    }
-    return {
-      ...session,
-      title: `${session.title} · Taper`,
-      duration: "~25–35 min",
-      description:
-        "Priming leve: poucas séries, movimentos rápidos e sensação de sobra. Nada de perna pesada.",
-      exercises: session.exercises.map((exercise) => ({
-        ...exercise,
-        sets: Math.min(2, exercise.sets),
-        note: `TAPER: carga leve, RIR 4+ e sem perda de velocidade. ${exercise.note}`,
-      })),
-    }
-  })
-}
-
-export function nextCompetitionSession(workouts: WorkoutLog[], today: Date): SessionId {
-  const todayKey = toDateKey(today)
-  const core = workouts
-    .filter(
-      (workout) =>
-        workout.date <= todayKey && COMPETITION_CORE_SESSION_IDS.includes(workout.sessionId)
-    )
-    .sort((a, b) => a.date.localeCompare(b.date))
-  const last = core[core.length - 1]
-  return last?.sessionId === "competitionLower" ? "competitionUpper" : "competitionLower"
-}
-
-export interface CompetitionTodayView {
-  sessionId: SessionId
-  nextSessionId: SessionId
-  completedSessionId: SessionId | null
-  done: boolean
-}
-
-export function competitionTodayView(
-  workouts: WorkoutLog[],
-  today: Date
-): CompetitionTodayView {
-  const todayKey = toDateKey(today)
-  const nextSessionId = nextCompetitionSession(workouts, today)
-  const completed = [...workouts]
-    .reverse()
-    .find(
-      (workout) =>
-        workout.date === todayKey && COMPETITION_SESSION_IDS.includes(workout.sessionId)
-    )
-
-  return {
-    sessionId: completed?.sessionId ?? nextSessionId,
-    nextSessionId,
-    completedSessionId: completed?.sessionId ?? null,
-    done: Boolean(completed),
-  }
-}
-
-export function isCompetitionGymSession(sessionId: SessionId): boolean {
-  return COMPETITION_GYM_SESSION_IDS.includes(sessionId)
-}
-
-export function isCompetitionSession(sessionId: SessionId): boolean {
-  return COMPETITION_SESSION_IDS.includes(sessionId)
+/** Registro pertence a um protocolo aposentado (marcado como tal no Histórico). */
+export function isLegacySession(sessionId: SessionId): boolean {
+  return LEGACY_SESSION_IDS.has(sessionId)
 }

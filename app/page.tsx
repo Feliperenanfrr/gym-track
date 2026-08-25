@@ -8,10 +8,7 @@ import { ProgramTabs } from "@/components/program-tabs"
 import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
-import {
-  competitionPhaseFor,
-  competitionTodayView,
-} from "@/lib/competition-plan"
+import { bjjPhaseFor, bjjTodayView } from "@/lib/bjj-plan"
 import {
   cycleTodayView,
   getScheduleMode,
@@ -50,7 +47,7 @@ const KEY_LIFTS: { id: string; label: string }[] = [
 ]
 
 const HYPERTROPHY_Z2_TARGET = { min: 60, max: 70 }
-const COMPETITION_Z2_TARGET = { min: 60, max: 90 }
+const BJJ_Z2_TARGET = { min: 60, max: 120 }
 
 const READINESS_UI: Record<
   ReadinessLevel,
@@ -99,10 +96,11 @@ function compactSessionTitle(
   sessionId: SessionId,
   templateById: Partial<Record<SessionId, SessionPlan>>
 ): string {
-  if (sessionId === "competitionLower") return "A"
-  if (sessionId === "competitionUpper") return "B"
-  if (sessionId === "competitionPower") return "C"
-  if (sessionId === "competitionZ2" || sessionId === "cardioZ2") return "Z2"
+  if (sessionId === "bjjPull" || sessionId === "competitionLower") return "A"
+  if (sessionId === "bjjBase" || sessionId === "competitionUpper") return "B"
+  if (sessionId === "bjjEngine" || sessionId === "competitionPower") return "C"
+  if (sessionId === "bjjZ2" || sessionId === "competitionZ2" || sessionId === "cardioZ2")
+    return "Z2"
   if (sessionId === "free") return "AVL"
   if (sessionId === "sport") return "ESP"
   return (templateById[sessionId] ?? PLAN_BY_ID[sessionId]).title
@@ -192,7 +190,7 @@ export default function Dashboard() {
     )
 
     // régua única: gráficos e cards usam a mesma janela em todos os modos
-    const rolling = program === "competition" || mode === "ciclo"
+    const rolling = program === "bjj" || mode === "ciclo"
     const weeks = buildWeeks(data, today, program, rolling)
     const thisWeek = weeks[weeks.length - 1]
     const lastWeek = weeks[weeks.length - 2]
@@ -287,43 +285,33 @@ export default function Dashboard() {
     const cycleView = cycleTodayView(data.workouts, today)
     const cycle = cycleView.suggestion
     const strip = last7Days(data.workouts, today)
-    const competitionView = competitionTodayView(data.workouts, today)
-    const competitionPhase = competitionPhaseFor(today)
+    const bjjView = bjjTodayView(data.workouts, today)
+    const bjjPhase = bjjPhaseFor(today)
 
     // card principal unificado entre os dois modos
-    const competitionHeadSession =
-      competitionPhase.id === "game"
-        ? {
-            ...sessionById("rest"),
-            title: "Dia do campeonato",
-            subtitle: "Sem academia · pernas frescas para o jogo",
-          }
-        : sessionById(competitionView.sessionId)
     const headSession =
-      program === "competition"
-        ? competitionHeadSession
+      program === "bjj"
+        ? sessionById(bjjView.sessionId)
         : mode === "ciclo"
           ? sessionById(cycleView.sessionId)
           : todaySession
     const headDone =
-      program === "competition" ? competitionView.done : mode === "ciclo" ? cycleView.done : todayDone
+      program === "bjj" ? bjjView.done : mode === "ciclo" ? cycleView.done : todayDone
     const headKicker =
-      program === "competition"
-        ? competitionPhase.id === "game"
-          ? "Hoje é jogo"
-          : competitionView.done
-            ? "Preparação concluída hoje"
-            : "Próximo da preparação"
+      program === "bjj"
+        ? bjjView.done
+          ? "Preparação concluída hoje"
+          : "Próximo da preparação"
         : mode === "ciclo"
           ? cycleView.done
             ? "Hoje concluído"
             : "Próximo do ciclo"
           : "Treino de hoje"
     const headNote =
-      program === "competition"
-        ? competitionView.done
-          ? `Próxima sessão-base: ${sessionById(competitionView.nextSessionId).title}. A sessão C continua opcional.`
-          : competitionPhase.guidance
+      program === "bjj"
+        ? bjjView.done
+          ? `Próxima sessão-base: ${sessionById(bjjView.nextSessionId).title}. A sessão C continua opcional.`
+          : bjjPhase.guidance
         : mode !== "ciclo"
           ? null
           : cycleView.completedLiftSessionId
@@ -360,7 +348,7 @@ export default function Dashboard() {
       headDone,
       headKicker,
       headNote,
-      competitionPhase,
+      bjjPhase,
     }
   }, [data, templates, templateById, today, lift, mode, program])
 
@@ -398,9 +386,8 @@ export default function Dashboard() {
     day: "2-digit",
     month: "short",
   })
-  const rollingView = program === "competition" || mode === "ciclo"
-  const z2Target =
-    program === "competition" ? COMPETITION_Z2_TARGET : HYPERTROPHY_Z2_TARGET
+  const rollingView = program === "bjj" || mode === "ciclo"
+  const z2Target = program === "bjj" ? BJJ_Z2_TARGET : HYPERTROPHY_Z2_TARGET
 
   return (
     <main>
@@ -446,7 +433,7 @@ export default function Dashboard() {
       <Card
         className={cn(
           "rise rise-1 relative overflow-hidden border-l-4",
-          program === "competition" ? "border-l-gold" : "border-l-ember"
+          program === "bjj" ? "border-l-gold" : "border-l-ember"
         )}
       >
         <div className="flex justify-between items-center">
@@ -464,6 +451,12 @@ export default function Dashboard() {
         </div>
         <h2 className="stencil mt-1 text-3xl text-bone">{view.headSession.title}</h2>
         <p className="mt-0.5 text-sm text-steel">{view.headSession.subtitle}</p>
+        {program === "bjj" && (
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
+            {view.bjjPhase.label}
+            <span className="ml-2 text-steel-dim">{view.bjjPhase.dates}</span>
+          </p>
+        )}
         <p className="mt-2 font-mono text-xs text-steel-dim">
           {view.headSession.duration}
           {view.headSession.exercises.length > 0 &&
@@ -481,16 +474,14 @@ export default function Dashboard() {
           </div>
         ) : view.headSession.kind === "rest" ? (
           <p className="mt-4 text-sm text-steel">
-            {program === "competition" && view.competitionPhase.id === "game"
-              ? "Sem academia hoje. Aqueça com o coach e chegue inteiro para competir."
-              : "Descanso total ou caminhada leve. Durma 7–9 h."}
+            Descanso total ou caminhada leve. Durma 7–9 h.
           </p>
         ) : (
           <Link
             href="/treino"
             className={cn(
               "mt-4 inline-flex items-center gap-2 rounded px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-coal transition-colors",
-              program === "competition"
+              program === "bjj"
                 ? "bg-gold hover:bg-amber-300"
                 : "bg-ember hover:bg-ember-hot"
             )}
@@ -516,7 +507,7 @@ export default function Dashboard() {
               <p className="score text-2xl text-bone">
                 {view.weekSummary.sessions}
                 <span className="text-base text-steel-dim">
-                  {program === "competition" ? "/2–3" : "/5"}
+                  {program === "bjj" ? "/2–3" : "/5"}
                 </span>
               </p>
             </div>
@@ -602,7 +593,11 @@ export default function Dashboard() {
               const allEasy =
                 d.done.length > 0 &&
                 d.done.every(
-                  (s) => s === "cardioZ2" || s === "competitionZ2" || s === "sport"
+                  (s) =>
+                    s === "cardioZ2" ||
+                    s === "bjjZ2" ||
+                    s === "competitionZ2" ||
+                    s === "sport"
                 )
               return (
                 <div key={d.key} className="flex flex-col items-center gap-1.5">
@@ -820,11 +815,11 @@ export default function Dashboard() {
             <>
               {view.thisWeek.sessions}
               <span className="text-lg text-steel-dim">
-                {program === "competition" ? "/2–3" : "/5"}
+                {program === "bjj" ? "/2–3" : "/5"}
               </span>
             </>
           }
-          detail={`${program === "competition" ? "meta: A + B · C só se estiver fresco" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
+          detail={`${program === "bjj" ? "meta: A + B · C só se sobrar energia" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"
@@ -841,8 +836,8 @@ export default function Dashboard() {
           detail={
             view.thisWeek.intense > 0
               ? `meta ${z2Target.min}–${z2Target.max}′ · +${view.thisWeek.intense}′ intenso à parte`
-              : program === "competition"
-                ? `meta ${z2Target.min}–${z2Target.max} min · ajuste ao campo`
+              : program === "bjj"
+                ? `meta ${z2Target.min}–${z2Target.max} min · ajuste ao tatame`
                 : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
           }
           accent="zone"
@@ -1035,8 +1030,8 @@ export default function Dashboard() {
           target={z2Target.min}
         />
         <p className="mt-2 text-xs text-steel">
-          {program === "competition"
-            ? "2–3 sessões de 20–30′, FC 125–140. Se o campo já foi pesado, pule sem culpa."
+          {program === "bjj"
+            ? "2–3 sessões de 25–35′, FC 125–140. É o fôlego que sobra no terceiro round."
             : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
