@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getSupabaseBrowserClient } from "./supabase/client"
+import {
+  isAuthError,
+  recoverSession,
+  runWithFreshSession,
+  signOutToLogin,
+} from "./supabase/session"
 import { enqueue, flushQueue, queueCount } from "./sync-queue"
 import { toOperationalDateKey } from "./utils"
 import {
@@ -160,7 +166,7 @@ export function useGymData() {
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
+    async function load(recovered = false) {
       const supabase = getSupabaseBrowserClient()
       const [w, b, h, s] = await Promise.all([
         supabase.from("workouts").select("*").order("date", { ascending: true }),
@@ -170,7 +176,15 @@ export function useGymData() {
       ])
       if (cancelled) return
       if (w.error || b.error) {
-        setError(w.error?.message ?? b.error?.message ?? "Erro ao carregar dados")
+        const message = w.error?.message ?? b.error?.message ?? "Erro ao carregar dados"
+        // sessão vencida/revogada: renova o token e tenta de novo uma vez;
+        // irrecuperável, vai limpo para o login em vez de tela travada de JWT
+        if (isAuthError(message)) {
+          if (!recovered && (await recoverSession(supabase))) return load(true)
+          await signOutToLogin(supabase)
+          return
+        }
+        setError(message)
         return
       }
       // hidratação é não-fatal: app continua se a migration ainda não rodou
@@ -241,12 +255,15 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { data: rows, error } = await supabase
-        .from("workouts")
-        .upsert(payload, { onConflict: "user_id,date,session_id" })
-        .select()
-      if (error) throw new Error(error.message) // erro real (RLS/auth) → propaga
-      const saved = rowToWorkout(rows![0] as WorkoutRow)
+      const savedRows = await runWithFreshSession(supabase, async () => {
+        const { data: rows, error } = await supabase
+          .from("workouts")
+          .upsert(payload, { onConflict: "user_id,date,session_id" })
+          .select()
+        if (error) throw new Error(error.message)
+        return rows as WorkoutRow[]
+      })
+      const saved = rowToWorkout(savedRows[0])
       setData((prev) => {
         if (!prev) return prev
         const workouts = [
@@ -319,12 +336,15 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { data: rows, error } = await supabase
-        .from("body_logs")
-        .upsert(payload, { onConflict: "user_id,date" })
-        .select()
-      if (error) throw new Error(error.message)
-      const saved = rowToBody(rows![0] as BodyRow)
+      const savedRows = await runWithFreshSession(supabase, async () => {
+        const { data: rows, error } = await supabase
+          .from("body_logs")
+          .upsert(payload, { onConflict: "user_id,date" })
+          .select()
+        if (error) throw new Error(error.message)
+        return rows as BodyRow[]
+      })
+      const saved = rowToBody(savedRows[0])
       setData((prev) => {
         if (!prev) return prev
         const body = [...prev.body.filter((b) => b.date !== saved.date), saved].sort(
@@ -379,10 +399,12 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { error } = await supabase
-        .from("hydration_logs")
-        .upsert(payload, { onConflict: "user_id,date" })
-      if (error) throw new Error(error.message)
+      await runWithFreshSession(supabase, async () => {
+        const { error } = await supabase
+          .from("hydration_logs")
+          .upsert(payload, { onConflict: "user_id,date" })
+        if (error) throw new Error(error.message)
+      })
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
@@ -423,12 +445,15 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { data: rows, error } = await supabase
-        .from("sleep_logs")
-        .upsert(payload, { onConflict: "user_id,date" })
-        .select()
-      if (error) throw new Error(error.message)
-      const saved = rowToSleep(rows![0] as SleepRow)
+      const savedRows = await runWithFreshSession(supabase, async () => {
+        const { data: rows, error } = await supabase
+          .from("sleep_logs")
+          .upsert(payload, { onConflict: "user_id,date" })
+          .select()
+        if (error) throw new Error(error.message)
+        return rows as SleepRow[]
+      })
+      const saved = rowToSleep(savedRows[0])
       setData((prev) => {
         if (!prev) return prev
         const sleep = [...prev.sleep.filter((s) => s.date !== saved.date), saved].sort(
@@ -475,8 +500,10 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { error } = await supabase.from("body_logs").delete().eq("date", date)
-      if (error) throw new Error(error.message)
+      await runWithFreshSession(supabase, async () => {
+        const { error } = await supabase.from("body_logs").delete().eq("date", date)
+        if (error) throw new Error(error.message)
+      })
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
@@ -519,8 +546,10 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { error } = await supabase.from("sleep_logs").delete().eq("date", date)
-      if (error) throw new Error(error.message)
+      await runWithFreshSession(supabase, async () => {
+        const { error } = await supabase.from("sleep_logs").delete().eq("date", date)
+        if (error) throw new Error(error.message)
+      })
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
@@ -570,8 +599,10 @@ export function useGymData() {
     }
     try {
       const supabase = getSupabaseBrowserClient()
-      const { error } = await supabase.from("workouts").delete().eq("id", id)
-      if (error) throw new Error(error.message)
+      await runWithFreshSession(supabase, async () => {
+        const { error } = await supabase.from("workouts").delete().eq("id", id)
+        if (error) throw new Error(error.message)
+      })
     } catch (e) {
       if (isNetworkError(e)) {
         enqueueIt()
