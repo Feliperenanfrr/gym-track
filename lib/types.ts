@@ -4,6 +4,11 @@ export type SessionId =
   | "lowerA"
   | "upperB"
   | "lowerB"
+  | "bjjPull"
+  | "bjjBase"
+  | "bjjEngine"
+  | "bjjZ2"
+  /* aposentados: protocolo do flag football, mantidos só para o histórico */
   | "competitionLower"
   | "competitionUpper"
   | "competitionPower"
@@ -12,7 +17,7 @@ export type SessionId =
   | "sport"
   | "rest"
 
-export type TrainingProgram = "competition" | "hypertrophy"
+export type TrainingProgram = "bjj" | "hypertrophy"
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 
@@ -25,6 +30,7 @@ export type MuscleGroup =
   | "Ombro"
   | "Braço"
   | "Core"
+  | "Pescoço"
 
 export type CardioPurpose = "zone2" | "intense" | "sport"
 

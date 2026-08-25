@@ -14,6 +14,7 @@ export const MUSCLE_GROUPS: { id: MuscleGroup; color: string }[] = [
   { id: "Ombro", color: "#fbbf24" },
   { id: "Braço", color: "#818cf8" },
   { id: "Core", color: "#97919e" },
+  { id: "Pescoço", color: "#84cc16" },
 ]
 
 export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
@@ -50,6 +51,14 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   "db-ohp": "Ombro",
   crossover: "Peito",
   hipthrust: "Posterior/Glúteo",
+  // Jiu-jitsu (ago/2026) — pegada, pescoço e quadril
+  "towel-pullup": "Costas",
+  "grip-hold": "Braço",
+  "neck-bridge": "Pescoço",
+  "hip-90-90": "Posterior/Glúteo",
+  "turkish-getup": "Ombro",
+  "bear-crawl": "Core",
+  "back-extension": "Posterior/Glúteo",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */

@@ -1,32 +1,27 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import {
-  COMPETITION_GAME_DATE,
-  COMPETITION_START_DATE,
-} from "./competition-plan"
+import { BJJ_START_DATE } from "./bjj-plan"
 import { TrainingProgram } from "./types"
 import { toDateKey } from "./utils"
 
-const PROGRAM_KEY = "gym-track:training-program"
+/**
+ * v2: a chave antiga guardava a escolha feita durante o protocolo do flag
+ * football. Versionar faz o padrão do bloco novo valer uma vez, sem carregar
+ * uma preferência que era de outro objetivo.
+ */
+const PROGRAM_KEY = "gym-track:training-program:v2"
 const PROGRAM_EVENT = "gym-track:training-program-change"
 
+/** O bloco de jiu-jitsu é aberto: uma vez começado, é o objetivo padrão. */
 function defaultProgramFor(date: Date): TrainingProgram {
-  const key = toDateKey(date)
-  return key >= COMPETITION_START_DATE && key <= COMPETITION_GAME_DATE
-    ? "competition"
-    : "hypertrophy"
+  return toDateKey(date) >= BJJ_START_DATE ? "bjj" : "hypertrophy"
 }
 
 export function getTrainingProgram(date = new Date()): TrainingProgram {
   try {
     const stored = localStorage.getItem(PROGRAM_KEY)
-    if (stored === "hypertrophy") return "hypertrophy"
-    if (stored === "competition") {
-      if (toDateKey(date) <= COMPETITION_GAME_DATE) return "competition"
-      localStorage.removeItem(PROGRAM_KEY)
-      return "hypertrophy"
-    }
+    if (stored === "hypertrophy" || stored === "bjj") return stored
   } catch {
     // O padrão por data também funciona quando o storage não está disponível.
   }
