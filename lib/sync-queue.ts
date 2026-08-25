@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { isAuthError } from "./supabase/session"
 
 /**
  * Fila de gravações pendentes (localStorage). Academia tem sinal ruim: ao
@@ -56,6 +57,8 @@ export function enqueue(mutation: Omit<PendingMutation, "queuedAt">) {
 /**
  * Tenta reenviar tudo. Para no primeiro erro de rede (mantém o resto na fila).
  * Erros de API/RLS removem o item (não adianta reenviar payload inválido).
+ * Erro de sessão (JWT vencido/revogado) também interrompe SEM descartar:
+ * os itens sincronizam depois do token renovar / novo login.
  * Retorna quantos itens permaneceram pendentes.
  */
 export async function flushQueue(supabase: SupabaseClient): Promise<number> {
@@ -72,6 +75,7 @@ export async function flushQueue(supabase: SupabaseClient): Promise<number> {
         }
         const { error } = await query
         if (error) {
+          if (isAuthError(error.message)) break
           items = items.filter((m) => m !== item)
           write(items)
           continue
@@ -81,6 +85,7 @@ export async function flushQueue(supabase: SupabaseClient): Promise<number> {
           .from(item.table)
           .upsert(item.payload, { onConflict: item.onConflict })
         if (error) {
+          if (isAuthError(error.message)) break
           items = items.filter((m) => m !== item)
           write(items)
           continue

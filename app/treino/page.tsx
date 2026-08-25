@@ -373,6 +373,20 @@ export default function TreinoPage() {
     return { volume, setsDone, setsTotal }
   }, [rows, activeExercises])
 
+  /**
+   * kcal estimadas do treino salvo — duração real + MET ajustado pelo sRPE.
+   * Recalcula na hora em que o usuário toca um nível de esforço.
+   * Precisa vir ANTES do early return do skeleton: hooks não podem ser
+   * condicionais (quebrava a página com "Rendered more hooks").
+   */
+  const savedKcal = useMemo(
+    () =>
+      savedLog
+        ? sessionKcal(savedLog, weightKgOn(data?.body ?? [], savedLog.date))
+        : null,
+    [savedLog, data]
+  )
+
   if (!data || !templates || !session || !today || !program) {
     return (
       <main>
@@ -667,17 +681,6 @@ export default function TreinoPage() {
   const bjjPhase = program === "bjj" ? bjjPhaseFor(today) : null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
-  /**
-   * kcal estimadas do treino salvo — duração real + MET ajustado pelo sRPE.
-   * Recalcula na hora em que o usuário toca um nível de esforço.
-   */
-  const savedKcal = useMemo(
-    () =>
-      savedLog
-        ? sessionKcal(savedLog, weightKgOn(data?.body ?? [], savedLog.date))
-        : null,
-    [savedLog, data]
-  )
 
   const backToToday = () => {
     router.replace("/treino")
