@@ -5,14 +5,23 @@ import { fromDateKey, toDateKey } from "./utils"
 export const BJJ_START_DATE = "2026-08-25"
 
 /**
+ * Versão da prescrição v2: exercícios adaptados para academia comum
+ * (máquina de puxada, barra, halteres e polia — sem toalha, medicine ball
+ * ou isometrias improvisadas). Descarta templates antigos materializados.
+ */
+export const BJJ_PLAN_VERSION = "academia-v2"
+
+/**
  * Preparação física para o jiu-jitsu — bloco aberto, sem data de encerramento.
  * O tatame é o treino principal; a academia constrói as valências que decidem
  * a rola e blinda o que quebra em quem começa: pegada, pescoço, quadril e
- * ombro. Nada aqui compete com o volume técnico da semana.
+ * ombro. Nada aqui compete com o volume técnico da semana — e tudo roda em
+ * academia comum: máquina de puxada, barra, halteres e polia.
  */
 export const BJJ_PLAN: SessionPlan[] = [
   {
     id: "bjjPull",
+    planVersion: BJJ_PLAN_VERSION,
     title: "A · Tração & Pegada",
     subtitle: "A academia que aparece na rola",
     weekday: 0,
@@ -20,20 +29,20 @@ export const BJJ_PLAN: SessionPlan[] = [
     kind: "lift",
     accent: "gold",
     description:
-      "Tudo que segura o kimono: dorsal, antebraço e pescoço. Faça no dia sem tatame ou depois do treino técnico — nunca antes.",
+      "Tudo que segura o kimono: dorsal, antebraço e trapézio, com o que toda academia tem — máquina de puxada, barra e halteres. Faça no dia sem tatame ou depois do treino técnico — nunca antes.",
     exercises: [
       {
-        id: "towel-pullup",
-        name: "Barra fixa com toalha",
-        nameEn: "Towel Pull-up",
+        id: "pulldown",
+        name: "Puxada alta na máquina",
+        nameEn: "Lat Pulldown",
         muscleGroup: "Costas",
         sets: 4,
-        repsMin: 3,
-        repsMax: 6,
+        repsMin: 6,
+        repsMax: 10,
         unit: "reps",
         rest: "2 min",
         note:
-          "Duas toalhas na barra, pegada neutra. Sem conseguir? Puxada alta com toalha 4×6–8. É o exercício que mais transfere para a pegada de gola.",
+          "Pegada pronada um pouco mais aberta que os ombros, barra até o peito alto. É o puxar vertical que mais transfere para controlar gola e manga — progrida a carga quando fechar as 4 séries na faixa.",
       },
       {
         id: "row",
@@ -62,6 +71,19 @@ export const BJJ_PLAN: SessionPlan[] = [
           "RIR 2 · 14–16 kg. Ombro forte é o que aguenta stack, americana e chave de braço — seu elo fraco de força, então é prioridade.",
       },
       {
+        id: "shrug",
+        name: "Encolhimento com barra ou halteres",
+        nameEn: "Shrug",
+        muscleGroup: "Pescoço",
+        sets: 3,
+        repsMin: 10,
+        repsMax: 15,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "Ombros sobem até as orelhas com pausa de 1 s no topo, sem rodar. Trapézio forte é a blindagem cervical contra stack e estrangulamento — e ainda carrega a pegada.",
+      },
+      {
         id: "hammer",
         name: "Rosca martelo",
         nameEn: "Hammer Curl",
@@ -75,34 +97,21 @@ export const BJJ_PLAN: SessionPlan[] = [
           "RIR 1 · braquial e antebraço são a blindagem do cotovelo contra armlock e kimura.",
       },
       {
-        id: "grip-hold",
-        name: "Isometria de pegada",
-        nameEn: "Bar Hang / Grip Hold",
+        id: "wrist-curl",
+        name: "Rosca de punho com barra",
+        nameEn: "Barbell Wrist Curl",
         muscleGroup: "Braço",
         sets: 3,
-        repsMin: 30,
-        repsMax: 45,
-        unit: "seconds",
-        rest: "90 s",
-        note:
-          "Pendurado na barra ou segurando os halteres do farmer. Registre o peso segurado. Solte antes de a mão abrir sozinha — é resistência, não falha.",
-      },
-      {
-        id: "neck-bridge",
-        name: "Fortalecimento de pescoço",
-        nameEn: "Neck Isometrics",
-        muscleGroup: "Pescoço",
-        sets: 3,
-        repsMin: 20,
-        repsMax: 30,
-        unit: "seconds",
+        repsMin: 15,
+        repsMax: 20,
+        unit: "reps",
         rest: "60 s",
         note:
-          "Isometria contra a própria mão nas 4 direções, 20–30 s cada. Só evolua para a ponte quando a isometria ficar fácil. Formigamento ou dor: pare na hora.",
+          "Antebraços apoiados no banco, punhos livres além da borda, amplitude completa. Os flexores de punho são o motor da pegada de gola — aqui é volume e controle, não carga máxima.",
       },
       {
         id: "pallof",
-        name: "Pallof press",
+        name: "Pallof press na polia",
         nameEn: "Pallof Press",
         muscleGroup: "Core",
         sets: 3,
@@ -111,12 +120,13 @@ export const BJJ_PLAN: SessionPlan[] = [
         unit: "reps",
         rest: "60 s",
         note:
-          "10 por lado · anti-rotação é o que impede sua guarda de ser aberta e o que segura a passagem.",
+          "Polia à altura do peito, 10 por lado · anti-rotação é o que impede sua guarda de ser aberta e o que segura a passagem.",
       },
     ],
   },
   {
     id: "bjjBase",
+    planVersion: BJJ_PLAN_VERSION,
     title: "B · Quadril & Base",
     subtitle: "Upa, raspagem e base de pé",
     weekday: 0,
@@ -188,7 +198,7 @@ export const BJJ_PLAN: SessionPlan[] = [
         unit: "seconds",
         rest: "60 s",
         note:
-          "Por lado · adutor é a lesão clássica de quem fecha a guarda. Comece com o joelho apoiado e só depois estenda a perna.",
+          "Por lado, no banco · adutor é a lesão clássica de quem fecha a guarda. Comece com o joelho apoiado e só depois estenda a perna.",
       },
       {
         id: "back-extension",
@@ -220,96 +230,73 @@ export const BJJ_PLAN: SessionPlan[] = [
   },
   {
     id: "bjjEngine",
-    title: "C · Motor de Rolagem",
-    subtitle: "Opcional · potência e resistência específica",
+    planVersion: BJJ_PLAN_VERSION,
+    title: "C · Potência na Barra",
+    subtitle: "Opcional · explosão com barra e máquina",
     weekday: 0,
-    duration: "~35–45 min",
+    duration: "~40–50 min",
     kind: "lift",
     accent: "gold",
     description:
-      "Simula o custo de um round: potência repetida com pouca pausa. É a primeira sessão a sair de uma semana pesada de tatame — se a rola já foi dura, pule sem culpa.",
+      "Potência repetida sem equipamento exótico: clean, push press e perna explosiva na máquina. É a primeira sessão a sair de uma semana pesada de tatame — se a rola já foi dura, pule sem culpa.",
     exercises: [
       {
-        id: "kettlebell-swing",
-        name: "Kettlebell swing",
-        nameEn: "Kettlebell Swing",
+        id: "power-clean",
+        name: "Power clean",
+        nameEn: "Power Clean",
         muscleGroup: "Posterior/Glúteo",
         sets: 4,
+        repsMin: 3,
+        repsMax: 5,
+        unit: "reps",
+        rest: "2–3 min",
+        note:
+          "O motor do upa e da raspagem: salto que termina com a barra no ombro. Técnica antes de carga — encerre a série assim que a velocidade cair.",
+      },
+      {
+        id: "push-press",
+        name: "Push press",
+        nameEn: "Push Press",
+        muscleGroup: "Ombro",
+        sets: 3,
+        repsMin: 5,
+        repsMax: 5,
+        unit: "reps",
+        rest: "2 min",
+        note:
+          "Mergulho curto de joelho e drive para passar a barra. Tríplice extensão coordenada vira pressão de cima e quadro difícil de derrubar.",
+      },
+      {
+        id: "legpress",
+        name: "Leg press 45° explosivo",
+        nameEn: "Explosive Leg Press",
+        muscleGroup: "Quadríceps",
+        sets: 3,
+        repsMin: 8,
+        repsMax: 8,
+        unit: "reps",
+        rest: "90 s",
+        note:
+          "Subida rápida e intencional, descida em 2–3 s, sem travar o joelho no topo. Potência de perna com a segurança da máquina.",
+      },
+      {
+        id: "cablecrunch",
+        name: "Abdominal na polia alta",
+        nameEn: "Cable Crunch",
+        muscleGroup: "Core",
+        sets: 3,
         repsMin: 12,
         repsMax: 15,
         unit: "reps",
         rest: "60 s",
         note:
-          "Quadril explosivo repetido: o motor do upa e da raspagem. Encerre a série assim que a velocidade cair.",
-      },
-      {
-        id: "medball-slam",
-        name: "Slam com medicine ball",
-        nameEn: "Medicine Ball Slam",
-        muscleGroup: "Core",
-        sets: 3,
-        repsMin: 5,
-        repsMax: 5,
-        unit: "reps",
-        rest: "90 s",
-        note: "Intenção máxima em cada arremesso — é a pressão de cima virando força.",
-      },
-      {
-        id: "medball-rotation",
-        name: "Arremesso rotacional com medicine ball",
-        nameEn: "Rotational Medicine Ball Throw",
-        muscleGroup: "Core",
-        sets: 3,
-        repsMin: 5,
-        repsMax: 5,
-        unit: "reps",
-        rest: "90 s",
-        note:
-          "5 por lado · potência rotacional é raspagem, virada de quadril e finalização de passagem.",
-      },
-      {
-        id: "turkish-getup",
-        name: "Turkish get-up",
-        nameEn: "Turkish Get-up",
-        muscleGroup: "Ombro",
-        sets: 3,
-        repsMin: 3,
-        repsMax: 3,
-        unit: "reps",
-        rest: "90 s",
-        note:
-          "Por lado, carga leve e sem pressa. É levantar do chão com carga em cima — ombro estável é o que sobrevive à americana e ao stack.",
-      },
-      {
-        id: "bear-crawl",
-        name: "Deslocamento de urso",
-        nameEn: "Bear Crawl",
-        muscleGroup: "Core",
-        sets: 3,
-        repsMin: 30,
-        repsMax: 40,
-        unit: "seconds",
-        rest: "60 s",
-        note:
-          "Joelho a um palmo do chão, quadril baixo. É a base de quatro apoios que você usa para levantar e para passar.",
-      },
-      {
-        id: "farmer-carry",
-        name: "Farmer carry",
-        nameEn: "Farmer Carry",
-        muscleGroup: "Core",
-        sets: 3,
-        repsMin: 40,
-        repsMax: 40,
-        unit: "seconds",
-        rest: "90 s",
-        note:
-          "Postura alta e pegada firme até o fim. Pegada cansada é finalização perdida no quarto round.",
+          "Joelhos no chão, quadril fixo, enrole o tronco puxando a corda. Core sob carga com o que toda academia tem.",
       },
     ],
   },
   {
     id: "bjjZ2",
+    planVersion: BJJ_PLAN_VERSION,
     title: "Zona 2 · Jiu-Jitsu",
     subtitle: "Fôlego entre os rounds",
     weekday: 0,
@@ -340,27 +327,27 @@ export const BJJ_VALENCES = [
   {
     name: "Pegada e antebraço",
     why: "Primeiro limitador de quem começa: quem solta a gola perde a posição.",
-    how: "Barra com toalha, isometria de pegada e carries",
+    how: "Puxada alta, rosca de punho e rosca martelo",
   },
   {
     name: "Tração",
     why: "Controlar gola e manga é puxar — o padrão mais usado no gi.",
-    how: "Barra fixa, remada e puxada",
+    how: "Puxada alta na máquina, remada curvada",
   },
   {
     name: "Quadril e ponte",
     why: "Upa, raspagem e fuga de quadril saem do glúteo e da cadeia posterior.",
-    how: "RDL, hip thrust e kettlebell swing",
+    how: "Power clean, RDL e hip thrust",
   },
   {
     name: "Core anti-rotação",
     why: "Guarda que não abre e passagem que não vira as costas.",
-    how: "Pallof press, urso e farmer carry",
+    how: "Pallof press e abdominal na polia alta",
   },
   {
-    name: "Pescoço",
+    name: "Pescoço e trapézio",
     why: "Blindagem contra estrangulamento, stack e chave de pescoço. É prevenção antes de performance.",
-    how: "Isometrias nas 4 direções; ponte só depois",
+    how: "Encolhimento com pausa no topo — sem ponte, sem isometria improvisada",
   },
   {
     name: "Mobilidade de quadril",
@@ -403,10 +390,10 @@ const BJJ_BLOCKS: BjjBlock[] = [
     label: "Bloco 1 · Adaptação",
     weeks: 3,
     guidance:
-      "Corpo aprendendo o tatame. Pescoço e pegada entram em dose mínima, a força fica em RIR 3 e você sai da sala sentindo que havia sobra. Dor muscular tardia é normal; dor articular não.",
+      "Corpo aprendendo o tatame. Pegada entra em dose mínima, a força fica em RIR 3 e você sai da sala sentindo que havia sobra. Dor muscular tardia é normal; dor articular não.",
     sessions: "2 · A + B",
     strength: "RIR 3 · manter",
-    grip: "Mínimo · aprender a isometria",
+    grip: "Mínimo · punho leve",
     engine: "Fora — o tatame já basta",
     zone2: "2–3 × 25–30 min",
   },
@@ -415,10 +402,10 @@ const BJJ_BLOCKS: BjjBlock[] = [
     label: "Bloco 2 · Construção",
     weeks: 4,
     guidance:
-      "Carga sobe para RIR 2, pegada e pescoço ganham volume. É aqui que a rola começa a parecer mais curta do que parecia no primeiro mês.",
+      "Carga sobe para RIR 2, pegada e trapézio ganham volume. É aqui que a rola começa a parecer mais curta do que parecia no primeiro mês.",
     sessions: "2–3 · A + B (+ C)",
     strength: "RIR 2 · progredir",
-    grip: "Volume cheio · isometria + carries",
+    grip: "Volume cheio · punho + martelo",
     engine: "Opcional, se o tatame permitir",
     zone2: "3 × 30 min",
   },
@@ -427,11 +414,11 @@ const BJJ_BLOCKS: BjjBlock[] = [
     label: "Bloco 3 · Potência",
     weeks: 4,
     guidance:
-      "A sessão C entra fixa: swing, medicine ball e get-up. A força que você já tinha vira raspagem rápida e pressão de cima.",
+      "A sessão C entra fixa: power clean, push press e perna explosiva na máquina. A força que você já tinha vira raspagem rápida e pressão de cima.",
     sessions: "3 · A + B + C",
     strength: "RIR 2 · 1 top set por padrão",
     grip: "Manter · pegada já virou hábito",
-    engine: "Fixa · qualidade de movimento",
+    engine: "Fixa · velocidade manda",
     zone2: "2–3 × 30–35 min",
   },
   {
@@ -519,7 +506,7 @@ export function bjjPlanForDate(
     if (session.kind !== "lift") return session
     return {
       ...session,
-      duration: session.id === "bjjEngine" ? "~30 min" : "~40–50 min",
+      duration: session.id === "bjjEngine" ? "~35 min" : "~40–50 min",
       description:
         session.id === "bjjEngine"
           ? "Fora do bloco de adaptação: o tatame já cobre o motor. Só entre se a semana tiver sido leve de rola — e mesmo assim, na versão curta abaixo."

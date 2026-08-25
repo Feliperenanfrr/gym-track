@@ -68,6 +68,12 @@ export interface SessionPlan {
     bpmMax?: number
   }
   description?: string
+  /**
+   * Versão da prescrição. Quando o plano muda de exercícios, o versionamento
+   * descarta templates antigos (cache e Supabase) em favor do novo default —
+   * sem isso, a linha já materializada no banco continuaria vencendo.
+   */
+  planVersion?: string
 }
 
 export interface SetLog {

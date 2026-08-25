@@ -38,14 +38,29 @@ function isExercise(value: unknown): value is ExercisePrescription {
   )
 }
 
+/** Versão gravada num template persistido ("": sem versão = prescrição antiga) */
+export function planVersionOf(value: unknown): string {
+  if (!value || typeof value !== "object") return ""
+  const v = (value as { planVersion?: unknown }).planVersion
+  return typeof v === "string" ? v : ""
+}
+
 /**
  * O banco pode ser editado diretamente, então fazemos uma validação defensiva
- * antes de colocar o JSON na UI. Metadados ausentes caem no default versionado.
+ * antes de colocar o JSON na UI. Metadados ausentes ou uma prescrição de
+ * versão anterior do plano caem no default versionado.
  */
-function normalizeTemplate(value: unknown, fallback: SessionPlan): SessionPlan {
+export function normalizeTemplate(
+  value: unknown,
+  fallback: SessionPlan
+): SessionPlan {
   if (!value || typeof value !== "object") return cloneTemplate(fallback)
   const stored = value as Partial<SessionPlan>
   if (stored.id !== fallback.id || !Array.isArray(stored.exercises)) {
+    return cloneTemplate(fallback)
+  }
+  // Template materializado numa versão antiga do plano: o default novo vence
+  if ((stored.planVersion ?? "") !== (fallback.planVersion ?? "")) {
     return cloneTemplate(fallback)
   }
 
@@ -151,9 +166,15 @@ export function useWorkoutTemplates() {
       cacheTemplates(cacheKeyRef.current, resolved)
       setError(null)
 
-      // Materializa todos os defaults para que o plano inteiro passe a ser
-      // persistido e possa ser alterado pelo editor ou diretamente no banco.
-      const missing = resolved.filter((template) => !rowById.has(template.id))
+      // Materializa defaults ausentes ou desatualizados, para que o plano
+      // inteiro fique persistido e editável (editor ou direto no banco).
+      // Template de versão anterior é sobrescrito pelo default atual.
+      const missing = ALL_PLAN_SESSIONS.filter((fallback) => {
+        const stored = rowById.get(fallback.id)
+        return !stored || planVersionOf(stored) !== (fallback.planVersion ?? "")
+      }).map(
+        (fallback) => resolved.find((template) => template.id === fallback.id)!
+      )
       if (missing.length === 0) return
       const { error: seedError } = await supabase.from("workout_templates").upsert(
         missing.map((template) => ({
