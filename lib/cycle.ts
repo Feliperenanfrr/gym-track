@@ -55,6 +55,11 @@ export interface CycleTodayView {
   completedLiftSessionId: SessionId | null
   /** o card principal representa algo realmente feito hoje */
   done: boolean
+  /**
+   * Sessão que o ciclo ainda cobra hoje mesmo já tendo treino registrado
+   * (avulso, esporte ou Z2 no lugar do lift). null = nada pendente.
+   */
+  pendingSessionId: SessionId | null
 }
 
 const DAY_MS = 86_400_000
@@ -135,6 +140,11 @@ export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestio
  * O ciclo pode avançar para o próximo lift assim que um lift é salvo hoje. Nesse
  * caso, o painel não deve marcar o próximo lift como concluído; ele mostra o lift
  * que acabou de ser registrado e mantém a próxima sugestão em `suggestion`.
+ *
+ * Qualquer treino registrado hoje conta como treino feito — um avulso ou uma
+ * rola não são o lift da fila, mas o painel também não pode fingir que o dia
+ * está parado. Quando o lift continua pendente, ele volta em `pendingSessionId`
+ * para o card seguir oferecendo o registro.
  */
 export function cycleTodayView(workouts: WorkoutLog[], today: Date): CycleTodayView {
   const suggestion = nextInCycle(workouts, today)
@@ -143,7 +153,11 @@ export function cycleTodayView(workouts: WorkoutLog[], today: Date): CycleTodayV
   const suggestedLog = todayLogs.find((w) => w.sessionId === suggestion.sessionId) ?? null
   const completedLift =
     [...todayLogs].reverse().find((w) => LIFT_CYCLE.includes(w.sessionId)) ?? null
-  const completedLog = suggestedLog ?? completedLift
+  const lastLogToday = todayLogs[todayLogs.length - 1] ?? null
+  const completedLog = suggestedLog ?? completedLift ?? lastLogToday
+  // o ciclo está satisfeito quando o que ele pediu foi feito — ou quando
+  // qualquer lift da fila entrou no lugar (a fila já avançou sozinha)
+  const cycleSatisfied = Boolean(suggestedLog ?? completedLift)
 
   return {
     suggestion,
@@ -151,6 +165,7 @@ export function cycleTodayView(workouts: WorkoutLog[], today: Date): CycleTodayV
     completedSessionId: completedLog?.sessionId ?? null,
     completedLiftSessionId: completedLift?.sessionId ?? null,
     done: Boolean(completedLog),
+    pendingSessionId: cycleSatisfied ? null : suggestion.sessionId,
   }
 }
 

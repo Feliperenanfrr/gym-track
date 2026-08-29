@@ -537,22 +537,41 @@ export interface BjjTodayView {
   nextSessionId: SessionId
   completedSessionId: SessionId | null
   done: boolean
+  /**
+   * Sessão de sala que o bloco ainda cobra hoje mesmo com treino registrado
+   * (rola no tatame ou avulso). null = nada pendente.
+   */
+  pendingSessionId: SessionId | null
 }
 
+/**
+ * Estado do card principal no bloco de jiu-jitsu.
+ *
+ * Tatame e avulso também são treino: entram como concluídos, mas mantêm a
+ * sessão de sala em `pendingSessionId` — o painel reconhece o dia sem deixar
+ * de oferecer o A/B que a preparação ainda pede.
+ */
 export function bjjTodayView(workouts: WorkoutLog[], today: Date): BjjTodayView {
   const todayKey = toDateKey(today)
   const nextSessionId = nextBjjSession(workouts, today)
-  const completed = [...workouts]
-    .reverse()
-    .find(
-      (workout) => workout.date === todayKey && BJJ_SESSION_IDS.includes(workout.sessionId)
-    )
+  const todayLogs = [...workouts].reverse().filter((workout) => workout.date === todayKey)
+  const prescribed = todayLogs.find((workout) => BJJ_SESSION_IDS.includes(workout.sessionId))
+  const other = todayLogs.find(
+    (workout) => workout.sessionId === "sport" || workout.sessionId === "free"
+  )
+  const completed = prescribed ?? other
+  // Só a sessão de sala (A/B/C) encerra a cobrança do dia; Zona 2 e tatame
+  // somam, mas não substituem o trabalho de academia da semana.
+  const gymDone = todayLogs.some((workout) =>
+    BJJ_GYM_SESSION_IDS.includes(workout.sessionId)
+  )
 
   return {
     sessionId: completed?.sessionId ?? nextSessionId,
     nextSessionId,
     completedSessionId: completed?.sessionId ?? null,
     done: Boolean(completed),
+    pendingSessionId: gymDone ? null : nextSessionId,
   }
 }
 

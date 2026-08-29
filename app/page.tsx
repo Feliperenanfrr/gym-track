@@ -206,11 +206,15 @@ export default function Dashboard() {
       d.setDate(d.getDate() + i)
       const key = toDateKey(d)
       const planned = sessionForWeekday(i + 1, hypertrophyPlan)
-      const done = data.workouts.some((w) => w.date === key && w.sessionId === planned.id)
+      const logged = data.workouts.filter((w) => w.date === key && w.sessionId !== "rest")
+      const done = logged.some((w) => w.sessionId === planned.id)
       return {
         label: WEEKDAY_SHORT[i],
         session: planned,
         done,
+        // treinou outra coisa no dia (avulso, esporte): o dia não é vazio
+        logged: !done && logged.length > 0,
+        loggedTitle: logged.map((w) => sessionById(w.sessionId).title).join(" + "),
         isToday: key === todayKey,
         isPast: key < todayKey,
       }
@@ -297,6 +301,21 @@ export default function Dashboard() {
           : todaySession
     const headDone =
       program === "bjj" ? bjjView.done : mode === "ciclo" ? cycleView.done : todayDone
+    /**
+     * Sessão que continua pendente mesmo com treino registrado hoje (avulso,
+     * tatame ou Z2 no lugar do lift). No calendário fixo, o pendente é o
+     * próprio treino do dia enquanto ele não for salvo.
+     */
+    const headPending =
+      program === "bjj"
+        ? bjjView.pendingSessionId
+        : mode === "ciclo"
+          ? cycleView.pendingSessionId
+          : todayDone
+            ? null
+            : todaySession.id
+    const headPendingSession =
+      headPending && headPending !== headSession.id ? sessionById(headPending) : null
     const headKicker =
       program === "bjj"
         ? bjjView.done
@@ -309,20 +328,24 @@ export default function Dashboard() {
           : "Treino de hoje"
     const headNote =
       program === "bjj"
-        ? bjjView.done
-          ? `Próxima sessão-base: ${sessionById(bjjView.nextSessionId).title}. A sessão C continua opcional.`
-          : bjjPhase.guidance
+        ? headPendingSession
+          ? `Registrado hoje, mas a sala ainda pede ${headPendingSession.title}. Se a rola foi dura, ela pode esperar.`
+          : bjjView.done
+            ? `Próxima sessão-base: ${sessionById(bjjView.nextSessionId).title}. A sessão C continua opcional.`
+            : bjjPhase.guidance
         : mode !== "ciclo"
           ? null
-          : cycleView.completedLiftSessionId
-            ? `Próximo do ciclo: ${sessionById(cycle.nextLiftId).title}.`
-            : cycle.reason === "recovery"
-              ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
-              : cycle.reason === "regression"
-                ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${sessionById(cycle.sessionId).title} com ~90% da carga.`
-                : cycle.reason === "start"
-                  ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
-                  : null
+          : headPendingSession
+            ? `Treino registrado hoje. O ciclo continua pedindo ${headPendingSession.title}.`
+            : cycleView.completedLiftSessionId
+              ? `Próximo do ciclo: ${sessionById(cycle.nextLiftId).title}.`
+              : cycle.reason === "recovery"
+                ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
+                : cycle.reason === "regression"
+                  ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${sessionById(cycle.sessionId).title} com ~90% da carga.`
+                  : cycle.reason === "start"
+                    ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
+                    : null
 
     return {
       todaySession,
@@ -346,6 +369,7 @@ export default function Dashboard() {
       strip,
       headSession,
       headDone,
+      headPendingSession,
       headKicker,
       headNote,
       bjjPhase,
@@ -468,27 +492,43 @@ export default function Dashboard() {
             {view.headNote}
           </p>
         )}
-        {view.headDone ? (
-          <div className="mt-4 inline-flex items-center gap-2 rounded bg-zone/10 px-3 py-2 text-sm font-semibold text-zone">
-            <Check size={16} /> Concluído — bom trabalho
+        {view.headDone && (
+          <div className="mt-4 flex items-center gap-2 rounded bg-zone/10 px-3 py-2 text-sm font-semibold text-zone">
+            <Check size={16} className="shrink-0" />
+            {view.headPendingSession
+              ? `${view.headSession.title} registrado hoje`
+              : "Concluído — bom trabalho"}
           </div>
-        ) : view.headSession.kind === "rest" ? (
+        )}
+        {!view.headDone && view.headSession.kind === "rest" ? (
           <p className="mt-4 text-sm text-steel">
             Descanso total ou caminhada leve. Durma 7–9 h.
           </p>
         ) : (
-          <Link
-            href="/treino"
-            className={cn(
-              "mt-4 inline-flex items-center gap-2 rounded px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-coal transition-colors",
-              program === "bjj"
-                ? "bg-gold hover:bg-amber-300"
-                : "bg-ember hover:bg-ember-hot"
-            )}
-            style={{ fontFamily: "var(--font-condensed)" }}
-          >
-            Registrar treino <ArrowRight size={16} />
-          </Link>
+          // treino já registrado mas com sessão pendente: o botão continua à mão,
+          // agora nomeando o que falta em vez de fingir que o dia está vazio
+          (!view.headDone || view.headPendingSession) && (
+            <Link
+              href="/treino"
+              className={cn(
+                "mt-3 inline-flex items-center gap-2 rounded px-4 py-2.5 text-sm font-bold uppercase tracking-wider transition-colors",
+                view.headDone
+                  ? "border border-seam text-steel hover:border-steel hover:text-bone"
+                  : cn(
+                      "text-coal",
+                      program === "bjj"
+                        ? "bg-gold hover:bg-amber-300"
+                        : "bg-ember hover:bg-ember-hot"
+                    )
+              )}
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              {view.headPendingSession
+                ? `Registrar ${view.headPendingSession.title}`
+                : "Registrar treino"}{" "}
+              <ArrowRight size={16} />
+            </Link>
+          )
         )}
       </Card>
 
@@ -652,18 +692,20 @@ export default function Dashboard() {
                     "flex h-10 w-full items-center justify-center rounded border text-[10px] font-semibold",
                     d.done
                       ? "border-ember/0 bg-ember text-coal"
-                      : d.isToday
-                        ? "today-pulse border-ember text-ember"
-                        : d.session.kind === "rest"
-                          ? "border-seam text-steel-dim"
-                          : d.isPast
-                            ? "border-seam bg-iron text-steel-dim line-through"
-                            : "border-seam bg-iron text-steel"
+                      : d.logged
+                        ? "border-zone/0 bg-zone text-coal"
+                        : d.isToday
+                          ? "today-pulse border-ember text-ember"
+                          : d.session.kind === "rest"
+                            ? "border-seam text-steel-dim"
+                            : d.isPast
+                              ? "border-seam bg-iron text-steel-dim line-through"
+                              : "border-seam bg-iron text-steel"
                   )}
                   style={{ fontFamily: "var(--font-condensed)" }}
-                  title={d.session.title}
+                  title={d.logged ? d.loggedTitle : d.session.title}
                 >
-                  {d.done ? (
+                  {d.done || d.logged ? (
                     <Check size={14} strokeWidth={3} />
                   ) : d.session.kind === "rest" ? (
                     "—"

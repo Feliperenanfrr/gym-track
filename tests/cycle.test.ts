@@ -131,15 +131,46 @@ describe("cycleTodayView", () => {
     expect(view.suggestion.sessionId).toBe("upperB")
   })
 
-  it("registro não-lift hoje que não é a sugestão não marca o dia como feito", () => {
-    // esporte hoje não é o próximo da fila (lowerA) — o card segue cobrando o lift
+  it("registro não-lift hoje conta como treino feito, mas mantém o lift pendente", () => {
+    // esporte hoje não é o próximo da fila (lowerA): o dia não está parado,
+    // e o card segue oferecendo o lift em pendingSessionId
     const view = cycleTodayView(
       [lift(-2, "upperA"), lift(0, "sport")],
       new Date(2026, 7, 20)
     )
+    expect(view.done).toBe(true)
+    expect(view.sessionId).toBe("sport")
     expect(view.completedLiftSessionId).toBeNull()
-    expect(view.done).toBe(false)
+    expect(view.pendingSessionId).toBe("lowerA")
     expect(view.suggestion.sessionId).toBe("lowerA")
+  })
+
+  it("avulso hoje aparece como feito e o ciclo continua cobrando o lift", () => {
+    const view = cycleTodayView(
+      [lift(-2, "upperA"), lift(0, "free")],
+      new Date(2026, 7, 20)
+    )
+    expect(view.done).toBe(true)
+    expect(view.sessionId).toBe("free")
+    expect(view.pendingSessionId).toBe("lowerA")
+  })
+
+  it("lift do ciclo feito hoje não deixa nada pendente", () => {
+    const view = cycleTodayView(
+      [lift(-2, "upperA"), lift(0, "lowerA")],
+      new Date(2026, 7, 20)
+    )
+    expect(view.done).toBe(true)
+    expect(view.pendingSessionId).toBeNull()
+  })
+
+  it("descanso registrado hoje não vira treino feito", () => {
+    const view = cycleTodayView(
+      [lift(-2, "upperA"), lift(0, "rest")],
+      new Date(2026, 7, 20)
+    )
+    expect(view.done).toBe(false)
+    expect(view.pendingSessionId).toBe("lowerA")
   })
 })
 

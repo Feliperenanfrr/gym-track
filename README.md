@@ -37,7 +37,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 - Login por e-mail/senha; **cadastro desabilitado** no projeto (acesso restrito).
 - O middleware redireciona qualquer rota para `/login` sem sessão.
 - `workouts.entries` é JSONB com as séries (`[{ exerciseId, sets: [{weight, reps}] }]`);
-  `cardio` é JSONB (`{ minutes, avgBpm?, mode }`).
+  `cardios` é JSONB com a lista de blocos de cardio da sessão
+  (`[{ minutes, avgBpm?, mode, purpose }]`) — 15′ de bike, 15′ de corrida e a
+  caminhada de volta são três blocos. A coluna antiga `cardio` continua
+  espelhando o primeiro bloco, para os registros anteriores à migration 0007.
+- `workouts.duration_min` é a sessão inteira: sala medida (1ª série → salvar)
+  mais todos os blocos de cardio.
 - `workout_templates.template` guarda o plano editável de cada sessão. O treino do
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.
