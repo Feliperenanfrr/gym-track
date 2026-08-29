@@ -206,6 +206,9 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "bjjBase",
   "bjjEngine",
   "bjjZ2",
+  // avulso é treino: não avança o ciclo, mas o dia em que você foi treinar
+  // não pode aparecer como dia parado
+  "free",
   // protocolo aposentado: continua contando no histórico já registrado
   "competitionLower",
   "competitionUpper",
@@ -223,15 +226,23 @@ const HYPERTROPHY_TARGET_SESSION_IDS = new Set<SessionId>([
   "lowerA",
   "upperB",
   "lowerB",
+  "free",
 ])
 
-/** Frequência exibida no painel: 5 sessões na hipertrofia ou 2–3 de sala no jiu-jitsu. */
+const BJJ_TARGET_SESSION_IDS = new Set<SessionId>([...BJJ_GYM_SESSION_IDS, "free"])
+
+/**
+ * Frequência exibida no painel: 5 sessões na hipertrofia ou 2–3 de sala no
+ * jiu-jitsu. Avulso conta nos dois — é academia registrada fora da prescrição.
+ * Esporte fica fora: o tatame e o jogo são medidos em minutos, não em sessões
+ * de sala.
+ */
 export function countsTowardProgramTarget(
   sessionId: SessionId,
   program: TrainingProgram
 ): boolean {
   return program === "bjj"
-    ? BJJ_GYM_SESSION_IDS.includes(sessionId)
+    ? BJJ_TARGET_SESSION_IDS.has(sessionId)
     : HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
 }
 

@@ -108,13 +108,33 @@ export interface CardioLog {
   purpose?: CardioPurpose
 }
 
+/** Linha de cardio na UI de registro (strings cruas dos inputs) */
+export interface CardioRow {
+  minutes: string
+  bpm: string
+  mode: string
+  purpose: CardioPurpose
+}
+
 export interface WorkoutLog {
   id: string
   /** yyyy-MM-dd */
   date: string
   sessionId: SessionId
+  /**
+   * Duração TOTAL da sessão em minutos: musculação medida (1ª série → salvar)
+   * mais todos os blocos de cardio. Registros retroativos não têm.
+   */
   durationMin?: number
   entries: ExerciseLog[]
+  /**
+   * Blocos de cardio da sessão. 15 min de bike, 15 min de corrida e a
+   * caminhada de volta são três blocos — cada um com sua modalidade e
+   * finalidade. Use `cardioBlocks()` para ler; registros antigos guardam
+   * um único bloco em `cardio`.
+   */
+  cardios?: CardioLog[]
+  /** Primeiro bloco, espelhado para leitura de registros anteriores a `cardios`. */
   cardio?: CardioLog
   notes?: string
   /** esforço da sessão, escala de Foster 1–10 (1 tap pós-treino) */

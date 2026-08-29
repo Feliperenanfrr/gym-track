@@ -8,9 +8,10 @@ import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { bjjPlanForDate, bjjPhaseFor, nextBjjSession } from "@/lib/bjj-plan"
+import { cardioBlocks, cardioRowsToBlocks } from "@/lib/cardio"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
+import { CardioPurpose, CardioRow, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SessionPlan, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
 import {
   CatalogExercise,
   groupOfExercise,
@@ -31,13 +32,21 @@ import { parseRestSeconds } from "@/lib/rest"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
-import { clearDraft, draftHasContent, loadDraft, saveDraft } from "@/lib/draft"
+import {
+  clearDraft,
+  draftCardioRows,
+  draftHasContent,
+  loadDraft,
+  saveDraft,
+} from "@/lib/draft"
 import { tapFeedback } from "@/lib/haptics"
 import { useTrainingProgram } from "@/lib/use-training-program"
 import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 
-const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Pular corda", "Natação", "Remo"]
+const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Caminhada", "Pular corda", "Natação", "Remo"]
 const SPORT_MODES = ["Jiu-jitsu", "Futsal", "Flag football", "Natação", "Outro esporte"]
+/** modalidade do finisher prescrito (mantida igual nos registros antigos) */
+const FINISHER_MODE = "Cardio após musculação"
 
 const CARDIO_PURPOSES: { id: CardioPurpose; label: string; hint: string }[] = [
   { id: "zone2", label: "Zona 2", hint: "ritmo contínuo e confortável" },
@@ -47,6 +56,11 @@ const CARDIO_PURPOSES: { id: CardioPurpose; label: string; hint: string }[] = [
 
 function isStrengthKind(kind: SessionKind): boolean {
   return kind === "lift" || kind === "mixed"
+}
+
+/** Sessão cujo cardio é o treino em si (não um complemento opcional). */
+function cardioIsTheSession(kind: SessionKind): boolean {
+  return kind === "cardio" || kind === "sport"
 }
 
 function hasCardioForm(kind: SessionKind): boolean {
@@ -80,13 +94,8 @@ export default function TreinoPage() {
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
   const [activeExercises, setActiveExercises] = useState<ExercisePrescription[]>([])
   const [rows, setRows] = useState<Record<string, SetRow[]>>({})
-  const [cardioMin, setCardioMin] = useState("")
-  const [cardioBpm, setCardioBpm] = useState("")
-  const [cardioMode, setCardioMode] = useState(CARDIO_MODES[0])
-  const [cardioPurpose, setCardioPurpose] = useState<CardioPurpose>("zone2")
-  const [finisherMin, setFinisherMin] = useState("20")
-  /** finisher Z2 (cardioAfter): false = pular o cardio neste treino */
-  const [finisherDone, setFinisherDone] = useState(true)
+  /** blocos de cardio da sessão: 15′ de bike, 15′ de corrida, caminhada… */
+  const [cardioRows, setCardioRows] = useState<CardioRow[]>([])
   /** observações livres da sessão — vão no log e no rascunho */
   const [notes, setNotes] = useState("")
   const [pickerFor, setPickerFor] = useState<string | "new" | null>(null)
@@ -212,6 +221,63 @@ export default function TreinoPage() {
     return history
   }, [data, session, today])
 
+  /** BPM padrão do bloco: o do último registro, senão o meio da faixa alvo */
+  const defaultBpm = (s: SessionPlan, ll: WorkoutLog | null): string => {
+    const previous = ll ? cardioBlocks(ll)[0] : undefined
+    if (previous?.avgBpm) return String(previous.avgBpm)
+    return String(
+      s.cardioTarget?.bpmMin && s.cardioTarget?.bpmMax
+        ? Math.round((s.cardioTarget.bpmMin + s.cardioTarget.bpmMax) / 2)
+        : 130
+    )
+  }
+
+  /**
+   * Blocos de cardio pré-preenchidos: repete os do último registro desta
+   * sessão (é o padrão real de quem faz sempre bike + corrida) e, na sessão
+   * de cardio puro com um bloco só, aplica a progressão de +2 min.
+   */
+  const buildCardioRows = (s: SessionPlan, ll: WorkoutLog | null): CardioRow[] => {
+    const bpm = defaultBpm(s, ll)
+    const previous = ll ? cardioBlocks(ll) : []
+    if (previous.length > 0) {
+      return previous.map((block) => ({
+        minutes: String(
+          s.kind === "cardio" && previous.length === 1
+            ? Math.min(s.cardioTarget?.max ?? 50, block.minutes + 2)
+            : block.minutes
+        ),
+        bpm: block.avgBpm ? String(block.avgBpm) : bpm,
+        mode: block.mode,
+        purpose:
+          s.id === "bjjZ2"
+            ? "zone2"
+            : block.purpose ?? (s.kind === "sport" ? "sport" : "zone2"),
+      }))
+    }
+    // finisher prescrito do Lower A/B: some quando não foi feito (basta remover)
+    if (s.cardioAfter) {
+      return [
+        {
+          minutes: String(s.cardioAfter.minutes),
+          bpm,
+          mode: CARDIO_MODES[0],
+          purpose: "zone2",
+        },
+      ]
+    }
+    // musculação pura começa sem cardio; o botão de adicionar cobre o extra
+    if (!hasCardioForm(s.kind)) return []
+    return [
+      {
+        minutes: s.kind === "cardio" ? String(s.cardioTarget?.defaultMinutes ?? 45) : "60",
+        bpm,
+        mode: s.kind === "sport" ? SPORT_MODES[0] : CARDIO_MODES[0],
+        purpose: s.kind === "sport" ? "sport" : "zone2",
+      },
+    ]
+  }
+
   /**
    * Pré-preenchimento a partir do último treino desta sessão.
    * factor < 1 = volta de pausa (regressão do ciclo): cargas reduzidas e
@@ -226,10 +292,6 @@ export default function TreinoPage() {
     const rows: Record<string, SetRow[]> = {}
     const adapting =
       program === "bjj" && today !== null && bjjPhaseFor(today).id === "adaptacao"
-    const defaultPurpose: CardioPurpose =
-      s!.id === "bjjZ2"
-        ? "zone2"
-        : ll?.cardio?.purpose ?? (s!.kind === "sport" ? "sport" : "zone2")
     for (const ex of exercises) {
       const lastEntry = exerciseHistory[ex.id]?.entry
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
@@ -257,43 +319,12 @@ export default function TreinoPage() {
         }
       })
     }
-    return {
-      rows,
-      cardioMin:
-        s!.kind === "cardio"
-          ? ll?.cardio
-            ? String(Math.min(s!.cardioTarget?.max ?? 50, ll.cardio.minutes + 2))
-            : String(s!.cardioTarget?.defaultMinutes ?? 45)
-          : s!.kind === "sport"
-            ? "60"
-            : s!.kind === "mixed"
-              ? ll?.cardio
-                ? String(ll.cardio.minutes)
-                : "60"
-              : "",
-      cardioBpm: ll?.cardio?.avgBpm
-        ? String(ll.cardio.avgBpm)
-        : String(
-            s!.cardioTarget?.bpmMin && s!.cardioTarget?.bpmMax
-              ? Math.round((s!.cardioTarget.bpmMin + s!.cardioTarget.bpmMax) / 2)
-              : 130
-          ),
-      cardioMode:
-        ll?.cardio?.mode ?? (s!.kind === "sport" ? SPORT_MODES[0] : CARDIO_MODES[0]),
-      cardioPurpose: defaultPurpose,
-      finisherMin: s!.cardioAfter ? String(s!.cardioAfter.minutes) : "20",
-      finisherDone: true,
-    }
+    return { rows, cardioRows: buildCardioRows(s!, ll ?? null) }
   }
 
   const applyPrefill = (p: ReturnType<typeof buildPrefill>) => {
     setRows(p.rows)
-    setCardioMin(p.cardioMin)
-    setCardioBpm(p.cardioBpm)
-    setCardioMode(p.cardioMode)
-    setCardioPurpose(p.cardioPurpose)
-    setFinisherMin(p.finisherMin)
-    setFinisherDone(p.finisherDone ?? true)
+    setCardioRows(p.cardioRows)
   }
 
   /** fator de carga do ciclo para a sessão atual (0.9 ao voltar de pausa) */
@@ -312,16 +343,13 @@ export default function TreinoPage() {
     if (draft && draftHasContent(draft)) {
       setActiveExercises(draft.exercises ?? session.exercises)
       setRows(draft.rows)
-      setCardioMin(draft.cardioMin)
-      setCardioBpm(draft.cardioBpm)
-      setCardioMode(draft.cardioMode)
-      setCardioPurpose(
-        session.id === "bjjZ2"
-          ? "zone2"
-          : draft.cardioPurpose ?? (session.kind === "sport" ? "sport" : "zone2")
+      setCardioRows(
+        draftCardioRows(
+          draft,
+          session.id !== "bjjZ2" && session.kind === "sport" ? "sport" : "zone2",
+          FINISHER_MODE
+        )
       )
-      setFinisherMin(draft.finisherMin)
-      setFinisherDone(draft.finisherDone ?? true)
       setNotes(draft.notes ?? "")
       startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
@@ -344,18 +372,13 @@ export default function TreinoPage() {
     saveDraft(toDateKey(today), session.id, {
       rows,
       exercises: activeExercises,
-      cardioMin,
-      cardioBpm,
-      cardioMode,
-      cardioPurpose,
-      finisherMin,
-      finisherDone,
+      cardioRows,
       notes,
       savedAt: Date.now(),
       startedAt: startedAtRef.current ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, activeExercises, cardioMin, cardioBpm, cardioMode, cardioPurpose, finisherMin, finisherDone, notes])
+  }, [rows, activeExercises, cardioRows, notes])
 
   const totals = useMemo(() => {
     let volume = 0
@@ -538,9 +561,24 @@ export default function TreinoPage() {
     }
   }
 
-  const setCardio = (setter: (v: string) => void, value: string) => {
+  const updateCardioRow = (index: number, patch: Partial<CardioRow>) => {
     dirtyRef.current = true
-    setter(value)
+    setCardioRows((current) =>
+      current.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    )
+  }
+
+  const addCardioRow = () => {
+    dirtyRef.current = true
+    setCardioRows((current) => [
+      ...current,
+      { minutes: "", bpm: defaultBpm(session, lastLog), mode: CARDIO_MODES[0], purpose: "zone2" },
+    ])
+  }
+
+  const removeCardioRow = (index: number) => {
+    dirtyRef.current = true
+    setCardioRows((current) => current.filter((_, i) => i !== index))
   }
 
   const discardDraft = () => {
@@ -572,12 +610,14 @@ export default function TreinoPage() {
       }))
       .filter((e) => e.sets.length > 0)
 
-    const cardioMinutes = parseInt(cardioMin) || 0
-    if (session.kind === "mixed" && entries.length === 0 && cardioMinutes <= 0) {
+    const cardios = cardioRowsToBlocks(cardioRows, { forceZone2: session.id === "bjjZ2" })
+    const cardioMinutes = cardios.reduce((sum, block) => sum + block.minutes, 0)
+
+    if (session.kind === "mixed" && entries.length === 0 && cardios.length === 0) {
       setSaveError("Adicione cardio ou pelo menos um exercício no avulso.")
       return
     }
-    if ((session.kind === "cardio" || session.kind === "sport") && cardioMinutes <= 0) {
+    if (cardioIsTheSession(session.kind) && cardios.length === 0) {
       setSaveError("Informe os minutos de cardio para salvar esta sessão.")
       return
     }
@@ -595,32 +635,20 @@ export default function TreinoPage() {
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }
 
-    // duração real da musculação: 1ª série marcada → salvar
-    if (isStrengthKind(session.kind) && startedAtRef.current) {
-      log.startedAt = new Date(startedAtRef.current).toISOString()
-      log.durationMin = Math.min(
-        480,
-        Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60_000))
-      )
+    if (cardios.length > 0) {
+      log.cardios = cardios
+      log.cardio = cardios[0]
     }
 
-    if (hasCardioForm(session.kind) && cardioMinutes > 0) {
-      log.cardio = {
-        minutes: cardioMinutes,
-        avgBpm: session.kind !== "sport" ? parseInt(cardioBpm) || undefined : undefined,
-        mode: cardioMode,
-        purpose: session.id === "bjjZ2" ? "zone2" : cardioPurpose,
-      }
-      log.durationMin =
-        session.kind === "mixed"
-          ? Math.min(480, (log.durationMin ?? 0) + cardioMinutes)
-          : cardioMinutes
-    } else if (session.cardioAfter && finisherDone) {
-      const minutes = parseInt(finisherMin) || 0
-      if (minutes > 0) {
-        log.cardio = { minutes, mode: "Cardio após musculação", purpose: "zone2" }
-      }
-    }
+    // duração real da musculação: 1ª série marcada → salvar
+    const liftMinutes =
+      isStrengthKind(session.kind) && startedAtRef.current
+        ? Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60_000))
+        : 0
+    if (liftMinutes > 0) log.startedAt = new Date(startedAtRef.current!).toISOString()
+    // durationMin é a sessão inteira (sala medida + todos os blocos de cardio)
+    const totalMinutes = liftMinutes + cardioMinutes
+    if (totalMinutes > 0) log.durationMin = Math.min(480, totalMinutes)
 
     const newPRs: string[] = []
     if (data) {
@@ -678,6 +706,14 @@ export default function TreinoPage() {
   const progressPct =
     totals.setsTotal > 0 ? Math.round((totals.setsDone / totals.setsTotal) * 100) : 0
   const isLift = isStrengthKind(session.kind)
+  const totalCardioMin = cardioRows.reduce((sum, row) => sum + (parseInt(row.minutes) || 0), 0)
+  const cardioSectionTitle = session.cardioAfter
+    ? `Finisher — ${session.cardioAfter.label}`
+    : session.kind === "sport"
+      ? "Esporte"
+      : session.kind === "mixed"
+        ? "Cardio avulso"
+        : "Cardio"
   const bjjPhase = program === "bjj" ? bjjPhaseFor(today) : null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
@@ -1326,143 +1362,147 @@ export default function TreinoPage() {
         )
       })}
 
-      {/* cardio / esporte */}
-      {hasCardioForm(session.kind) && (
-        <>
-        <SectionTitle accent="zone">
-          {session.kind === "sport"
-            ? "Esporte"
-            : session.kind === "mixed"
-              ? "Cardio avulso"
-              : "Cardio"}
-        </SectionTitle>
-        <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
-          {cardioPurpose === "zone2" && (
-            <p className="mt-1 text-xs text-steel-dim">
-              Ritmo de conversa: fala frases completas, não canta
-              {session.cardioTarget?.bpmMin && session.cardioTarget?.bpmMax
-                ? ` (${session.cardioTarget.bpmMin}–${session.cardioTarget.bpmMax} bpm).`
-                : " (~120–140 bpm)."}
-            </p>
-          )}
-          {session.id === "bjjZ2" ? (
-            <p className="mt-2 rounded border border-zone/20 bg-zone/5 px-2.5 py-2 text-xs text-zone">
-              Ritmo de conversa — o intervalado você já faz de graça no tatame.
-            </p>
-          ) : (
-            <div className="mt-3 grid grid-cols-3 gap-1.5">
-              {CARDIO_PURPOSES.map((purpose) => (
-                <button
-                  key={purpose.id}
-                  onClick={() => {
-                    dirtyRef.current = true
-                    setCardioPurpose(purpose.id)
-                  }}
-                  className={cn(
-                    "rounded border px-2 py-2 text-xs font-semibold transition-colors",
-                    cardioPurpose === purpose.id
-                      ? "border-zone bg-zone/15 text-zone"
-                      : "border-seam text-steel hover:text-bone"
-                  )}
-                  title={purpose.hint}
-                >
-                  {purpose.label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(session.kind === "sport" ? SPORT_MODES : CARDIO_MODES).map((m) => (
-              <button
-                key={m}
-                onClick={() => setCardio(setCardioMode, m)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm transition-colors",
-                  cardioMode === m
-                    ? "border-zone bg-zone/15 text-zone"
-                    : "border-seam text-steel hover:text-bone"
-                )}
+      {/* cardio — um bloco por estímulo: bike, corrida, caminhada de volta… */}
+      <SectionTitle accent="zone">{cardioSectionTitle}</SectionTitle>
+      <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
+        {session.id === "bjjZ2" && (
+          <p className="mb-3 rounded border border-zone/20 bg-zone/5 px-2.5 py-2 text-xs text-zone">
+            Ritmo de conversa — o intervalado você já faz de graça no tatame.
+          </p>
+        )}
+        {cardioRows.length === 0 ? (
+          <p className="text-xs text-steel-dim">
+            Nenhum cardio neste treino. Toque em{" "}
+            <span className="font-semibold text-bone">Adicionar cardio</span> se fez bike,
+            corrida, caminhada ou qualquer outro estímulo.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {cardioRows.map((row, index) => (
+              <div
+                key={index}
+                className="rounded-lg border border-seam bg-iron-2/40 p-3"
               >
-                {m}
-              </button>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                    Bloco {index + 1}
+                  </p>
+                  <button
+                    onClick={() => removeCardioRow(index)}
+                    className={cn(ICON_BTN, "h-7 w-7 hover:border-red-500/40 hover:text-red-400")}
+                    aria-label={`Remover bloco de cardio ${index + 1}`}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                {session.id !== "bjjZ2" && (
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    {CARDIO_PURPOSES.map((purpose) => (
+                      <button
+                        key={purpose.id}
+                        onClick={() => updateCardioRow(index, { purpose: purpose.id })}
+                        className={cn(
+                          "rounded border px-2 py-2 text-xs font-semibold transition-colors",
+                          row.purpose === purpose.id
+                            ? "border-zone bg-zone/15 text-zone"
+                            : "border-seam text-steel hover:text-bone"
+                        )}
+                        title={purpose.hint}
+                        aria-pressed={row.purpose === purpose.id}
+                      >
+                        {purpose.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {(row.purpose === "sport" ? SPORT_MODES : CARDIO_MODES).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => updateCardioRow(index, { mode: m })}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition-colors",
+                        row.mode === m
+                          ? "border-zone bg-zone/15 text-zone"
+                          : "border-seam text-steel hover:text-bone"
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="mt-2.5 block">
+                  <span className="font-mono text-[10px] uppercase text-steel-dim">
+                    Modalidade livre
+                  </span>
+                  <input
+                    type="text"
+                    value={row.mode}
+                    onChange={(event) => updateCardioRow(index, { mode: event.target.value })}
+                    placeholder="Ex.: natação intensa, corda, trilha..."
+                    className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-zone"
+                  />
+                </label>
+
+                <div className="mt-3 flex gap-3">
+                  <label className="flex flex-1 flex-col gap-1">
+                    <span className="font-mono text-[10px] uppercase text-steel-dim">Minutos</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={row.minutes}
+                      onChange={(event) =>
+                        updateCardioRow(index, { minutes: event.target.value })
+                      }
+                      className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
+                    />
+                  </label>
+                  {row.purpose !== "sport" && (
+                    <label className="flex flex-1 flex-col gap-1">
+                      <span className="font-mono text-[10px] uppercase text-steel-dim">
+                        BPM médio
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={row.bpm}
+                        onChange={(event) => updateCardioRow(index, { bpm: event.target.value })}
+                        className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {row.purpose === "zone2" && (
+                  <p className="mt-2 text-[11px] text-steel-dim">
+                    Ritmo de conversa: fala frases completas, não canta
+                    {session.cardioTarget?.bpmMin && session.cardioTarget?.bpmMax
+                      ? ` (${session.cardioTarget.bpmMin}–${session.cardioTarget.bpmMax} bpm).`
+                      : " (~120–140 bpm)."}
+                  </p>
+                )}
+              </div>
             ))}
           </div>
-          <label className="mt-3 block">
-            <span className="font-mono text-[10px] uppercase text-steel-dim">Modalidade livre</span>
-            <input
-              type="text"
-              value={cardioMode}
-              onChange={(event) => setCardio(setCardioMode, event.target.value)}
-              placeholder="Ex.: natação intensa, corda, trilha..."
-              className="mt-1 w-full rounded-md border border-seam bg-coal px-3 py-2.5 text-sm text-bone outline-none focus:border-zone"
-            />
-          </label>
-          <div className="mt-4 flex gap-3">
-            <label className="flex flex-1 flex-col gap-1">
-              <span className="font-mono text-[10px] uppercase text-steel-dim">Minutos</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={session.cardioTarget?.min}
-                max={session.cardioTarget?.max}
-                value={cardioMin}
-                onChange={(e) => setCardio(setCardioMin, e.target.value)}
-                className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
-              />
-            </label>
-            {session.kind !== "sport" && (
-              <label className="flex flex-1 flex-col gap-1">
-                <span className="font-mono text-[10px] uppercase text-steel-dim">BPM médio</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={cardioBpm}
-                  onChange={(e) => setCardio(setCardioBpm, e.target.value)}
-                  className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
-                />
-              </label>
-            )}
-          </div>
-        </Card>
-        </>
-      )}
+        )}
 
-      {/* finisher Z2 do Lower A/B — opcional: desmarque se não fizer o cardio */}
-      {session.cardioAfter && (
-        <>
-          <SectionTitle accent="zone">Finisher — {session.cardioAfter.label}</SectionTitle>
-          <Card className="rise mb-3 border-l-4 border-l-zone">
-            <label className="flex items-center gap-2.5 text-sm font-semibold text-bone">
-              <input
-                type="checkbox"
-                checked={finisherDone}
-                onChange={(e) => {
-                  dirtyRef.current = true
-                  setFinisherDone(e.target.checked)
-                }}
-                className="h-4 w-4 accent-zone"
-              />
-              Fiz o cardio hoje
-            </label>
-            {finisherDone ? (
-              <label className="mt-3 flex items-center gap-2">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={finisherMin}
-                  onChange={(e) => setCardio(setFinisherMin, e.target.value)}
-                  className="w-24 rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-zone"
-                />
-                <span className="font-mono text-xs text-steel">min em Zona 2</span>
-              </label>
-            ) : (
-              <p className="mt-3 rounded border border-gold/30 bg-gold/5 px-2.5 py-2 font-mono text-xs text-gold">
-                Finisher pulado — nenhum cardio será salvo neste treino.
-              </p>
-            )}
-          </Card>
-        </>
-      )}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <button
+            onClick={addCardioRow}
+            className={cn(GHOST_BTN, "hover:border-zone/50 hover:text-bone")}
+          >
+            <Plus size={14} /> Adicionar cardio
+          </button>
+          {totalCardioMin > 0 && (
+            <span className="font-mono text-xs text-zone">
+              {totalCardioMin}′ no total
+            </span>
+          )}
+        </div>
+      </Card>
 
       {isLift && (
         <p className="mt-3 text-center font-mono text-[10px] text-steel-dim">

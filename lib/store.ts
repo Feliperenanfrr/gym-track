@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { cardioBlocks, normalizeCardioColumns } from "./cardio"
 import { getSupabaseBrowserClient } from "./supabase/client"
 import {
   isAuthError,
@@ -28,6 +29,8 @@ interface WorkoutRow {
   duration_min: number | null
   entries: ExerciseLog[]
   cardio: CardioLog | null
+  /** Lista de blocos (migration 0007) — ausente antes dela. */
+  cardios?: CardioLog[] | null
   notes: string | null
   srpe?: number | null
   started_at?: string | null
@@ -68,7 +71,7 @@ function rowToWorkout(r: WorkoutRow): WorkoutLog {
     sessionId: r.session_id as SessionId,
     durationMin: r.duration_min ?? undefined,
     entries: r.entries ?? [],
-    cardio: r.cardio ?? undefined,
+    ...normalizeCardioColumns(r.cardio, r.cardios),
     notes: r.notes ?? undefined,
     srpe: r.srpe ?? undefined,
     startedAt: r.started_at ?? undefined,
@@ -227,12 +230,16 @@ export function useGymData() {
       return { ...base, workouts }
     })
 
+    // `cardios` é a lista de blocos (bike + corrida + caminhada); `cardio`
+    // segue espelhando o primeiro para não quebrar registros já gravados.
+    const blocks = cardioBlocks(log)
     const payload: Record<string, unknown> = {
       date: log.date,
       session_id: log.sessionId,
       duration_min: log.durationMin ?? null,
       entries: log.entries,
-      cardio: log.cardio ?? null,
+      cardio: blocks[0] ?? null,
+      cardios: blocks.length > 0 ? blocks : null,
       notes: log.notes ?? null,
       // colunas novas só entram quando preenchidas — salvar sem sRPE/início
       // continua funcionando mesmo antes da migration 0002 rodar

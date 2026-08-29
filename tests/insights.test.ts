@@ -297,7 +297,7 @@ describe("sessionKcal", () => {
     expect(est.mid).toBe(Math.round((45 * 3 * 1.4) / 10) * 10)
   })
 
-  it("sessão mista soma musculação + cardio", () => {
+  it("sessão mista não conta o cardio duas vezes (durationMin é a sessão toda)", () => {
     const w = workout({
       date: dayKey(-1),
       sessionId: "free",
@@ -307,9 +307,29 @@ describe("sessionKcal", () => {
       cardio: { minutes: 20, mode: "Bike", purpose: "zone2" },
     })
     const est = sessionKcal(w, 80)!
-    // lift: 40 × 5 × 1.4 = 280 · cardio Z2: 20 × 6.5 × 1.4 = 182 → 462 → 460
-    expect(est.minutes).toBe(60)
-    expect(est.mid).toBe(460)
+    // 40 min de sessão dos quais 20 foram de bike → sala 20 min
+    // sala: 20 × 5 × 1.4 = 140 · Z2: 20 × 6.5 × 1.4 = 182 → 322 → 320
+    expect(est.minutes).toBe(40)
+    expect(est.mid).toBe(320)
+  })
+
+  it("cada bloco de cardio entra com o MET da sua finalidade", () => {
+    const w = workout({
+      date: dayKey(-1),
+      sessionId: "free",
+      durationMin: 45,
+      cardios: [
+        { minutes: 15, mode: "Bike ergométrica", purpose: "zone2" },
+        { minutes: 15, mode: "Corrida", purpose: "intense" },
+        { minutes: 15, mode: "Caminhada", purpose: "zone2" },
+      ],
+    })
+    const est = sessionKcal(w, 80)!
+    // 30′ Z2 × 6.5 × 1.4 = 273 · 15′ intenso × 8.5 × 1.4 = 178,5 → 451,5 → 450
+    expect(est.minutes).toBe(45)
+    expect(est.mid).toBe(450)
+    // sem musculação, o MET exibido é o do bloco mais longo (empate → o 1º)
+    expect(est.met).toBe(6.5)
   })
 
   it("esporte usa minutos × 8 METs; sem cardio não há estimativa", () => {

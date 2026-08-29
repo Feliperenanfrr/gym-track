@@ -7,11 +7,17 @@ import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isBjjSession } from "@/lib/bjj-plan"
+import {
+  cardioBlocks,
+  cardioPurposeOf,
+  describeCardio,
+  totalCardioMinutes,
+} from "@/lib/cardio"
 import { isLegacySession } from "@/lib/legacy-plan"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
+import { CardioLog, CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { cn, formatKg, fromDateKey, toDateKey, workoutVolume } from "@/lib/utils"
 
 const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
@@ -32,6 +38,23 @@ interface EditableEntry {
   exerciseName?: string
   muscleGroup?: MuscleGroup
   sets: EditableSet[]
+}
+
+/** bloco de cardio editável (bike, corrida, caminhada de volta…) */
+interface EditableCardio {
+  minutes: string
+  bpm: string
+  mode: string
+  purpose: CardioPurpose
+}
+
+function editableCardioFrom(log: WorkoutLog): EditableCardio[] {
+  return cardioBlocks(log).map((block) => ({
+    minutes: String(block.minutes),
+    bpm: block.avgBpm !== undefined ? String(block.avgBpm) : "",
+    mode: block.mode,
+    purpose: cardioPurposeOf(block, log.sessionId),
+  }))
 }
 
 function editableEntriesFrom(log: WorkoutLog): EditableEntry[] {
@@ -65,7 +88,7 @@ function sessionKind(w: WorkoutLog): Exclude<KindFilter, "all"> {
   const kind = PLAN_BY_ID[w.sessionId]?.kind
   if (kind === "sport") return "sport"
   if (w.entries.length > 0) return "lift"
-  if (w.cardio?.purpose === "sport") return "sport"
+  if (cardioBlocks(w).some((block) => block.purpose === "sport")) return "sport"
   if (kind === "mixed" || kind === "cardio") return "cardio"
   return "lift"
 }
@@ -94,10 +117,7 @@ export default function Historico() {
   /** editor do registro aberto (null = fechado): cardio + séries completas */
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editEntries, setEditEntries] = useState<EditableEntry[] | null>(null)
-  const [editHasCardio, setEditHasCardio] = useState(false)
-  const [editMinutes, setEditMinutes] = useState("")
-  const [editMode, setEditMode] = useState("")
-  const [editPurpose, setEditPurpose] = useState<CardioPurpose>("zone2")
+  const [editCardio, setEditCardio] = useState<EditableCardio[]>([])
   const [editNotes, setEditNotes] = useState("")
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -138,10 +158,7 @@ export default function Historico() {
     setEditingId(w.id)
     setEditError(null)
     setEditEntries(editableEntriesFrom(w))
-    setEditHasCardio(Boolean(w.cardio))
-    setEditMinutes(w.cardio ? String(w.cardio.minutes) : "")
-    setEditMode(w.cardio?.mode ?? "Bike ergométrica")
-    setEditPurpose(w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2"))
+    setEditCardio(editableCardioFrom(w))
     setEditNotes(w.notes ?? "")
   }
 
@@ -193,9 +210,28 @@ export default function Historico() {
     setEditEntries((prev) => (prev ? prev.filter((_, i) => i !== ei) : prev))
   }
 
+  const updateEditableCardio = (index: number, patch: Partial<EditableCardio>) => {
+    setEditCardio((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  const addEditableCardio = () => {
+    setEditCardio((prev) => [
+      ...prev,
+      { minutes: "", bpm: "", mode: "Bike ergométrica", purpose: "zone2" },
+    ])
+  }
+
+  const removeEditableCardio = (index: number) => {
+    setEditCardio((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const saveEdit = async (w: WorkoutLog) => {
-    const minutes = parseInt(editMinutes) || 0
-    const hasCardio = editHasCardio && minutes > 0
+    const cardios: CardioLog[] = editCardio.map((row) => ({
+      minutes: parseInt(row.minutes) || 0,
+      avgBpm: parseInt(row.bpm) || undefined,
+      mode: row.mode.trim(),
+      purpose: row.purpose,
+    }))
 
     // mesmas regras de sanitização do registro na aba Treino
     const entries: ExerciseLog[] = (editEntries ?? [])
@@ -213,35 +249,38 @@ export default function Historico() {
       }))
       .filter((e) => e.sets.length > 0)
 
-    if (entries.length === 0 && !hasCardio) {
+    if (entries.length === 0 && cardios.length === 0) {
       setEditError("Sem séries nem cardio para salvar — use Excluir para remover o treino.")
       return
     }
-    if (editHasCardio && minutes <= 0) {
-      setEditError("Informe os minutos de cardio.")
+    if (cardios.some((block) => block.minutes <= 0)) {
+      setEditError("Informe os minutos de cada bloco de cardio.")
       return
     }
-    if (editHasCardio && !editMode.trim()) {
-      setEditError("Informe a modalidade do cardio.")
+    if (cardios.some((block) => !block.mode)) {
+      setEditError("Informe a modalidade de cada bloco de cardio.")
       return
     }
+
+    // durationMin cobre a sessão inteira: ao mexer no cardio, ajusta pelo
+    // delta para não distorcer a parte de sala nem a estimativa de kcal.
+    const cardioDelta =
+      cardios.reduce((sum, block) => sum + block.minutes, 0) - totalCardioMinutes(w)
+    const durationMin =
+      w.durationMin !== undefined
+        ? Math.max(1, Math.min(480, w.durationMin + cardioDelta))
+        : undefined
+
     setEditSaving(true)
     setEditError(null)
     try {
       await addWorkout({
         ...w,
         entries,
+        durationMin,
         ...(editNotes.trim() ? { notes: editNotes.trim() } : { notes: undefined }),
-        ...(hasCardio
-          ? {
-              cardio: {
-                minutes,
-                avgBpm: w.cardio?.avgBpm,
-                mode: editMode.trim(),
-                purpose: editPurpose,
-              },
-            }
-          : { cardio: undefined }),
+        cardio: cardios[0],
+        cardios: cardios.length > 0 ? cardios : undefined,
       })
       closeEditor()
     } catch (e) {
@@ -387,12 +426,7 @@ export default function Historico() {
             const session = PLAN_BY_ID[w.sessionId]
             const volume = workoutVolume(w)
             const editing = editingId === w.id
-            const cardioLabel =
-              w.cardio?.purpose === "intense"
-                ? "intenso"
-                : w.cardio?.purpose === "sport" || w.sessionId === "sport"
-                  ? "esporte"
-                  : "Zona 2"
+            const cardioSummary = describeCardio(w)
             const kcalEst = sessionKcal(w, weightKgOn(data.body, w.date))
 
             return (
@@ -417,7 +451,7 @@ export default function Historico() {
                     )}
                     <p className="mt-1 font-mono text-xs text-steel-dim">
                       {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`}{" "}
-                      {w.cardio && `· ${w.cardio.minutes} min ${w.cardio.mode} (${cardioLabel})`}
+                      {cardioSummary && `· ${cardioSummary}`}
                       {kcalEst && (
                         <span
                           title={`Estimativa por METs (${kcalEst.met}) · faixa ${kcalEst.low}–${kcalEst.high} kcal`}
@@ -580,61 +614,90 @@ export default function Historico() {
                       <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
                         Cardio desta sessão
                       </p>
-                    <label className="flex items-center gap-2 text-sm font-semibold text-bone">
-                      <input
-                        type="checkbox"
-                        checked={editHasCardio}
-                        onChange={(e) => setEditHasCardio(e.target.checked)}
-                        className="h-4 w-4 accent-zone"
-                      />
-                      Houve cardio neste treino
-                    </label>
-                    {editHasCardio && (
-                      <>
-                        <div className="flex flex-wrap items-end gap-2">
-                          <label className="flex w-20 flex-col gap-1">
-                            <span className="font-mono text-[10px] uppercase text-steel-dim">Min</span>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              value={editMinutes}
-                              onChange={(e) => setEditMinutes(e.target.value)}
-                              className="w-full rounded border border-seam bg-coal px-2 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
-                            />
-                          </label>
-                          <label className="flex flex-col gap-1">
-                            <span className="font-mono text-[10px] uppercase text-steel-dim">Tipo</span>
-                            <select
-                              value={editPurpose}
-                              onChange={(e) => setEditPurpose(e.target.value as CardioPurpose)}
-                              className="rounded border border-seam bg-coal px-2 py-1.5 text-sm text-bone outline-none focus:border-gold"
-                            >
-                              {PURPOSE_OPTIONS.map((option) => (
-                                <option key={option.id} value={option.id}>{option.label}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="flex min-w-0 flex-1 flex-col gap-1">
-                            <span className="font-mono text-[10px] uppercase text-steel-dim">Modalidade</span>
-                            <input
-                              type="text"
-                              value={editMode}
-                              onChange={(e) => setEditMode(e.target.value)}
-                              placeholder="Bike, corrida…"
-                              className="min-w-0 w-full rounded border border-seam bg-coal px-2 py-1.5 text-sm text-bone outline-none focus:border-gold"
-                            />
-                          </label>
-                        </div>
-                        <p className="text-[11px] text-steel-dim">
-                          {PURPOSE_OPTIONS.find((o) => o.id === editPurpose)?.hint}
-                        </p>
-                      </>
-                    )}
-                    {!editHasCardio && (
-                      <p className="text-[11px] text-gold">
-                        O cardio será removido deste registro ao salvar.
+                    <p className="mt-0.5 text-[11px] text-steel-dim">
+                      Um bloco por estímulo: bike, corrida e a caminhada de volta contam
+                      separado.
+                    </p>
+                    {editCardio.length === 0 && (
+                      <p className="mt-2 text-[11px] text-gold">
+                        Sem cardio — o que existia neste registro sai ao salvar.
                       </p>
                     )}
+                    <div className="mt-2 space-y-2">
+                      {editCardio.map((row, ci) => (
+                        <div key={ci} className="rounded-lg border border-seam p-2">
+                          <div className="flex flex-wrap items-end gap-2">
+                            <label className="flex w-16 flex-col gap-1">
+                              <span className="font-mono text-[10px] uppercase text-steel-dim">Min</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={row.minutes}
+                                onChange={(e) => updateEditableCardio(ci, { minutes: e.target.value })}
+                                aria-label={`Minutos do bloco ${ci + 1}`}
+                                className="w-full rounded border border-seam bg-coal px-2 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                              />
+                            </label>
+                            <label className="flex w-16 flex-col gap-1">
+                              <span className="font-mono text-[10px] uppercase text-steel-dim">BPM</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={row.bpm}
+                                onChange={(e) => updateEditableCardio(ci, { bpm: e.target.value })}
+                                aria-label={`BPM médio do bloco ${ci + 1}`}
+                                className="w-full rounded border border-seam bg-coal px-2 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="font-mono text-[10px] uppercase text-steel-dim">Tipo</span>
+                              <select
+                                value={row.purpose}
+                                onChange={(e) =>
+                                  updateEditableCardio(ci, {
+                                    purpose: e.target.value as CardioPurpose,
+                                  })
+                                }
+                                aria-label={`Finalidade do bloco ${ci + 1}`}
+                                className="rounded border border-seam bg-coal px-2 py-1.5 text-sm text-bone outline-none focus:border-gold"
+                              >
+                                {PURPOSE_OPTIONS.map((option) => (
+                                  <option key={option.id} value={option.id}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex min-w-0 flex-1 flex-col gap-1">
+                              <span className="font-mono text-[10px] uppercase text-steel-dim">Modalidade</span>
+                              <input
+                                type="text"
+                                value={row.mode}
+                                onChange={(e) => updateEditableCardio(ci, { mode: e.target.value })}
+                                placeholder="Bike, corrida…"
+                                aria-label={`Modalidade do bloco ${ci + 1}`}
+                                className="min-w-0 w-full rounded border border-seam bg-coal px-2 py-1.5 text-sm text-bone outline-none focus:border-gold"
+                              />
+                            </label>
+                            <button
+                              onClick={() => removeEditableCardio(ci)}
+                              className="shrink-0 rounded p-1.5 text-steel-dim transition-colors hover:text-red-400"
+                              aria-label={`Remover bloco de cardio ${ci + 1}`}
+                              title="Remover bloco"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                          <p className="mt-1 text-[11px] text-steel-dim">
+                            {PURPOSE_OPTIONS.find((o) => o.id === row.purpose)?.hint}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={addEditableCardio}
+                      className="mt-2 inline-flex items-center gap-1 rounded-md border border-seam px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-steel transition-colors hover:border-gold/50 hover:text-bone"
+                    >
+                      <Plus size={11} /> Bloco de cardio
+                    </button>
                     </div>
 
                     {/* sRPE retroativo — salva na hora, sem passar por "Salvar alterações" */}

@@ -1,5 +1,10 @@
 import { countsTowardProgramTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
-import { zone2Minutes } from "./cardio"
+import {
+  cardioBlocks,
+  cardioPurposeOf,
+  totalCardioMinutes,
+  zone2Minutes,
+} from "./cardio"
 import { GymData, TrainingProgram, WorkoutLog } from "./types"
 import { bestE1RM, fromDateKey, toDateKey, workoutVolume } from "./utils"
 
@@ -55,14 +60,26 @@ export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
 /* Carga interna                                                        */
 /* ------------------------------------------------------------------ */
 
+/** AU por minuto de cada finalidade de cardio, para registros sem sRPE. */
+const CARDIO_AU_PER_MIN = { zone2: 4, intense: 8, sport: 7 } as const
+
+/** Soma a carga dos blocos de cardio pela finalidade de cada um. */
+function cardioLoad(w: WorkoutLog): number {
+  return cardioBlocks(w).reduce(
+    (sum, block) =>
+      sum + block.minutes * CARDIO_AU_PER_MIN[cardioPurposeOf(block, w.sessionId)],
+    0
+  )
+}
+
 /**
  * Carga interna da sessão em unidades arbitrárias (AU).
  * Com sRPE registrado: sRPE × minutos (método de Foster) — inclui
  * musculação, cardio E esporte na mesma moeda.
  * Fallbacks p/ registros antigos sem sRPE (documentados):
- *  - musculação: tonelagem × 0,05 (≈ RPE 7 × 60′ para ~8 t) + finisher × 4
+ *  - musculação: tonelagem × 0,05 (≈ RPE 7 × 60′ para ~8 t) + cardio pela finalidade
  *  - esporte: minutos × 7 (RPE assumido de jogo recreativo)
- *  - Zona 2: minutos × 4 (conversa confortável)
+ *  - Zona 2: minutos × 4 (conversa confortável) · intenso: × 8
  */
 export function internalLoad(w: WorkoutLog): number {
   const kind = PLAN_BY_ID[w.sessionId]?.kind
@@ -71,18 +88,13 @@ export function internalLoad(w: WorkoutLog): number {
       w.durationMin ??
       (kind === "lift" || (kind === "mixed" && w.entries.length > 0)
         ? 60
-        : w.cardio?.minutes ?? 0)
+        : totalCardioMinutes(w))
     if (minutes > 0) return w.srpe * minutes
   }
   if (kind === "lift" || kind === "mixed") {
-    return Math.round(workoutVolume(w) * 0.05 + (w.cardio?.minutes ?? 0) * 4)
+    return Math.round(workoutVolume(w) * 0.05 + cardioLoad(w))
   }
-  if (w.cardio?.purpose === "intense") return (w.cardio?.minutes ?? 0) * 8
-  if (w.cardio?.purpose === "zone2") return (w.cardio?.minutes ?? 0) * 4
-  if (kind === "sport" || w.cardio?.purpose === "sport") {
-    return (w.cardio?.minutes ?? 0) * 7
-  }
-  return (w.cardio?.minutes ?? 0) * 4
+  return Math.round(cardioLoad(w))
 }
 
 /* ------------------------------------------------------------------ */
@@ -264,19 +276,27 @@ export interface SessionKcal {
   minutes: number
 }
 
+const MET_BY_PURPOSE = {
+  zone2: MET_Z2,
+  intense: MET_INTENSE,
+  sport: MET_SPORT,
+} as const
+
 /**
  * Estimativa calórica de UM treino por METs:
- * - musculação usa a duração REAL (1ª série → salvar) e o MET adaptado pelo
- *   sRPE; sem duração medida (registro antigo/retroativo), cai para 60 min;
- * - cardio/esporte usam os minutos registrados com os METs fixos de sempre.
+ * - musculação usa a duração REAL da parte de sala (duração total da sessão
+ *   menos os minutos de cardio) e o MET adaptado pelo sRPE; sem duração
+ *   medida (registro antigo/retroativo), cai para 60 min;
+ * - cada bloco de cardio entra com o MET da sua própria finalidade, então
+ *   bike em Z2 + tiros na esteira no mesmo treino não viram uma média falsa.
  * null sem peso — a equação do MET depende da massa corporal real.
  */
 export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | null {
   if (!weightKg || weightKg <= 0) return null
   const kcalPerMin = (met: number) => (met * 3.5 * weightKg!) / 200
   const kind = PLAN_BY_ID[w.sessionId]?.kind
-  const purpose = w.cardio?.purpose ?? (w.sessionId === "sport" ? "sport" : "zone2")
-  const cardioMin = w.cardio?.minutes ?? 0
+  const blocks = cardioBlocks(w)
+  const cardioMin = totalCardioMinutes(w)
   const isLiftPart =
     (kind === "lift" || kind === "mixed") && w.entries.length > 0
 
@@ -284,26 +304,28 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
   let metUsed = 0
   let minutes = 0
 
-  if (purpose === "sport") {
-    if (cardioMin <= 0) return null
-    metUsed = MET_SPORT
-    total = cardioMin * kcalPerMin(metUsed)
-    minutes = cardioMin
-  } else {
-    if (isLiftPart) {
-      metUsed = liftMetForSrpe(w.srpe)
-      const liftMin = w.durationMin && w.durationMin > 0 ? w.durationMin : LIFT_SESSION_MIN
-      total += liftMin * kcalPerMin(metUsed)
-      minutes += liftMin
-    }
-    if (cardioMin > 0) {
-      const cardioMet = purpose === "intense" ? MET_INTENSE : MET_Z2
-      total += cardioMin * kcalPerMin(cardioMet)
-      minutes += cardioMin
-      if (!isLiftPart) metUsed = cardioMet
-    }
-    if (total <= 0) return null
+  if (isLiftPart) {
+    metUsed = liftMetForSrpe(w.srpe)
+    // durationMin é a sessão inteira: o cardio é somado à parte, com o MET dele.
+    const liftMin =
+      w.durationMin && w.durationMin > 0
+        ? Math.max(1, w.durationMin - cardioMin)
+        : LIFT_SESSION_MIN
+    total += liftMin * kcalPerMin(metUsed)
+    minutes += liftMin
   }
+  let longestBlockMin = 0
+  for (const block of blocks) {
+    const blockMet = MET_BY_PURPOSE[cardioPurposeOf(block, w.sessionId)]
+    total += block.minutes * kcalPerMin(blockMet)
+    minutes += block.minutes
+    // sem musculação, o MET exibido no tooltip é o do bloco mais longo
+    if (!isLiftPart && block.minutes > longestBlockMin) {
+      longestBlockMin = block.minutes
+      metUsed = blockMet
+    }
+  }
+  if (total <= 0) return null
 
   const mid = Math.round(total / 10) * 10
   return {
