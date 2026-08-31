@@ -125,6 +125,109 @@
   margin: 0 0 8px;
 }
 
+/* contexto e confiabilidade -------------------------------------- */
+
+.report-brief {
+  display: grid;
+  grid-template-columns: 1.2fr 1.55fr 1fr;
+  gap: 1px;
+  border: 1px solid #d6d3d1;
+  background: #d6d3d1;
+}
+
+.report-brief > div {
+  background: #fafaf9;
+  padding: 7px 9px;
+}
+
+.report-brief b {
+  display: block;
+  font-family: var(--font-condensed);
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #78716c;
+}
+
+.report-brief p {
+  margin: 2px 0 0;
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
+.report-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+
+.report-quality-grid > div {
+  position: relative;
+  min-height: 67px;
+  border: 1px solid #e7e5e4;
+  border-top: 2px solid #57534e;
+  padding: 6px 8px;
+}
+
+.report-quality-grid span:first-child {
+  display: block;
+  font-family: var(--font-condensed);
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #78716c;
+}
+
+.report-quality-grid strong {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #1c1917;
+}
+
+.report-quality-grid small {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  line-height: 1.35;
+  color: #78716c;
+}
+
+.report-confidence {
+  display: inline-block;
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.report-quality-grid .report-confidence {
+  position: absolute;
+  right: 7px;
+  bottom: 5px;
+}
+
+.report-confidence-alta {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.report-confidence-moderada {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.report-confidence-baixa {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 /* KPIs ------------------------------------------------------------ */
 
 .report-kpis {
@@ -201,6 +304,19 @@
 
 .report-table tr:last-child td {
   border-bottom: 0;
+}
+
+.report-lifts-table td:first-child {
+  max-width: 185px;
+}
+
+.report-lifts-table td:first-child small {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  line-height: 1.3;
+  color: #78716c;
 }
 
 .report-table td.up {
@@ -348,11 +464,49 @@
   align-items: start;
 }
 
+.report-questions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 20px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.report-questions li {
+  padding-left: 2px;
+}
+
+.report-continuation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #d6d3d1;
+  padding-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: #78716c;
+}
+
+.report-continuation b {
+  color: #1c1917;
+  letter-spacing: .08em;
+}
+
 /* impressão ------------------------------------------------------- */
 
 @page {
   size: A4;
   margin: 14mm;
+
+  @bottom-right {
+    content: "GYM//TRACK · " counter(page);
+    font-family: "JetBrains Mono Variable", monospace;
+    font-size: 7pt;
+    color: #78716c;
+  }
 }
 
 @media print {

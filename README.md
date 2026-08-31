@@ -28,7 +28,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, sugestão de carga no passo do aparelho, reabertura do registro do dia, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
-| **Relatórios** | Dois documentos em PDF: fechamento de bloco (antes × depois do mesociclo) e acompanhamento nutricional |
+| **Relatórios** | Três documentos em PDF: fechamento de bloco, dossiê para o preparador físico e acompanhamento nutricional |
 
 ## Dados & Auth
 
@@ -95,7 +95,7 @@ preparar, mas pega também roles e os schemas `auth`/`storage`.
 
 ## Relatórios em PDF
 
-Em **/relatorios** (link no cabeçalho do painel), dois documentos prontos para
+Em **/relatorios** (link no cabeçalho do painel), três documentos prontos para
 salvar ou entregar a outra pessoa:
 
 - **Fechamento de bloco** — o comparativo início × fim do mesociclo: 1RM estimada
@@ -109,6 +109,11 @@ salvar ou entregar a outra pessoa:
   manter ou ganhar, variação de massa em painéis de escala própria, gasto com
   treino, hidratação, sono e uma seção de metodologia e limitações — o documento
   vai para quem não conhece o método.
+- **Preparador físico** — dossiê para reavaliar e reconstruir o plano: qualidade
+  dos registros, exposição e carga semanal por sRPE, exercícios repetidos com
+  comparação robusta de 1RM estimada, séries diretas por grupo sem piso
+  universal, condicionamento, composição corporal, recuperação e perguntas para
+  a anamnese. Estimativas calóricas e ACWR não entram como desfechos.
 
 Períodos: os blocos do jiu-jitsu entram como preset com as janelas reais
 (derivadas de `BJJ_START_DATE`, truncadas em hoje quando ainda em curso); a

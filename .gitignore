@@ -11,3 +11,7 @@ Plano_de_Treino_Felipe.pdf
 # dumps do banco — dados de saúde, nunca commitar
 backups/
 supabase/.temp/
+
+# relatórios locais e intermediários podem conter dados pessoais de saúde
+output/
+tmp/
