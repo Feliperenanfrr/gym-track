@@ -19,6 +19,14 @@ function lift(dateOffset: number, sessionId: SessionId): WorkoutLog {
   }
 }
 
+/** registro com séries de verdade — musculação venha de que sessão vier */
+function strength(dateOffset: number, sessionId: SessionId): WorkoutLog {
+  return {
+    ...lift(dateOffset, sessionId),
+    entries: [{ exerciseId: "pulldown", sets: [{ weight: 50, reps: 10 }] }],
+  }
+}
+
 describe("LIFT_CYCLE", () => {
   it("alterna Upper/Lower em 4 sessões", () => {
     expect(LIFT_CYCLE).toEqual(["upperA", "lowerA", "upperB", "lowerB"])
@@ -106,6 +114,52 @@ describe("nextInCycle", () => {
       new Date(2026, 7, 20)
     )
     expect(sug.reason).toBe("start")
+  })
+
+  it("treino avulso com séries não deixa o ciclo declarar volta de pausa", () => {
+    // 10 dias sem Upper/Lower, mas treinando avulso: não é pausa nenhuma
+    const sug = nextInCycle(
+      [lift(-10, "upperA"), strength(-2, "free"), strength(-1, "free")],
+      new Date(2026, 7, 20)
+    )
+    expect(sug.reason).not.toBe("regression")
+    expect(sug.daysSinceLastLift).toBe(10)
+    expect(sug.daysSinceStrength).toBe(1)
+  })
+
+  it("a fila não avança com avulso: o próximo segue sendo o sucessor do lift", () => {
+    const sug = nextInCycle(
+      [lift(-10, "upperA"), strength(-3, "free")],
+      new Date(2026, 7, 20)
+    )
+    expect(sug.sessionId).toBe("lowerA")
+  })
+
+  it("sala do jiu-jitsu também conta como musculação", () => {
+    const sug = nextInCycle(
+      [lift(-9, "upperA"), strength(-2, "bjjPull")],
+      new Date(2026, 7, 20)
+    )
+    expect(sug.reason).toBe("next")
+    expect(sug.daysSinceStrength).toBe(2)
+  })
+
+  it("só cardio e tatame não seguram a pausa: 10 dias sem sala é pausa", () => {
+    const sug = nextInCycle(
+      [lift(-10, "upperA"), lift(-2, "cardioZ2"), lift(-1, "sport")],
+      new Date(2026, 7, 20)
+    )
+    expect(sug.reason).toBe("regression")
+    expect(sug.daysSinceStrength).toBe(10)
+  })
+
+  it("dois avulsos seguidos pedem recuperação no terceiro dia", () => {
+    const sug = nextInCycle(
+      [lift(-4, "upperA"), strength(-2, "free"), strength(-1, "free")],
+      new Date(2026, 7, 20)
+    )
+    expect(sug.reason).toBe("recovery")
+    expect(sug.nextLiftId).toBe("lowerA")
   })
 })
 

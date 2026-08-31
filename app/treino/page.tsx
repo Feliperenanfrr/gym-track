@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, Minus, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, Minus, Pencil, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, TrendingUp, Trash2, X } from "lucide-react"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
@@ -21,6 +21,7 @@ import {
 import {
   bestE1RM,
   cn,
+  daysSince,
   formatKg,
   fromDateKey,
   isoWeekday,
@@ -33,6 +34,16 @@ import { useRestTimer } from "@/lib/use-rest-timer"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
 import {
+  formatWeight,
+  loadStepOverrides,
+  loggedWeights,
+  LoadSuggestion,
+  resolveLoadStep,
+  saveStepOverride,
+  STEP_OPTIONS,
+  suggestLoad,
+} from "@/lib/progression"
+import {
   clearDraft,
   draftCardioRows,
   draftHasContent,
@@ -42,6 +53,7 @@ import {
 import { tapFeedback } from "@/lib/haptics"
 import { useTrainingProgram } from "@/lib/use-training-program"
 import { useWorkoutTemplates } from "@/lib/use-workout-templates"
+import { loggedLiftMinutes, openLogForEditing } from "@/lib/workout-form"
 
 const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Caminhada", "Pular corda", "Natação", "Remo"]
 const SPORT_MODES = ["Jiu-jitsu", "Futsal", "Flag football", "Natação", "Outro esporte"]
@@ -110,13 +122,22 @@ export default function TreinoPage() {
   const [prCelebrations, setPrCelebrations] = useState<string[]>([])
   const [savedLog, setSavedLog] = useState<WorkoutLog | null>(null)
   const [cycleSug, setCycleSug] = useState<CycleSuggestion | null>(null)
-  const [regressionApplied, setRegressionApplied] = useState(false)
+  /** o ciclo detectou dias sem musculação: sugestões entram ~10% abaixo */
+  const [layoffNotice, setLayoffNotice] = useState(false)
+  /** registro desta sessão já salvo hoje que está aberto para edição */
+  const [editingLog, setEditingLog] = useState<WorkoutLog | null>(null)
+  /** passo de carga escolhido à mão por exercício (máquina de pino, anilha…) */
+  const [stepOverrides, setStepOverrides] = useState<Record<string, number>>({})
+  /** exercício com o seletor de passo aberto */
+  const [stepEditorFor, setStepEditorFor] = useState<string | null>(null)
   const dirtyRef = useRef(false)
   const popRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
   /** epoch ms da primeira série marcada (duração real da sessão) */
   const startedAtRef = useRef<number | null>(null)
   const sessionPickedRef = useRef(false)
   const cycleInitRef = useRef(false)
+  /** data|sessão do último pré-preenchimento, p/ não remontar o form salvo */
+  const prefillKeyRef = useRef("")
   const initializedProgramRef = useRef<TrainingProgram | null>(null)
 
   const availableSessions = useMemo(
@@ -150,6 +171,10 @@ export default function TreinoPage() {
       }
     }
     setToday(day)
+  }, [])
+
+  useEffect(() => {
+    setStepOverrides(loadStepOverrides())
   }, [])
 
   // Ao trocar de programa, muda apenas o catálogo exibido; os registros e o
@@ -201,25 +226,33 @@ export default function TreinoPage() {
     return prev[prev.length - 1] ?? null
   }, [data, session, today])
 
-  const alreadyLoggedToday = useMemo(() => {
-    if (!data || !session || !today) return false
-    return data.workouts.some(
-      (w) => w.date === toDateKey(today) && w.sessionId === session.id
+  /** registro desta sessão salvo hoje — reabri-lo evita sobrescrever sem querer */
+  const todayLog = useMemo(() => {
+    if (!data || !session || !today) return null
+    return (
+      data.workouts.find(
+        (w) => w.date === toDateKey(today) && w.sessionId === session.id
+      ) ?? null
     )
   }, [data, session, today])
 
-  /** Última execução por exercício; treinos oficiais não usam Avulso como prefill. */
+  /**
+   * Última execução de cada exercício, em QUALQUER sessão. Puxada alta feita
+   * num avulso é a mesma puxada alta: ignorá-la fazia o Upper A comparar com
+   * um treino de duas semanas atrás e sugerir carga errada.
+   */
   const exerciseHistory = useMemo(() => {
     const history: Record<string, { log: WorkoutLog; entry: ExerciseLog }> = {}
-    if (!data || !today || !session) return history
+    if (!data || !today) return history
     const todayKey = toDateKey(today)
     for (const log of [...data.workouts].sort((a, b) => a.date.localeCompare(b.date))) {
       if (log.date >= todayKey) continue
-      if (session.id !== "free" && log.sessionId === "free") continue
-      for (const entry of log.entries) history[entry.exerciseId] = { log, entry }
+      for (const entry of log.entries) {
+        if (entry.sets.length > 0) history[entry.exerciseId] = { log, entry }
+      }
     }
     return history
-  }, [data, session, today])
+  }, [data, today])
 
   /** BPM padrão do bloco: o do último registro, senão o meio da faixa alvo */
   const defaultBpm = (s: SessionPlan, ll: WorkoutLog | null): string => {
@@ -279,14 +312,15 @@ export default function TreinoPage() {
   }
 
   /**
-   * Pré-preenchimento a partir do último treino desta sessão.
-   * factor < 1 = volta de pausa (regressão do ciclo): cargas reduzidas e
-   * arredondadas a 2,5 kg, sem auto-progressão.
+   * Pré-preenchimento: repete exatamente o que foi feito da última vez.
+   *
+   * O app não mexe mais na carga sozinho. Progressão, manutenção e volta de
+   * pausa aparecem como SUGESTÃO no card do exercício, com um toque para
+   * aplicar — quem decide o que a máquina aceita é quem está na máquina.
    */
   const buildPrefill = (
     s: typeof session,
     ll: typeof lastLog,
-    factor = 1,
     exercises: ExercisePrescription[] = s!.exercises
   ) => {
     const rows: Record<string, SetRow[]> = {}
@@ -296,24 +330,10 @@ export default function TreinoPage() {
       const lastEntry = exerciseHistory[ex.id]?.entry
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
-        let suggestedWeight = lastSet ? String(lastSet.weight) : ""
-        let suggestedReps = lastSet ? String(lastSet.reps) : ""
-
-        if (lastSet && adapting) {
-          suggestedWeight = ""
-          suggestedReps = String(ex.repsMin)
-        } else if (lastSet && factor < 1) {
-          suggestedWeight = String(
-            Math.max(0, Math.round((lastSet.weight * factor) / 2.5) * 2.5)
-          )
-        } else if (lastSet && lastSet.reps >= ex.repsMax) {
-          suggestedWeight = String(lastSet.weight + 2.5)
-          suggestedReps = String(ex.repsMin)
-        }
-
         return {
-          weight: suggestedWeight,
-          reps: suggestedReps,
+          weight: lastSet ? String(lastSet.weight) : "",
+          // na adaptação do bloco de jiu-jitsu, mesma carga e menos volume
+          reps: lastSet ? String(adapting ? ex.repsMin : lastSet.reps) : "",
           done: false,
           rir: "",
         }
@@ -327,18 +347,32 @@ export default function TreinoPage() {
     setCardioRows(p.cardioRows)
   }
 
-  /** fator de carga do ciclo para a sessão atual (0.9 ao voltar de pausa) */
-  const currentFactor = () =>
-    cycleSug && cycleSug.reason === "regression" && cycleSug.sessionId === session?.id
-      ? cycleSug.loadFactor
-      : 1
+  /** o ciclo cobra volta de pausa nesta sessão? (0 musculação por 7+ dias) */
+  const returningFromLayoff = () =>
+    Boolean(
+      cycleSug && cycleSug.reason === "regression" && cycleSug.sessionId === session?.id
+    )
 
-  // ao trocar de sessão: restaura rascunho do dia se houver, senão pré-preenche
+  // ao trocar de sessão: restaura rascunho do dia, reabre o registro de hoje
+  // ou pré-preenche com a última execução de cada exercício
   useEffect(() => {
     if (!session || !today) return
-    setSaved(false)
-    dirtyRef.current = false
     const dateKey = toDateKey(today)
+    const prefillKey = `${dateKey}|${session.id}`
+    const switchingSession = prefillKeyRef.current !== prefillKey
+    prefillKeyRef.current = prefillKey
+    if (switchingSession) {
+      setSaved(false)
+      setSavedLog(null)
+      setPrCelebrations([])
+      setStepEditorFor(null)
+    } else if (saved || saving) {
+      // acabou de salvar: o registro virou o log de hoje, mas a tela de
+      // confirmação não pode ser desmontada por baixo do usuário
+      setEditingLog(todayLog)
+      return
+    }
+    dirtyRef.current = false
     const draft = loadDraft(dateKey, session.id)
     if (draft && draftHasContent(draft)) {
       setActiveExercises(draft.exercises ?? session.exercises)
@@ -353,18 +387,33 @@ export default function TreinoPage() {
       setNotes(draft.notes ?? "")
       startedAtRef.current = draft.startedAt ?? null
       setDraftRestored(true)
-      setRegressionApplied(false)
-    } else {
-      const factor = currentFactor()
-      setActiveExercises(session.exercises)
-      applyPrefill(buildPrefill(session, lastLog, factor))
-      setNotes("")
+      setEditingLog(todayLog)
+      setLayoffNotice(false)
+      return
+    }
+    if (todayLog) {
+      // já existe registro desta sessão hoje: abre o que foi salvo em vez de
+      // partir do zero — salvar de novo faz upsert e apagaria o anterior
+      const opened = openLogForEditing(todayLog, session, exerciseCatalog)
+      setActiveExercises(opened.exercises)
+      setRows(opened.rows)
+      setCardioRows(opened.cardioRows)
+      setNotes(opened.notes)
       startedAtRef.current = null
       setDraftRestored(false)
-      setRegressionApplied(factor < 1)
+      setEditingLog(todayLog)
+      setLayoffNotice(false)
+      return
     }
+    setActiveExercises(session.exercises)
+    applyPrefill(buildPrefill(session, lastLog))
+    setNotes("")
+    startedAtRef.current = null
+    setDraftRestored(false)
+    setEditingLog(null)
+    setLayoffNotice(returningFromLayoff())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, lastLog, today, cycleSug])
+  }, [session, lastLog, todayLog, today, cycleSug])
 
   // autosave do rascunho a cada edição do usuário
   useEffect(() => {
@@ -395,6 +444,41 @@ export default function TreinoPage() {
     }
     return { volume, setsDone, setsTotal }
   }, [rows, activeExercises])
+
+  /**
+   * Sugestão de carga por exercício — o que o app acha que você deve fazer
+   * hoje, ao lado do que você fez da última vez. Nunca escreve sozinho.
+   *
+   * O passo sai do histórico do próprio exercício: se toda carga registrada na
+   * puxada alta é múltipla de 5, a máquina anda de 5 em 5 e a sugestão respeita
+   * isso. Dá para fixar o passo à mão quando o histórico ainda é curto.
+   */
+  const suggestions = useMemo(() => {
+    const out: Record<
+      string,
+      { suggestion: LoadSuggestion; step: number; manualStep: boolean }
+    > = {}
+    if (!data || !today) return out
+    for (const ex of activeExercises) {
+      const previous = exerciseHistory[ex.id]
+      const step = resolveLoadStep(
+        ex.id,
+        loggedWeights(data.workouts, ex.id),
+        stepOverrides
+      )
+      const suggestion = suggestLoad({
+        prescription: ex,
+        lastEntry: previous?.entry,
+        step,
+        layoffDays: previous ? daysSince(fromDateKey(previous.log.date), today) : null,
+        returningFromLayoff: layoffNotice,
+      })
+      if (suggestion) {
+        out[ex.id] = { suggestion, step, manualStep: stepOverrides[ex.id] !== undefined }
+      }
+    }
+    return out
+  }, [activeExercises, data, exerciseHistory, layoffNotice, stepOverrides, today])
 
   /**
    * kcal estimadas do treino salvo — duração real + MET ajustado pelo sRPE.
@@ -467,7 +551,7 @@ export default function TreinoPage() {
     setRows((current) => {
       const next = { ...current }
       if (replacingId) delete next[replacingId]
-      next[choice.id] = buildPrefill(session, lastLog, 1, [prescription]).rows[choice.id]
+      next[choice.id] = buildPrefill(session, lastLog, [prescription]).rows[choice.id]
       return next
     })
     setPickerFor(null)
@@ -532,7 +616,7 @@ export default function TreinoPage() {
       usedIds.add(selected.id)
       return { ...selected }
     })
-    const prefill = buildPrefill(session, lastLog, 1, exercises)
+    const prefill = buildPrefill(session, lastLog, exercises)
     dirtyRef.current = true
     setActiveExercises(exercises)
     setRows(prefill.rows)
@@ -586,12 +670,36 @@ export default function TreinoPage() {
     clearDraft(toDateKey(today), session.id)
     dirtyRef.current = false
     startedAtRef.current = null
-    const factor = currentFactor()
     setActiveExercises(session.exercises)
-    applyPrefill(buildPrefill(session, lastLog, factor))
+    applyPrefill(buildPrefill(session, lastLog))
     setNotes("")
     setDraftRestored(false)
-    setRegressionApplied(factor < 1)
+    setEditingLog(null)
+    setLayoffNotice(returningFromLayoff())
+  }
+
+  /** troca o passo de carga do exercício (máquina de 5 em 5, anilha de 20…) */
+  const chooseStep = (exerciseId: string, step: number | null) => {
+    setStepOverrides(saveStepOverride(exerciseId, step))
+    setStepEditorFor(null)
+  }
+
+  /** aplica a sugestão nas séries que ainda não foram marcadas como feitas */
+  const applySuggestion = (exerciseId: string, suggestion: LoadSuggestion) => {
+    dirtyRef.current = true
+    tapFeedback()
+    setRows((current) => ({
+      ...current,
+      [exerciseId]: (current[exerciseId] ?? []).map((row, i) => {
+        const target = suggestion.sets[i] ?? suggestion.sets[suggestion.sets.length - 1]
+        if (!target || row.done) return row
+        return {
+          ...row,
+          weight: target.weight > 0 ? String(target.weight) : row.weight,
+          reps: String(target.reps),
+        }
+      }),
+    }))
   }
 
   const handleSave = async () => {
@@ -628,11 +736,17 @@ export default function TreinoPage() {
         : new Date()
 
     const log: WorkoutLog = {
-      id: `log-${Date.now()}`,
-      date: backdated ? toDateKey(today) : toOperationalDateKey(workoutDay),
+      id: editingLog?.id ?? `log-${Date.now()}`,
+      date: editingLog
+        ? editingLog.date
+        : backdated
+          ? toDateKey(today)
+          : toOperationalDateKey(workoutDay),
       sessionId: session.id,
       entries,
       ...(notes.trim() ? { notes: notes.trim() } : {}),
+      // reabrir a sessão para completar não pode apagar o esforço já avaliado
+      ...(editingLog?.srpe !== undefined ? { srpe: editingLog.srpe } : {}),
     }
 
     if (cardios.length > 0) {
@@ -640,12 +754,18 @@ export default function TreinoPage() {
       log.cardio = cardios[0]
     }
 
-    // duração real da musculação: 1ª série marcada → salvar
-    const liftMinutes =
+    // duração real da musculação: 1ª série marcada → salvar. Ao completar um
+    // registro de hoje, a sala já medida antes continua valendo.
+    const previousLiftMinutes = editingLog ? loggedLiftMinutes(editingLog) : 0
+    const timedMinutes =
       isStrengthKind(session.kind) && startedAtRef.current
         ? Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60_000))
         : 0
-    if (liftMinutes > 0) log.startedAt = new Date(startedAtRef.current!).toISOString()
+    const liftMinutes = Math.max(previousLiftMinutes, timedMinutes)
+    const startedAtIso = startedAtRef.current
+      ? new Date(startedAtRef.current).toISOString()
+      : editingLog?.startedAt
+    if (liftMinutes > 0 && startedAtIso) log.startedAt = startedAtIso
     // durationMin é a sessão inteira (sala medida + todos os blocos de cardio)
     const totalMinutes = liftMinutes + cardioMinutes
     if (totalMinutes > 0) log.durationMin = Math.min(480, totalMinutes)
@@ -715,6 +835,9 @@ export default function TreinoPage() {
         ? "Cardio avulso"
         : "Cardio"
   const bjjPhase = program === "bjj" ? bjjPhaseFor(today) : null
+  /** sessão que o programa pede hoje — marcada no seletor mesmo se você mudar */
+  const suggestedSessionId =
+    program === "bjj" ? nextBjjSession(data.workouts, today) : cycleSug?.sessionId ?? null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
 
@@ -790,18 +913,27 @@ export default function TreinoPage() {
               setSessionId(s.id)
             }}
             className={cn(
-              "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-wider transition-colors",
+              "relative shrink-0 rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-wider transition-colors",
               sessionId === s.id
                 ? s.accent === "zone"
                   ? "border-zone bg-zone/15 text-zone"
                   : s.accent === "gold"
                     ? "border-gold bg-gold/15 text-gold"
                   : "border-ember bg-ember/15 text-ember"
-                : "border-seam bg-iron-2/40 text-steel hover:border-steel/40 hover:text-bone"
+                : s.id === suggestedSessionId
+                  ? "border-steel/50 bg-iron-2/40 text-bone"
+                  : "border-seam bg-iron-2/40 text-steel hover:border-steel/40 hover:text-bone"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}
+            title={s.id === suggestedSessionId ? "Próxima do programa" : undefined}
           >
             {s.title}
+            {s.id === suggestedSessionId && sessionId !== s.id && (
+              <span
+                aria-label="próxima do programa"
+                className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-ember"
+              />
+            )}
           </button>
         ))}
       </div>
@@ -892,13 +1024,20 @@ export default function TreinoPage() {
         </Card>
       )}
 
-      {regressionApplied && !saved && !draftRestored && (
-        <div className="rise mb-4 flex items-center gap-2 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">
-          <RotateCcw size={14} className="shrink-0" />
-          <span>
-            Voltando de pausa ({cycleSug?.daysSinceLastLift} dias) — cargas sugeridas a
-            ~90% da última vez. Sem heroísmo hoje.
+      {layoffNotice && !saved && !draftRestored && (
+        <div className="rise mb-4 flex items-start gap-2 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">
+          <RotateCcw size={14} className="mt-0.5 shrink-0" />
+          <span className="flex-1">
+            {cycleSug?.daysSinceStrength ?? cycleSug?.daysSinceLastLift} dias sem
+            musculação (avulso e jiu-jitsu contam) — os campos mantêm a carga da última
+            vez e a sugestão entra ~10% abaixo. Sem heroísmo hoje.
           </span>
+          <button
+            onClick={() => setLayoffNotice(false)}
+            className="shrink-0 font-mono text-[10px] uppercase tracking-wider underline underline-offset-4 transition-colors hover:text-bone"
+          >
+            estou bem
+          </button>
         </div>
       )}
 
@@ -922,10 +1061,27 @@ export default function TreinoPage() {
         </p>
       )}
 
-      {alreadyLoggedToday && !saved && (
-        <p className="rise mb-4 rounded border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">
-          Já existe registro desta sessão hoje — salvar de novo substitui.
-        </p>
+      {editingLog && !saved && !draftRestored && (
+        <div className="rise mb-4 flex items-start gap-2 rounded border border-zone/30 bg-zone/5 px-3 py-2 text-xs text-zone">
+          <Pencil size={14} className="mt-0.5 shrink-0" />
+          <span className="flex-1 leading-relaxed">
+            Editando o registro de hoje — o que já estava salvo veio junto. Adicione o
+            que faltou e salve por cima.
+          </span>
+          <button
+            onClick={() => {
+              setEditingLog(null)
+              setActiveExercises(session.exercises)
+              applyPrefill(buildPrefill(session, lastLog))
+              setNotes("")
+              startedAtRef.current = null
+              dirtyRef.current = true
+            }}
+            className="shrink-0 font-mono text-[10px] uppercase tracking-wider underline underline-offset-4 transition-colors hover:text-bone"
+          >
+            do zero
+          </button>
+        </div>
       )}
 
       {session.id === "bjjEngine" && !saved && (
@@ -1113,11 +1269,22 @@ export default function TreinoPage() {
         const lastEntry = previous?.entry
         const doneCount = (rows[ex.id] ?? []).filter((r) => r.done).length
         const exComplete = doneCount > 0 && doneCount === (rows[ex.id]?.length ?? 0)
-        const hitTop =
-          lastEntry &&
-          ex.unit === "reps" &&
-          lastEntry.sets.length >= ex.sets &&
-          lastEntry.sets.every((s) => s.reps >= ex.repsMax)
+        const advice = suggestions[ex.id]
+        const suggestion = advice?.suggestion
+        // só oferece "aplicar" quando a carga muda; manter carga é orientação,
+        // não algo para escrever no campo antes de a série acontecer. O botão
+        // some depois de aplicado — nada de convidar para o mesmo toque duas vezes
+        const canApply =
+          Boolean(suggestion && suggestion.delta !== 0) &&
+          (rows[ex.id] ?? []).some((row, i) => {
+            if (row.done) return false
+            const target = suggestion!.sets[i] ?? suggestion!.sets[suggestion!.sets.length - 1]
+            return target && parseFloat(row.weight.replace(",", ".")) !== target.weight
+          })
+        const fromOtherSession =
+          previous && previous.log.sessionId !== session.id
+            ? PLAN_BY_ID[previous.log.sessionId]?.title
+            : null
         return (
           <Card
             key={ex.id}
@@ -1166,18 +1333,114 @@ export default function TreinoPage() {
 
             {/* referência da última vez — destacada */}
             {lastEntry && (
-              <div className="mt-2 flex items-center gap-1.5 rounded bg-iron-2 px-2.5 py-1.5 font-mono text-[11px] text-steel">
+              <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded bg-iron-2 px-2.5 py-1.5 font-mono text-[11px] text-steel">
                 <History size={12} className="shrink-0 text-steel-dim" />
                 <span className="text-steel-dim">{shortDate(previous!.log.date)}:</span>
                 <span className="text-bone">
-                  {lastEntry.sets[0]?.weight ?? 0} kg × {lastEntry.sets.map((s) => s.reps).join("·")}
+                  {formatWeight(lastEntry.sets[0]?.weight ?? 0)} kg ×{" "}
+                  {lastEntry.sets.map((s) => s.reps).join("·")}
                 </span>
+                {fromOtherSession && (
+                  <span className="text-steel-dim">· {fromOtherSession}</span>
+                )}
               </div>
             )}
-            {hitTop && (
-              <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-ember/10 px-2 py-1 font-mono text-[11px] font-semibold text-ember">
-                <ChevronUp size={12} strokeWidth={3} /> Topo da faixa em todas — suba 2,5–5 kg
-              </p>
+
+            {/* sugestão de progressão — o campo continua com a carga da última
+                vez; subir, manter ou reentrar é decisão de um toque */}
+            {suggestion && (
+              <div
+                className={cn(
+                  "mt-2 rounded-lg border px-2.5 py-2",
+                  suggestion.advice === "progress"
+                    ? "border-ember/40 bg-ember/5"
+                    : suggestion.advice === "deload"
+                      ? "border-gold/40 bg-gold/5"
+                      : "border-seam bg-iron-2/40"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {suggestion.advice === "progress" ? (
+                    <TrendingUp size={13} className="shrink-0 text-ember" />
+                  ) : suggestion.advice === "deload" ? (
+                    <RotateCcw size={13} className="shrink-0 text-gold" />
+                  ) : (
+                    <Minus size={13} strokeWidth={3} className="shrink-0 text-steel-dim" />
+                  )}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 text-[12px] font-semibold",
+                      suggestion.advice === "progress"
+                        ? "text-ember"
+                        : suggestion.advice === "deload"
+                          ? "text-gold"
+                          : "text-steel"
+                    )}
+                  >
+                    {suggestion.summary}
+                  </span>
+                  {canApply && (
+                    <button
+                      onClick={() => applySuggestion(ex.id, suggestion)}
+                      className={cn(
+                        "shrink-0 rounded-md px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-coal transition-colors",
+                        suggestion.advice === "deload"
+                          ? "bg-gold hover:bg-amber-300"
+                          : "bg-ember hover:bg-ember-hot"
+                      )}
+                    >
+                      Aplicar
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-steel-dim">
+                  {suggestion.detail}
+                </p>
+                <button
+                  onClick={() =>
+                    setStepEditorFor(stepEditorFor === ex.id ? null : ex.id)
+                  }
+                  className="mt-1.5 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-steel-dim transition-colors hover:text-bone"
+                  aria-expanded={stepEditorFor === ex.id}
+                >
+                  <SlidersHorizontal size={11} />
+                  passo {formatWeight(advice.step)} kg ·{" "}
+                  {advice.manualStep ? "fixado" : "do histórico"}
+                </button>
+                {stepEditorFor === ex.id && (
+                  <div className="mt-1.5 border-t border-seam pt-2">
+                    <p className="text-[11px] leading-relaxed text-steel-dim">
+                      Quanto a menor carga deste aparelho sobe de uma vez? Máquina de
+                      pino costuma andar de 5 em 5 — aí 52,5 kg não existe.
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {STEP_OPTIONS.map((option) => (
+                        <button
+                          key={option}
+                          onClick={() => chooseStep(ex.id, option)}
+                          className={cn(
+                            "h-7 min-w-11 rounded border px-2 font-mono text-[11px] font-semibold transition-colors",
+                            advice.step === option
+                              ? "border-ember bg-ember/15 text-ember"
+                              : "border-seam text-steel hover:text-bone"
+                          )}
+                          aria-pressed={advice.step === option}
+                        >
+                          {formatWeight(option)}
+                        </button>
+                      ))}
+                      {advice.manualStep && (
+                        <button
+                          onClick={() => chooseStep(ex.id, null)}
+                          className="h-7 rounded border border-seam px-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim transition-colors hover:text-bone"
+                        >
+                          automático
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* séries — alvos de toque grandes */}
@@ -1558,13 +1821,17 @@ export default function TreinoPage() {
             <Save size={16} />
             {saving
               ? "Salvando…"
-              : session.kind === "mixed"
-                ? totals.setsTotal > 0
-                  ? `Salvar avulso · ${totals.setsDone}/${totals.setsTotal}`
-                  : "Salvar avulso"
-              : isLift
-                ? `Salvar treino · ${totals.setsDone}/${totals.setsTotal}`
-                : "Salvar treino"}
+              : editingLog && !saved
+                ? isLift
+                  ? `Atualizar treino · ${totals.setsDone}/${totals.setsTotal}`
+                  : "Atualizar treino"
+                : session.kind === "mixed"
+                  ? totals.setsTotal > 0
+                    ? `Salvar avulso · ${totals.setsDone}/${totals.setsTotal}`
+                    : "Salvar avulso"
+                  : isLift
+                    ? `Salvar treino · ${totals.setsDone}/${totals.setsTotal}`
+                    : "Salvar treino"}
           </button>
         </div>
       </div>

@@ -364,7 +364,7 @@ export default function Dashboard() {
               : cycle.reason === "recovery"
                 ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
                 : cycle.reason === "regression"
-                  ? `${cycle.daysSinceLastLift} dias sem musculação — repita ${sessionById(cycle.sessionId).title} com ~90% da carga.`
+                  ? `${cycle.daysSinceStrength ?? cycle.daysSinceLastLift} dias sem musculação (avulso conta) — repita ${sessionById(cycle.sessionId).title} sugerindo ~90% da carga.`
                   : cycle.reason === "start"
                     ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
                     : null

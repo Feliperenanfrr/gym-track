@@ -1,6 +1,6 @@
 import { SessionId, TrainingProgram, WorkoutLog } from "./types"
 import { intenseMinutes, zone2Minutes } from "./cardio"
-import { countsTowardProgramTarget } from "./plan"
+import { countsTowardProgramTarget, PLAN_BY_ID } from "./plan"
 import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
 
 /**
@@ -39,9 +39,16 @@ export interface CycleSuggestion {
   /** próximo lift da fila (= sessionId, exceto em recovery) */
   nextLiftId: SessionId
   reason: CycleReason
-  /** fator de carga para o prefill (regression = 0.9) */
+  /** fator de carga sugerido ao voltar de pausa (regression = 0.9) */
   loadFactor: number
+  /** dias desde o último treino DA FILA (Upper/Lower) — posição do ciclo */
   daysSinceLastLift: number | null
+  /**
+   * Dias desde a última musculação registrada, venha ela do avulso, do bloco
+   * de jiu-jitsu ou da fila. É esta a conta que decide "voltando de pausa":
+   * quem treinou avulso ontem não está voltando de nada.
+   */
+  daysSinceStrength: number | null
 }
 
 export interface CycleTodayView {
@@ -71,17 +78,42 @@ function dateKeyDaysAgo(today: Date, days: number): string {
 }
 
 /**
+ * Uma sessão com séries registradas É musculação, venha ela da fila
+ * Upper/Lower, do avulso ou do bloco de jiu-jitsu. Sessões de sala prescritas
+ * contam pela própria natureza, mesmo sem séries digitadas. Cardio, esporte e
+ * importações do Strava ficam de fora: fadiga de sala é outra coisa.
+ */
+export function isStrengthLog(workout: WorkoutLog): boolean {
+  if (PLAN_BY_ID[workout.sessionId]?.kind === "lift") return true
+  return workout.entries.some((entry) => entry.sets.length > 0)
+}
+
+function daysBetween(today: Date, dateKey: string): number {
+  const from = new Date(dateKey + "T00:00:00")
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return Math.max(0, Math.round((todayMid.getTime() - from.getTime()) / DAY_MS))
+}
+
+/**
  * Próximo treino da fila com regras de proteção:
  * 1. sucessor do último lift registrado;
- * 2. lifts ontem E anteontem (sem lift hoje) → recuperar antes do 3º dia
- *    seguido: sugere Z2/descanso;
- * 3. gap ≥ 7 dias → repetir o último lift com ~90% da carga;
+ * 2. musculação ontem E anteontem (sem musculação hoje) → recuperar antes do
+ *    3º dia seguido: sugere Z2/descanso;
+ * 3. ≥ 7 dias sem NENHUMA musculação → repetir o último lift, sugerindo ~90%;
  * 4. sem histórico → começo do ciclo (Upper A).
+ *
+ * A posição na fila vem só dos lifts prescritos (avulso não avança
+ * Upper/Lower), mas a conta de pausa olha qualquer musculação — senão uma
+ * semana de treinos avulsos aparecia como uma semana parado.
  */
 export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestion {
   const lifts = workouts
     .filter((w) => LIFT_CYCLE.includes(w.sessionId))
     .sort((a, b) => a.date.localeCompare(b.date))
+
+  const strengthDays = new Set(workouts.filter(isStrengthLog).map((w) => w.date))
+  const lastStrengthKey = [...strengthDays].sort().pop()
+  const daysSinceStrength = lastStrengthKey ? daysBetween(today, lastStrengthKey) : null
 
   if (lifts.length === 0) {
     return {
@@ -90,31 +122,31 @@ export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestio
       reason: "start",
       loadFactor: 1,
       daysSinceLastLift: null,
+      daysSinceStrength,
     }
   }
 
   const last = lifts[lifts.length - 1]
   const next = LIFT_CYCLE[(LIFT_CYCLE.indexOf(last.sessionId) + 1) % LIFT_CYCLE.length]
   const todayKey = toDateKey(today)
-  const lastDate = new Date(last.date + "T00:00:00")
-  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const daysSince = Math.max(0, Math.round((todayMid.getTime() - lastDate.getTime()) / DAY_MS))
+  const daysSince = daysBetween(today, last.date)
 
-  if (daysSince >= 7) {
+  if (daysSince >= 7 && (daysSinceStrength === null || daysSinceStrength >= 7)) {
     return {
       sessionId: last.sessionId,
       nextLiftId: last.sessionId,
       reason: "regression",
       loadFactor: 0.9,
       daysSinceLastLift: daysSince,
+      daysSinceStrength,
     }
   }
 
-  const liftOn = (key: string) => lifts.some((w) => w.date === key)
+  const strengthOn = (key: string) => strengthDays.has(key)
   if (
-    !liftOn(todayKey) &&
-    liftOn(dateKeyDaysAgo(today, 1)) &&
-    liftOn(dateKeyDaysAgo(today, 2))
+    !strengthOn(todayKey) &&
+    strengthOn(dateKeyDaysAgo(today, 1)) &&
+    strengthOn(dateKeyDaysAgo(today, 2))
   ) {
     return {
       sessionId: "cardioZ2",
@@ -122,6 +154,7 @@ export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestio
       reason: "recovery",
       loadFactor: 1,
       daysSinceLastLift: daysSince,
+      daysSinceStrength,
     }
   }
 
@@ -131,6 +164,7 @@ export function nextInCycle(workouts: WorkoutLog[], today: Date): CycleSuggestio
     reason: "next",
     loadFactor: 1,
     daysSinceLastLift: daysSince,
+    daysSinceStrength,
   }
 }
 

@@ -269,7 +269,7 @@ export const GOLDEN_RULES = [
   },
   {
     title: "Sobrecarga progressiva",
-    body: "Anote tudo. A cada semana, aumente carga OU repetições em pelo menos um exercício. Topo da faixa em todas as séries? Suba 2,5–5 kg.",
+    body: "Anote tudo. A cada semana, aumente carga OU repetições em pelo menos um exercício. Topo da faixa em todas as séries? Suba um passo do aparelho — o registro sugere qual e respeita o que a máquina tem.",
   },
   {
     title: "Técnica antes de carga",
