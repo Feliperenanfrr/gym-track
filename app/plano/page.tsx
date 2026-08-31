@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { AlertTriangle, Pencil } from "lucide-react"
-import { BjjPlanView } from "@/components/bjj-plan-view"
+import { EnginePlanView } from "@/components/engine-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
 import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
@@ -33,8 +33,8 @@ export default function PlanoPage() {
   }
 
   const hypertrophyPlan = planForProgram("hypertrophy", templates)
-  const bjjPlan = planForProgram("bjj", templates).filter((session) =>
-    session.id.startsWith("bjj")
+  const enginePlan = planForProgram("engine", templates).filter((session) =>
+    session.id.startsWith("engine")
   )
   // Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
   const weekStructure = hypertrophyPlan.filter((session) => session.weekday >= 1)
@@ -48,19 +48,19 @@ export default function PlanoPage() {
     />
   )
 
-  if (program === "bjj") {
+  if (program === "engine") {
     return (
       <main>
-        <PageHeader kicker="PREPARAÇÃO FÍSICA · JIU-JITSU" title="O Plano" />
+        <PageHeader kicker="VO₂MÁX E DÉFICIT · CICLO DE 12 SEMANAS" title="O Plano" />
         <ProgramTabs value={program} onChange={selectProgram} className="rise" />
         {error && (
           <Card className="mt-3 border-l-4 border-l-ember text-xs text-steel">
             Templates em modo local: {error}
           </Card>
         )}
-        <BjjPlanView
+        <EnginePlanView
           today={today}
-          sessions={bjjPlan}
+          sessions={enginePlan}
           onEditTemplate={(session) => setEditingId(session.id)}
         />
         {editor}
@@ -84,8 +84,9 @@ export default function PlanoPage() {
         <p className="text-sm leading-relaxed text-steel">
           <span className="font-semibold text-bone">Objetivo:</span> recomposição corporal
           — perder gordura mantendo músculo, shape estético e força funcional. Continua
-          disponível como bloco de base; desde agosto/2026 o objetivo principal é a
-          performance no tatame, na aba <span className="text-gold">Jiu-Jitsu</span>.
+          disponível como bloco de base; desde agosto/2026 o objetivo principal é
+          capacidade cardiorrespiratória e perda de gordura, na aba{" "}
+          <span className="text-zone">Motor</span>.
         </p>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[
@@ -211,7 +212,9 @@ export default function PlanoPage() {
         </p>
         <p className="mt-2 text-xs text-steel-dim">
           Após 4–6 semanas: troque uma sessão por intervalado na bike — 8 tiros de 1 min
-          forte / 2 min leve. Em 8–12 semanas a diferença no fôlego é gritante.
+          forte / 2 min leve. Se o fôlego é a prioridade, a aba{" "}
+          <span className="text-zone">Motor</span> já traz esse trabalho estruturado em
+          12 semanas.
         </p>
       </Card>
 

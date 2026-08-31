@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { BJJ_PLAN } from "../lib/bjj-plan"
+import { ENGINE_PLAN } from "../lib/engine-plan"
 import { normalizeTemplate, planVersionOf } from "../lib/use-workout-templates"
 
-const fallback = BJJ_PLAN.find((session) => session.id === "bjjEngine")!
+const fallback = ENGINE_PLAN.find((session) => session.id === "engineForceA")!
 
 function storedFrom(fallbackSession: typeof fallback, overrides: Record<string, unknown>) {
   return { ...fallbackSession, exercises: [...fallbackSession.exercises], ...overrides }
@@ -10,7 +10,7 @@ function storedFrom(fallbackSession: typeof fallback, overrides: Record<string, 
 
 describe("planVersionOf", () => {
   it("lê a versão de um template persistido", () => {
-    expect(planVersionOf({ planVersion: "academia-v2" })).toBe("academia-v2")
+    expect(planVersionOf({ planVersion: "motor-v1" })).toBe("motor-v1")
     expect(planVersionOf({})).toBe("")
     expect(planVersionOf(null)).toBe("")
     expect(planVersionOf({ planVersion: 42 })).toBe("")
@@ -31,7 +31,7 @@ describe("normalizeTemplate", () => {
   it("template sem versão (prescrição antiga) cai no default novo", () => {
     const stale = storedFrom(fallback, {
       planVersion: undefined,
-      title: "C · Motor de Rolagem",
+      title: "A · Tração & Pegada",
     })
     delete (stale as Record<string, unknown>).planVersion
     const normalized = normalizeTemplate(stale, fallback)
@@ -42,7 +42,7 @@ describe("normalizeTemplate", () => {
   })
 
   it("template de versão anterior cai no default novo", () => {
-    const stored = storedFrom(fallback, { planVersion: "v1-tatame" })
+    const stored = storedFrom(fallback, { planVersion: "academia-v2" })
     expect(normalizeTemplate(stored, fallback).exercises).toEqual(
       cloneExercises(fallback)
     )

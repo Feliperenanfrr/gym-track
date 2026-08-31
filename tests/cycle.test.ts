@@ -135,9 +135,9 @@ describe("nextInCycle", () => {
     expect(sug.sessionId).toBe("lowerA")
   })
 
-  it("sala do jiu-jitsu também conta como musculação", () => {
+  it("força do ciclo de motor também conta como musculação", () => {
     const sug = nextInCycle(
-      [lift(-9, "upperA"), strength(-2, "bjjPull")],
+      [lift(-9, "upperA"), strength(-2, "engineForceA")],
       new Date(2026, 7, 20)
     )
     expect(sug.reason).toBe("next")

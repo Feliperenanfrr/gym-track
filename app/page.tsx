@@ -15,7 +15,7 @@ import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/comp
 import { computeAchievements } from "@/lib/achievements"
 import { energyBalanceSeries, energyReport } from "@/lib/energy"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
-import { bjjPhaseFor, bjjTodayView } from "@/lib/bjj-plan"
+import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
 import {
   cycleTodayView,
   getScheduleMode,
@@ -62,7 +62,6 @@ const KEY_LIFTS: { id: string; label: string }[] = [
 ]
 
 const HYPERTROPHY_Z2_TARGET = { min: 60, max: 70 }
-const BJJ_Z2_TARGET = { min: 60, max: 120 }
 
 const READINESS_UI: Record<
   ReadinessLevel,
@@ -111,10 +110,20 @@ function compactSessionTitle(
   sessionId: SessionId,
   templateById: Partial<Record<SessionId, SessionPlan>>
 ): string {
+  if (sessionId === "engineForceA") return "FA"
+  if (sessionId === "engineForceB") return "FB"
+  if (sessionId === "engineMotor") return "4×4"
+  if (sessionId === "engineIntervals") return "30/30"
+  if (sessionId === "engineHome") return "CASA"
   if (sessionId === "bjjPull" || sessionId === "competitionLower") return "A"
   if (sessionId === "bjjBase" || sessionId === "competitionUpper") return "B"
   if (sessionId === "bjjEngine" || sessionId === "competitionPower") return "C"
-  if (sessionId === "bjjZ2" || sessionId === "competitionZ2" || sessionId === "cardioZ2")
+  if (
+    sessionId === "engineZ2" ||
+    sessionId === "bjjZ2" ||
+    sessionId === "competitionZ2" ||
+    sessionId === "cardioZ2"
+  )
     return "Z2"
   if (sessionId === "free") return "AVL"
   if (sessionId === "sport") return "ESP"
@@ -206,7 +215,7 @@ export default function Dashboard() {
     )
 
     // régua única: gráficos e cards usam a mesma janela em todos os modos
-    const rolling = program === "bjj" || mode === "ciclo"
+    const rolling = program === "engine" || mode === "ciclo"
     const weeks = buildWeeks(data, today, program, rolling)
     const thisWeek = weeks[weeks.length - 1]
     const lastWeek = weeks[weeks.length - 2]
@@ -311,26 +320,26 @@ export default function Dashboard() {
     const cycleView = cycleTodayView(data.workouts, today)
     const cycle = cycleView.suggestion
     const strip = last7Days(data.workouts, today)
-    const bjjView = bjjTodayView(data.workouts, today)
-    const bjjPhase = bjjPhaseFor(today)
+    const engineView = engineTodayView(data.workouts, today)
+    const enginePhase = enginePhaseFor(today)
 
     // card principal unificado entre os dois modos
     const headSession =
-      program === "bjj"
-        ? sessionById(bjjView.sessionId)
+      program === "engine"
+        ? sessionById(engineView.sessionId)
         : mode === "ciclo"
           ? sessionById(cycleView.sessionId)
           : todaySession
     const headDone =
-      program === "bjj" ? bjjView.done : mode === "ciclo" ? cycleView.done : todayDone
+      program === "engine" ? engineView.done : mode === "ciclo" ? cycleView.done : todayDone
     /**
      * Sessão que continua pendente mesmo com treino registrado hoje (avulso,
      * tatame ou Z2 no lugar do lift). No calendário fixo, o pendente é o
      * próprio treino do dia enquanto ele não for salvo.
      */
     const headPending =
-      program === "bjj"
-        ? bjjView.pendingSessionId
+      program === "engine"
+        ? engineView.pendingSessionId
         : mode === "ciclo"
           ? cycleView.pendingSessionId
           : todayDone
@@ -339,22 +348,22 @@ export default function Dashboard() {
     const headPendingSession =
       headPending && headPending !== headSession.id ? sessionById(headPending) : null
     const headKicker =
-      program === "bjj"
-        ? bjjView.done
-          ? "Preparação concluída hoje"
-          : "Próximo da preparação"
+      program === "engine"
+        ? engineView.done
+          ? "Treino registrado hoje"
+          : "Próximo do ciclo de motor"
         : mode === "ciclo"
           ? cycleView.done
             ? "Hoje concluído"
             : "Próximo do ciclo"
           : "Treino de hoje"
     const headNote =
-      program === "bjj"
+      program === "engine"
         ? headPendingSession
-          ? `Registrado hoje, mas a sala ainda pede ${headPendingSession.title}. Se a rola foi dura, ela pode esperar.`
-          : bjjView.done
-            ? `Próxima sessão-base: ${sessionById(bjjView.nextSessionId).title}. A sessão C continua opcional.`
-            : bjjPhase.guidance
+          ? `Registrado hoje, mas a semana ainda pede ${headPendingSession.title}. Cardio conta o dia; a sala é que segura a massa magra.`
+          : engineView.done
+            ? `Próxima sessão de sala: ${sessionById(engineView.nextSessionId).title}. O resto da semana é cardio.`
+            : enginePhase.guidance
         : mode !== "ciclo"
           ? null
           : headPendingSession
@@ -397,7 +406,7 @@ export default function Dashboard() {
       headPendingSession,
       headKicker,
       headNote,
-      bjjPhase,
+      enginePhase,
     }
   }, [data, templates, templateById, today, lift, mode, program])
 
@@ -435,8 +444,12 @@ export default function Dashboard() {
     day: "2-digit",
     month: "short",
   })
-  const rollingView = program === "bjj" || mode === "ciclo"
-  const z2Target = program === "bjj" ? BJJ_Z2_TARGET : HYPERTROPHY_Z2_TARGET
+  const rollingView = program === "engine" || mode === "ciclo"
+  // No ciclo de motor a meta de Zona 2 sobe a cada bloco; o intenso é contado
+  // à parte e não entra nesta faixa.
+  const z2Target =
+    program === "engine" ? view.enginePhase.z2Target : HYPERTROPHY_Z2_TARGET
+  const sessionTarget = program === "engine" ? view.enginePhase.weeklySessions : "5"
 
   return (
     <main>
@@ -489,7 +502,7 @@ export default function Dashboard() {
       <Card
         className={cn(
           "rise rise-1 relative overflow-hidden border-l-4",
-          program === "bjj" ? "border-l-gold" : "border-l-ember"
+          program === "engine" ? "border-l-zone" : "border-l-ember"
         )}
       >
         <div className="flex justify-between items-center">
@@ -507,10 +520,14 @@ export default function Dashboard() {
         </div>
         <h2 className="stencil mt-1 text-3xl text-bone">{view.headSession.title}</h2>
         <p className="mt-0.5 text-sm text-steel">{view.headSession.subtitle}</p>
-        {program === "bjj" && (
-          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
-            {view.bjjPhase.label}
-            <span className="ml-2 text-steel-dim">{view.bjjPhase.dates}</span>
+        {program === "engine" && (
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-zone">
+            {view.enginePhase.label}
+            <span className="ml-2 text-steel-dim">
+              {view.enginePhase.cycleWeek !== null
+                ? `semana ${view.enginePhase.cycleWeek}/12`
+                : view.enginePhase.dates}
+            </span>
           </p>
         )}
         <p className="mt-2 font-mono text-xs text-steel-dim">
@@ -548,8 +565,8 @@ export default function Dashboard() {
                   ? "border border-seam text-steel hover:border-steel hover:text-bone"
                   : cn(
                       "text-coal",
-                      program === "bjj"
-                        ? "bg-gold hover:bg-amber-300"
+                      program === "engine"
+                        ? "bg-zone hover:bg-teal-300"
                         : "bg-ember hover:bg-ember-hot"
                     )
               )}
@@ -578,9 +595,7 @@ export default function Dashboard() {
               <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">Sessões</p>
               <p className="score text-2xl text-bone">
                 {view.weekSummary.sessions}
-                <span className="text-base text-steel-dim">
-                  {program === "bjj" ? "/2–3" : "/5"}
-                </span>
+                <span className="text-base text-steel-dim">/{sessionTarget}</span>
               </p>
             </div>
             <div>
@@ -667,6 +682,7 @@ export default function Dashboard() {
                 d.done.every(
                   (s) =>
                     s === "cardioZ2" ||
+                    s === "engineZ2" ||
                     s === "bjjZ2" ||
                     s === "competitionZ2" ||
                     s === "sport"
@@ -888,12 +904,10 @@ export default function Dashboard() {
           value={
             <>
               {view.thisWeek.sessions}
-              <span className="text-lg text-steel-dim">
-                {program === "bjj" ? "/2–3" : "/5"}
-              </span>
+              <span className="text-lg text-steel-dim">/{sessionTarget}</span>
             </>
           }
-          detail={`${program === "bjj" ? "meta: A + B · C só se sobrar energia" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
+          detail={`${program === "engine" ? "meta: 2 força + 1–2 intenso + 3–4 Z2" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"
@@ -910,8 +924,8 @@ export default function Dashboard() {
           detail={
             view.thisWeek.intense > 0
               ? `meta ${z2Target.min}–${z2Target.max}′ · +${view.thisWeek.intense}′ intenso à parte`
-              : program === "bjj"
-                ? `meta ${z2Target.min}–${z2Target.max} min · ajuste ao tatame`
+              : program === "engine"
+                ? `meta ${z2Target.min}–${z2Target.max} min · ${view.enginePhase.label.replace("Bloco ", "bloco ")}`
                 : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
           }
           accent="zone"
@@ -1122,8 +1136,8 @@ export default function Dashboard() {
           target={z2Target.min}
         />
         <p className="mt-2 text-xs text-steel">
-          {program === "bjj"
-            ? "2–3 sessões de 25–35′, FC 125–140. É o fôlego que sobra no terceiro round."
+          {program === "engine"
+            ? "3–4 sessões de 35–60′ a 122–138 bpm. É o volume que decide o gasto da semana e a gordura visceral — o intenso entra à parte, 1–2×."
             : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">

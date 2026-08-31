@@ -88,7 +88,7 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
         </div>
         <div>
           <b>Programa selecionado</b>
-          <p>{report.program === "bjj" ? "Preparação para jiu-jitsu" : "Hipertrofia"}</p>
+          <p>{report.program === "engine" ? "Motor aeróbico e déficit" : "Hipertrofia"}</p>
         </div>
       </div>
       <p className="report-note">

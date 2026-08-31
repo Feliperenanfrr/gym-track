@@ -46,7 +46,7 @@ export function BlockReportSheet({ report }: { report: BlockReport }) {
         title={`Fechamento · ${report.period.label}`}
         period={`${formatFullDate(report.period.from)} – ${formatFullDate(report.period.to)}`}
         extra={`${report.weeks.toLocaleString("pt-BR")} semanas · programa ${
-          report.program === "bjj" ? "jiu-jitsu" : "hipertrofia"
+          report.program === "engine" ? "motor aeróbico" : "hipertrofia"
         }`}
       />
 

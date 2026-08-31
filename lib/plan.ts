@@ -1,8 +1,8 @@
-import { BJJ_GYM_SESSION_IDS, BJJ_PLAN } from "./bjj-plan"
+import { ENGINE_PLAN, ENGINE_SESSION_IDS } from "./engine-plan"
 import { LEGACY_SESSIONS } from "./legacy-plan"
 import { SessionId, SessionPlan, TrainingProgram } from "./types"
 
-export { BJJ_PLAN } from "./bjj-plan"
+export { ENGINE_PLAN } from "./engine-plan"
 
 /**
  * Plano de Treino — Felipe (Junho/2026)
@@ -126,7 +126,7 @@ export const PLAN: SessionPlan[] = [
     kind: "sport",
     accent: "zone",
     description:
-      "Tatame e jogos. Registre aqui a rola — é o treino principal do bloco de jiu-jitsu e o seu intervalado “natural”.",
+      "Jogos, tatame e qualquer prática esportiva. Os minutos contam como esporte, fora das metas de Zona 2 e de alta intensidade — bom para o gasto e para a cabeça, mas não substitui o motor.",
     exercises: [],
   },
   {
@@ -143,7 +143,7 @@ export const PLAN: SessionPlan[] = [
 ]
 
 /** Sessões vivas: alimentam seleção, templates persistidos e catálogo. */
-export const ALL_PLAN_SESSIONS = [...PLAN, ...BJJ_PLAN]
+export const ALL_PLAN_SESSIONS = [...PLAN, ...ENGINE_PLAN]
 
 /**
  * Sessão apenas de histórico. Um registro por dia contém todos os blocos
@@ -170,11 +170,11 @@ const LOOKUP_SESSIONS = [...LEGACY_SESSIONS, STRAVA_SESSION, ...ALL_PLAN_SESSION
 
 /**
  * Sessões disponíveis no registro para cada objetivo. Avulso e esporte são
- * compartilhados; o bloco de jiu-jitsu permanece separado do Upper/Lower.
+ * compartilhados; o ciclo de motor permanece separado do Upper/Lower.
  */
 const HYPERTROPHY_PLAN_IDS: SessionId[] = PLAN.map((session) => session.id)
-const BJJ_PLAN_IDS: SessionId[] = [
-  ...BJJ_PLAN.map((session) => session.id),
+const ENGINE_PLAN_IDS: SessionId[] = [
+  ...ENGINE_PLAN.map((session) => session.id),
   "free",
   "sport",
 ]
@@ -184,7 +184,7 @@ export function planForProgram(
   templates: SessionPlan[] = ALL_PLAN_SESSIONS
 ): SessionPlan[] {
   const byId = new Map(templates.map((session) => [session.id, session]))
-  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : BJJ_PLAN_IDS
+  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : ENGINE_PLAN_IDS
   return ids.map((id) => byId.get(id) ?? PLAN_BY_ID[id])
 }
 
@@ -218,6 +218,13 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "lowerA",
   "upperB",
   "lowerB",
+  "engineForceA",
+  "engineForceB",
+  "engineMotor",
+  "engineIntervals",
+  "engineZ2",
+  "engineHome",
+  // protocolo aposentado: continua contando no histórico já registrado
   "bjjPull",
   "bjjBase",
   "bjjEngine",
@@ -245,20 +252,25 @@ const HYPERTROPHY_TARGET_SESSION_IDS = new Set<SessionId>([
   "free",
 ])
 
-const BJJ_TARGET_SESSION_IDS = new Set<SessionId>([...BJJ_GYM_SESSION_IDS, "free"])
+/**
+ * No ciclo de motor a meta semanal é a semana inteira, não só a sala: 2
+ * sessões de força, 1 a 2 de alta intensidade e 3 a 4 de Zona 2. Por isso
+ * todas as sessões prescritas contam, mais o avulso — que é academia
+ * registrada fora da prescrição.
+ */
+const ENGINE_TARGET_SESSION_IDS = new Set<SessionId>([...ENGINE_SESSION_IDS, "free"])
 
 /**
- * Frequência exibida no painel: 5 sessões na hipertrofia ou 2–3 de sala no
- * jiu-jitsu. Avulso conta nos dois — é academia registrada fora da prescrição.
- * Esporte fica fora: o tatame e o jogo são medidos em minutos, não em sessões
- * de sala.
+ * Frequência exibida no painel: 5 sessões na hipertrofia ou 5–6 no ciclo de
+ * motor. Avulso conta nos dois — é academia registrada fora da prescrição.
+ * Esporte fica fora: jogo e tatame são medidos em minutos, não em sessões.
  */
 export function countsTowardProgramTarget(
   sessionId: SessionId,
   program: TrainingProgram
 ): boolean {
-  return program === "bjj"
-    ? BJJ_TARGET_SESSION_IDS.has(sessionId)
+  return program === "engine"
+    ? ENGINE_TARGET_SESSION_IDS.has(sessionId)
     : HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
 }
 
@@ -277,11 +289,11 @@ export const GOLDEN_RULES = [
   },
   {
     title: "Não pule o cardio",
-    body: "Para o SEU objetivo, a Zona 2 de terça é tão inegociável quanto o treino de segunda. É ela que mata a tontura e devolve o fôlego entre rounds.",
+    body: "Para o SEU objetivo, a Zona 2 de terça é tão inegociável quanto o treino de segunda. É ela que mata a tontura e devolve o fôlego.",
   },
   {
-    title: "O tatame manda na semana",
-    body: "Desde agosto/2026 o jiu-jitsu é o objetivo, não o lazer. A academia serve ao tatame: se a sala custar qualidade técnica no dia seguinte, a sala é que cede.",
+    title: "O motor manda na semana",
+    body: "Desde agosto/2026 o objetivo principal é VO₂máx e perda de gordura, na aba Motor. Esta divisão continua aqui como bloco de base — se você voltar a ela, é a Zona 2 que decide o resultado, não a tonelagem.",
   },
   {
     title: "Durma 7–9 horas",
@@ -300,7 +312,7 @@ export const NUTRITION_GUIDELINES = [
 export const TIMELINE = [
   { period: "Semanas 1–4", expect: "Cardio humilhante para o ego de quem levanta 160 kg. Normal. Foque em constância, não intensidade." },
   { period: "Semanas 4–6", expect: "Introduza o intervalado (1x/semana no lugar de uma Zona 2): 8 tiros de 1 min forte / 2 min leve na bike." },
-  { period: "Semanas 6–10", expect: "Rola e futsal ficam confortáveis. Tontura deve ter sumido (se persistir, volte ao médico)." },
+  { period: "Semanas 6–10", expect: "Jogo e esforço do dia a dia ficam confortáveis. Tontura deve ter sumido (se persistir, volte ao médico)." },
   { period: "Meses 3–6", expect: "Recomposição visível: menos cintura, mais ombro. Força estabiliza após queda inicial leve." },
-  { period: "Mês 6+", expect: "Reavalie: bioimpedância, ajuste de calorias, possível troca de divisão. Aqui você já corre 5 km e aguenta a aula inteira de jiu-jitsu sem apagar." },
+  { period: "Mês 6+", expect: "Reavalie: bioimpedância, ajuste de calorias, possível troca de divisão. Aqui você já corre 5 km sem apagar." },
 ]

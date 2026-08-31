@@ -119,7 +119,7 @@ describe("cardioRowsToBlocks", () => {
     ).toEqual([{ minutes: 60, avgBpm: undefined, mode: "Cardio", purpose: "sport" }])
   })
 
-  it("forceZone2 fixa a finalidade da Zona 2 do jiu-jitsu", () => {
+  it("forceZone2 fixa a finalidade da Zona 2 longa do ciclo de motor", () => {
     const blocks = cardioRowsToBlocks([row({ minutes: "30", purpose: "intense" })], {
       forceZone2: true,
     })

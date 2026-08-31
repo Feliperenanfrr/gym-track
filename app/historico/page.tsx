@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation"
 import { ArrowLeft, Check, FileUp, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
-import { isBjjSession } from "@/lib/bjj-plan"
+import { isEngineSession } from "@/lib/engine-plan"
 import {
   cardioBlocks,
   cardioPurposeOf,
   describeCardio,
   totalCardioMinutes,
 } from "@/lib/cardio"
-import { isLegacySession } from "@/lib/legacy-plan"
+import { legacyProgramOf } from "@/lib/legacy-plan"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
@@ -687,6 +687,7 @@ export default function Historico() {
             const editing = editingId === w.id
             const cardioSummary = describeCardio(w)
             const kcalEst = sessionKcal(w, weightKgOn(data.body, w.date))
+            const legacyProgram = legacyProgramOf(w.sessionId)
 
             return (
               <Card key={w.id} className={cn("rise", `rise-${Math.min(6, i + 1)}`, "relative overflow-hidden")}>
@@ -698,14 +699,21 @@ export default function Historico() {
                     <h3 className="stencil mt-1 text-xl text-bone">
                       {session?.title || "Sessão Desconhecida"}
                     </h3>
-                    {isBjjSession(w.sessionId) && (
-                      <span className="mt-1 inline-flex rounded-full border border-gold/30 bg-gold/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-gold">
-                        jiu-jitsu
+                    {isEngineSession(w.sessionId) && (
+                      <span className="mt-1 inline-flex rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zone">
+                        motor
                       </span>
                     )}
-                    {isLegacySession(w.sessionId) && (
-                      <span className="mt-1 inline-flex rounded-full border border-seam bg-iron-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
-                        flag football
+                    {legacyProgram && (
+                      <span
+                        className={cn(
+                          "mt-1 inline-flex rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+                          legacyProgram === "jiu-jitsu"
+                            ? "border border-gold/30 bg-gold/5 text-gold"
+                            : "border border-seam bg-iron-2 text-steel-dim"
+                        )}
+                      >
+                        {legacyProgram === "jiu-jitsu" ? "jiu-jitsu" : "flag football"}
                       </span>
                     )}
                     <p className="mt-1 font-mono text-xs text-steel-dim">

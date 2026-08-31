@@ -1,6 +1,6 @@
 "use client"
 
-import { Dumbbell, Swords } from "lucide-react"
+import { Dumbbell, HeartPulse } from "lucide-react"
 import { TrainingProgram } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -8,13 +8,13 @@ const PROGRAMS: {
   id: TrainingProgram
   label: string
   detail: string
-  icon: typeof Swords
+  icon: typeof Dumbbell
 }[] = [
   {
-    id: "bjj",
-    label: "Jiu-Jitsu",
-    detail: "objetivo atual",
-    icon: Swords,
+    id: "engine",
+    label: "Motor",
+    detail: "VO₂máx e déficit",
+    icon: HeartPulse,
   },
   {
     id: "hypertrophy",
@@ -46,7 +46,7 @@ export function ProgramTabs({
     >
       {PROGRAMS.map(({ id, label, detail, icon: Icon }) => {
         const active = value === id
-        const bjj = id === "bjj"
+        const engine = id === "engine"
         return (
           <button
             key={id}
@@ -57,8 +57,8 @@ export function ProgramTabs({
             className={cn(
               "flex items-center justify-center rounded-md border border-transparent font-semibold transition-colors",
               compact ? "gap-1.5 px-2 py-2 text-xs" : "gap-2 px-3 py-2.5 text-sm",
-              active && bjj && "border-gold/30 bg-gold/10 text-gold",
-              active && !bjj && "border-ember/30 bg-ember/10 text-ember",
+              active && engine && "border-zone/40 bg-zone/10 text-zone",
+              active && !engine && "border-ember/30 bg-ember/10 text-ember",
               !active && "text-steel-dim hover:text-bone"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}

@@ -51,12 +51,15 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   "db-ohp": "Ombro",
   crossover: "Peito",
   hipthrust: "Posterior/Glúteo",
-  // Jiu-jitsu (ago/2026) — pegada, pescoço e quadril
+  // Jiu-jitsu (ago/2026, aposentado) — pegada, pescoço e quadril
   shrug: "Pescoço",
   "wrist-curl": "Braço",
   "push-press": "Ombro",
   "hip-90-90": "Posterior/Glúteo",
   "back-extension": "Posterior/Glúteo",
+  // Motor aeróbico (ago/2026) — máquinas das duas sessões de corpo inteiro
+  "machine-shoulder-press": "Ombro",
+  "machine-crunch": "Core",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */
