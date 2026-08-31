@@ -146,11 +146,27 @@ export const PLAN: SessionPlan[] = [
 export const ALL_PLAN_SESSIONS = [...PLAN, ...BJJ_PLAN]
 
 /**
+ * Sessão apenas de histórico. Um registro por dia contém todos os blocos
+ * importados do Strava daquele dia; não aparece no seletor e não avança o
+ * ciclo de musculação.
+ */
+const STRAVA_SESSION: SessionPlan = {
+  id: "strava",
+  title: "Strava",
+  subtitle: "Caminhada / corrida importada",
+  weekday: 0,
+  duration: "Importada",
+  kind: "cardio",
+  accent: "zone",
+  exercises: [],
+}
+
+/**
  * Sessões vivas + aposentadas. Só para resolver nome/prescrição de registros
  * antigos (Histórico); as ativas vêm por último para vencer no caso de ids
  * de exercício repetidos entre protocolos.
  */
-const LOOKUP_SESSIONS = [...LEGACY_SESSIONS, ...ALL_PLAN_SESSIONS]
+const LOOKUP_SESSIONS = [...LEGACY_SESSIONS, STRAVA_SESSION, ...ALL_PLAN_SESSIONS]
 
 /**
  * Sessões disponíveis no registro para cada objetivo. Avulso e esporte são

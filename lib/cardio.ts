@@ -1,4 +1,5 @@
 import { CardioLog, CardioPurpose, CardioRow, SessionId, WorkoutLog } from "./types"
+import { formatActivityDuration } from "./strava"
 
 /** Fonte de cardio de um treino: a lista nova ou o bloco único antigo. */
 type CardioSource = Pick<WorkoutLog, "cardio" | "cardios">
@@ -62,12 +63,23 @@ export const CARDIO_PURPOSE_LABEL: Record<CardioPurpose, string> = {
 /** Resumo em uma linha: "15 min Bike (Zona 2) · 20 min Corrida (intenso)" */
 export function describeCardio(workout: WorkoutLog): string {
   return cardioBlocks(workout)
-    .map(
-      (block) =>
-        `${block.minutes} min ${block.mode} (${
-          CARDIO_PURPOSE_LABEL[cardioPurposeOf(block, workout.sessionId)]
-        })`
-    )
+    .map((block) => {
+      const purpose = CARDIO_PURPOSE_LABEL[cardioPurposeOf(block, workout.sessionId)]
+      if (block.source !== "strava") return `${block.minutes} min ${block.mode} (${purpose})`
+      const details = [
+        block.durationSeconds !== undefined
+          ? formatActivityDuration(block.durationSeconds)
+          : `${block.minutes} min`,
+        block.distanceKm !== undefined
+          ? `${block.distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} km`
+          : "",
+        block.steps !== undefined ? `${block.steps.toLocaleString("pt-BR")} passos` : "",
+        block.elevationGainM !== undefined
+          ? `+${Math.round(block.elevationGainM).toLocaleString("pt-BR")} m`
+          : "",
+      ].filter(Boolean)
+      return `${block.title ?? block.mode} · ${details.join(" · ")} (${purpose})`
+    })
     .join(" · ")
 }
 

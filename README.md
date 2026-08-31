@@ -43,6 +43,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
   espelhando o primeiro bloco, para os registros anteriores à migration 0007.
 - `workouts.duration_min` é a sessão inteira: sala medida (1ª série → salvar)
   mais todos os blocos de cardio.
+- Caminhadas e corridas do Strava podem ser importadas por CSV no Histórico.
+  Cada bloco preserva duração em segundos, distância, passos, elevação, horário,
+  local e título dentro de `workouts.cardios`; atividades do mesmo dia são
+  agrupadas na sessão histórica `strava` e reimportações não duplicam dados.
+- Calorias são estimadas com o peso da época. Caminhada/corrida usa ritmo,
+  cadência e elevação quando disponíveis; musculação usa duração real e MET
+  ajustado pelo sRPE. O app exibe uma faixa porque não substitui calorimetria.
 - `workout_templates.template` guarda o plano editável de cada sessão. O treino do
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.

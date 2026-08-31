@@ -5,7 +5,7 @@ import {
   totalCardioMinutes,
   zone2Minutes,
 } from "./cardio"
-import { GymData, TrainingProgram, WorkoutLog } from "./types"
+import { CardioLog, GymData, SessionId, TrainingProgram, WorkoutLog } from "./types"
 import { bestE1RM, fromDateKey, toDateKey, workoutVolume } from "./utils"
 
 /* ------------------------------------------------------------------ */
@@ -227,7 +227,7 @@ export interface WeeklySummary {
 /* ------------------------------------------------------------------ */
 
 // METs aproximados (Compendium of Physical Activities)
-const MET_Z2 = 6.5 // bike/esteira em ritmo moderado
+const MET_Z2 = 6.5 // fallback quando a modalidade não traz velocidade/distância
 const MET_INTENSE = 8.5 // corda, tiros ou natação vigorosa
 const MET_SPORT = 8 // jiu-jitsu (aula: drill + rola), futsal e flag recreativos
 const LIFT_SESSION_MIN = 60 // fallback p/ treinos sem duração medida
@@ -239,13 +239,15 @@ const KCAL_HIGH_FACTOR = 1.25
 /**
  * MET da musculação ancorado no esforço percebido (sRPE) em vez de fixar
  * "vigoroso": sRPE baixo ≈ sessão leve/moderada, alto ≈ quase falha.
- * Tabela Compendium: leve ~3 · moderado ~4 · forte ~5 · vigoroso ~6.
- * Sem sRPE (registros antigos), mantém os 5 METs de sempre.
+ * Compendium 2024: sessão típica com vários exercícios e 8–15 reps = 3,5;
+ * agachamento/terra lento ou explosivo = 5; musculação vigorosa = 6.
+ * Sem sRPE, usa o padrão mais representativo de hipertrofia (3,5), em vez
+ * de presumir que a sessão inteira foi vigorosa — inclusive nos descansos.
  */
 export function liftMetForSrpe(srpe?: number): number {
-  if (!srpe || srpe <= 0) return 5
+  if (!srpe || srpe <= 0) return 3.5
   if (srpe <= 3) return 3
-  if (srpe <= 5) return 4
+  if (srpe <= 5) return 3.5
   if (srpe <= 7) return 5
   return 6
 }
@@ -282,13 +284,97 @@ const MET_BY_PURPOSE = {
   sport: MET_SPORT,
 } as const
 
+function cardioDurationMinutes(block: CardioLog): number {
+  return block.durationSeconds !== undefined && block.durationSeconds > 0
+    ? block.durationSeconds / 60
+    : block.minutes
+}
+
+function levelWalkingMet(speedKmh: number): number {
+  if (speedKmh < 3.2) return 2.3
+  if (speedKmh < 4) return 2.8
+  if (speedKmh < 4.8) return 3.5
+  if (speedKmh < 5.6) return 3.8
+  if (speedKmh < 6.4) return 4.8
+  if (speedKmh < 7.2) return 5.5
+  if (speedKmh < 8) return 7
+  return 8.5
+}
+
+function levelRunningMet(speedKmh: number): number {
+  if (speedKmh < 6.4) return 6
+  if (speedKmh < 6.9) return 6.5
+  if (speedKmh < 8) return 7.8
+  if (speedKmh < 8.8) return 8.5
+  if (speedKmh < 9.6) return 9
+  if (speedKmh < 10.7) return 9.3
+  if (speedKmh < 11.3) return 10.5
+  if (speedKmh < 12) return 11
+  if (speedKmh < 12.9) return 11.8
+  if (speedKmh < 13.8) return 12
+  if (speedKmh < 14.5) return 12.5
+  if (speedKmh < 15.3) return 13
+  return 14.8
+}
+
+/**
+ * MET de um bloco de cardio.
+ *
+ * Para caminhada/corrida importada, usa os dados que o Strava realmente
+ * fornece em vez de classificar toda caminhada como 6,5 MET:
+ * - caminhada com passos: equação de cadência de Moore et al. (2021), mais
+ *   o componente vertical da equação ACSM quando há ganho de elevação;
+ * - sem passos: faixa de velocidade do Compendium 2024;
+ * - corrida: faixa de velocidade do Compendium 2024;
+ * - elevação: componente vertical ACSM usando ganho/distância como inclinação
+ *   média positiva aproximada (limitada a 15%, pois não temos o traçado bruto).
+ */
+export function cardioMet(block: CardioLog, sessionId: SessionId): number {
+  const purpose = cardioPurposeOf(block, sessionId)
+  const mode = block.mode
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+  const walk = /caminh|walk|hike|trilha/.test(mode)
+  const run = /corrida|running|run|jog/.test(mode)
+  const duration = cardioDurationMinutes(block)
+  const distance = block.distanceKm
+  const speedKmh = distance && duration > 0 ? distance / (duration / 60) : 0
+  const speedMMin = speedKmh * (1000 / 60)
+  const grade =
+    distance && distance > 0 && block.elevationGainM && block.elevationGainM > 0
+      ? Math.min(0.15, block.elevationGainM / (distance * 1000))
+      : 0
+
+  if (walk) {
+    let baseMet = speedKmh > 0 ? levelWalkingMet(speedKmh) : 3.8
+    const cadence = block.steps && duration > 0 ? block.steps / duration : 0
+    if (cadence >= 40 && cadence <= 200) {
+      const vo2 = 1.811 + 0.02014 * cadence + 0.0007427 * cadence ** 2
+      baseMet = vo2 / 3.5
+    }
+    // ACSM walking: componente vertical = 1,8 × velocidade(m/min) × grade.
+    const verticalMet = speedMMin > 0 ? (1.8 * speedMMin * grade) / 3.5 : 0
+    return Math.round(Math.min(12, Math.max(2, baseMet + verticalMet)) * 10) / 10
+  }
+
+  if (run) {
+    const baseMet = speedKmh > 0 ? levelRunningMet(speedKmh) : purpose === "zone2" ? 7.5 : 8.5
+    // ACSM running: componente vertical = 0,9 × velocidade(m/min) × grade.
+    const verticalMet = speedMMin > 0 ? (0.9 * speedMMin * grade) / 3.5 : 0
+    return Math.round(Math.min(20, Math.max(4, baseMet + verticalMet)) * 10) / 10
+  }
+
+  return MET_BY_PURPOSE[purpose]
+}
+
 /**
  * Estimativa calórica de UM treino por METs:
  * - musculação usa a duração REAL da parte de sala (duração total da sessão
  *   menos os minutos de cardio) e o MET adaptado pelo sRPE; sem duração
  *   medida (registro antigo/retroativo), cai para 60 min;
- * - cada bloco de cardio entra com o MET da sua própria finalidade, então
- *   bike em Z2 + tiros na esteira no mesmo treino não viram uma média falsa.
+ * - caminhada/corrida com dados do Strava usa velocidade, cadência e elevação;
+ *   os demais blocos usam o MET de sua finalidade.
  * null sem peso — a equação do MET depende da massa corporal real.
  */
 export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | null {
@@ -316,12 +402,13 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
   }
   let longestBlockMin = 0
   for (const block of blocks) {
-    const blockMet = MET_BY_PURPOSE[cardioPurposeOf(block, w.sessionId)]
-    total += block.minutes * kcalPerMin(blockMet)
-    minutes += block.minutes
+    const blockMet = cardioMet(block, w.sessionId)
+    const blockMinutes = cardioDurationMinutes(block)
+    total += blockMinutes * kcalPerMin(blockMet)
+    minutes += blockMinutes
     // sem musculação, o MET exibido no tooltip é o do bloco mais longo
-    if (!isLiftPart && block.minutes > longestBlockMin) {
-      longestBlockMin = block.minutes
+    if (!isLiftPart && blockMinutes > longestBlockMin) {
+      longestBlockMin = blockMinutes
       metUsed = blockMet
     }
   }
@@ -333,7 +420,7 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
     low: Math.max(10, Math.round((mid * KCAL_LOW_FACTOR) / 10) * 10),
     high: Math.round((mid * KCAL_HIGH_FACTOR) / 10) * 10,
     met: Math.round(metUsed * 10) / 10,
-    minutes,
+    minutes: Math.round(minutes * 10) / 10,
   }
 }
 
@@ -355,12 +442,11 @@ export function weeklySummary(
 
   // kcal só com peso real: o MET depende da massa corporal.
   // Cada sessão soma sua própria estimativa (duração real + sRPE).
-  const weightKg = [...data.body].reverse().find((b) => (b.weightKg ?? 0) > 0)?.weightKg
   let midTotal = 0
   let lowTotal = 0
   let highTotal = 0
   for (const w of ws) {
-    const est = sessionKcal(w, weightKg)
+    const est = sessionKcal(w, weightKgOn(data.body, w.date))
     if (!est) continue
     midTotal += est.mid
     lowTotal += est.low
@@ -371,7 +457,9 @@ export function weeklySummary(
     .filter((p) => p.date >= start && p.date <= end)
     .map((p) => p.exerciseName ?? EXERCISES_BY_ID[p.exerciseId]?.name ?? p.exerciseId)
 
-  const anyEstimate = ws.some((w) => sessionKcal(w, weightKg) !== null)
+  const anyEstimate = ws.some(
+    (w) => sessionKcal(w, weightKgOn(data.body, w.date)) !== null
+  )
   return {
     sessions,
     prs: [...new Set(prNames)],
