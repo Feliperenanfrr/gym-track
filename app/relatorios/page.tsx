@@ -4,11 +4,13 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Printer } from "lucide-react"
 import { BlockReportSheet } from "@/components/report/block-report"
+import { CoachReportSheet } from "@/components/report/coach-report"
 import { NutritionReportSheet } from "@/components/report/nutrition-report"
 import { SheetPreview } from "@/components/report/report-ui"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import {
   blockReport,
+  coachReport,
   nutritionReport,
   reportPeriods,
   type ReportPeriod,
@@ -19,13 +21,18 @@ import { useTrainingProgram } from "@/lib/use-training-program"
 import { cn } from "@/lib/utils"
 import "./report.css"
 
-type ReportKind = "bloco" | "nutricao"
+type ReportKind = "bloco" | "preparador" | "nutricao"
 
 const KINDS: { id: ReportKind; label: string; hint: string }[] = [
   {
     id: "bloco",
     label: "Fechamento de bloco",
     hint: "Antes × depois do mesociclo: força, composição, volume e energia.",
+  },
+  {
+    id: "preparador",
+    label: "Preparador físico",
+    hint: "Carga, desempenho, condicionamento, recuperação e qualidade dos dados.",
   },
   {
     id: "nutricao",
@@ -55,9 +62,13 @@ export default function RelatoriosPage() {
 
   const report = useMemo(() => {
     if (!data || !period || !program) return null
-    return kind === "bloco"
-      ? { kind: "bloco" as const, value: blockReport(data, period, program) }
-      : { kind: "nutricao" as const, value: nutritionReport(data, period, program) }
+    if (kind === "bloco") {
+      return { kind: "bloco" as const, value: blockReport(data, period, program) }
+    }
+    if (kind === "preparador") {
+      return { kind: "preparador" as const, value: coachReport(data, period, program) }
+    }
+    return { kind: "nutricao" as const, value: nutritionReport(data, period, program) }
   }, [data, kind, period, program])
 
   return (
@@ -84,7 +95,7 @@ export default function RelatoriosPage() {
           >
             Relatório
           </p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {KINDS.map((option) => (
               <button
                 key={option.id}
@@ -213,6 +224,8 @@ export default function RelatoriosPage() {
         <SheetPreview>
           {report.kind === "bloco" ? (
             <BlockReportSheet report={report.value} />
+          ) : report.kind === "preparador" ? (
+            <CoachReportSheet report={report.value} />
           ) : (
             <NutritionReportSheet report={report.value} />
           )}

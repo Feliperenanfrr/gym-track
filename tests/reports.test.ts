@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   blockReport,
   bodyProgress,
+  coachReport,
   compareWindows,
   daysInPeriod,
   liftProgress,
@@ -336,5 +337,52 @@ describe("nutritionReport", () => {
     expect(bare.energy.budget).toBeNull()
     expect(bare.energy.intake).toBeNull()
     expect(bare.hydration.avgMl).toBe(3200)
+  })
+})
+
+describe("coachReport", () => {
+  const report = coachReport(fullData(), period, "hypertrophy")
+
+  it("separa exposição, carga e qualidade sem promover calorias a desfecho", () => {
+    expect(report.training.sessions).toBeGreaterThan(0)
+    expect(report.training.totalDurationMin).toBeGreaterThan(0)
+    expect(report.training.totalLoad).toBeGreaterThan(0)
+    expect(report.quality.map((item) => item.domain)).toEqual([
+      "Treino",
+      "Corpo",
+      "Sono",
+      "Hidratação",
+    ])
+    expect("energy" in report).toBe(false)
+  })
+
+  it("seleciona exercícios repetidos e compara médias das pontas", () => {
+    const bench = report.lifts.find((lift) => lift.exerciseId === "bench")!
+    expect(bench.sessions).toBeGreaterThan(4)
+    expect(bench.recentE1rm).toBeGreaterThan(bench.baseE1rm)
+    expect(bench.deltaPct).toBeGreaterThan(0)
+    expect(bench.rirCoveragePct).toBe(0)
+  })
+
+  it("mostra cobertura de recuperação em vez de tratar ausência como zero", () => {
+    expect(report.recovery.hydration.days).toBe(2)
+    expect(report.recovery.hydration.coveragePct).toBeLessThan(10)
+    expect(report.recovery.sleep.nights).toBe(1)
+    expect(report.recovery.sleep.coveragePct).toBeLessThan(10)
+  })
+
+  it("marca bloco de BJJ ainda em curso como parcial", () => {
+    const partial = coachReport(
+      emptyData,
+      {
+        id: "bjj-adaptacao",
+        label: "Bloco 1 · Adaptação",
+        from: "2026-08-25",
+        to: "2026-08-26",
+      },
+      "bjj"
+    )
+    expect(partial.periodStatus).toBe("parcial")
+    expect(partial.questions.some((question) => question.includes("parcial"))).toBe(true)
   })
 })

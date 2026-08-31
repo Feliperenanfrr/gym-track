@@ -1,5 +1,12 @@
 import { bjjBlockWindows } from "./bjj-plan"
-import { intenseMinutes, totalCardioMinutes, zone2Minutes } from "./cardio"
+import {
+  cardioBlocks,
+  cardioPurposeOf,
+  intenseMinutes,
+  sportMinutes,
+  totalCardioMinutes,
+  zone2Minutes,
+} from "./cardio"
 import {
   energyBalanceSeries,
   EnergyBalancePoint,
@@ -19,7 +26,7 @@ import {
   weightKgOn,
 } from "./insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "./muscles"
-import { countsTowardProgramTarget, EXERCISES_BY_ID } from "./plan"
+import { countsTowardProgramTarget, EXERCISES_BY_ID, PLAN_BY_ID } from "./plan"
 import { BodyLog, GymData, MuscleGroup, TrainingProgram, WorkoutLog } from "./types"
 import { bestE1RMAdjusted, fromDateKey, toDateKey, workoutVolume } from "./utils"
 
@@ -713,5 +720,542 @@ export function nutritionReport(
       adherencePct: avgMl !== null ? Math.round((avgMl / goalMl) * 100) : null,
     },
     sleep: { avgMinutes: avgSleep, nights: sleepLogs.length },
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Relatório para o preparador físico                                  */
+/* ------------------------------------------------------------------ */
+
+export type DataConfidence = "alta" | "moderada" | "baixa"
+
+export interface CoachQualityItem {
+  domain: string
+  value: string
+  detail: string
+  confidence: DataConfidence
+}
+
+export interface CoachWeek {
+  key: string
+  label: string
+  sessions: number
+  strengthSessions: number
+  durationMin: number
+  load: number
+  z2Minutes: number
+  intenseMinutes: number
+  sportMinutes: number
+}
+
+export interface CoachLift {
+  exerciseId: string
+  name: string
+  muscleGroup: MuscleGroup | null
+  sessions: number
+  sets: number
+  rirCoveragePct: number
+  baseE1rm: number
+  recentE1rm: number
+  bestE1rm: number
+  deltaPct: number | null
+  firstDate: string
+  lastDate: string
+  confidence: DataConfidence
+  variantChanged: boolean
+}
+
+export interface CoachReport {
+  period: ReportPeriod
+  days: number
+  weeks: number
+  program: TrainingProgram
+  purpose: string
+  periodStatus: "concluido" | "parcial" | "janela-movel"
+  quality: CoachQualityItem[]
+  training: {
+    sessions: number
+    activeDays: number
+    sessionsPerWeek: number
+    strengthSessions: number
+    conditioningSessions: number
+    totalDurationMin: number
+    durationCoveragePct: number
+    srpeCoveragePct: number
+    avgSrpe: number | null
+    totalLoad: number
+    loadPerWeek: number
+    sessionTypes: {
+      id: string
+      label: string
+      sessions: number
+      durationMin: number
+      load: number
+    }[]
+  }
+  weekly: CoachWeek[]
+  lifts: CoachLift[]
+  muscles: MuscleVolume[]
+  body: {
+    latest: BodyLog | null
+    trend: MassTrend
+    comparison: BodyProgress[]
+    mass: MassPoint[]
+    weightPoints: number
+    compositionPoints: number
+    waistPoints: number
+    waistStartCm: number | null
+    waistEndCm: number | null
+    waistDeltaCm: number | null
+  }
+  conditioning: {
+    blocks: number
+    inferredPurposeBlocks: number
+    totalMinutes: number
+    minutesPerWeek: number
+    z2Minutes: number
+    intenseMinutes: number
+    sportMinutes: number
+    bpmBlocks: number
+    bpmCoveragePct: number
+    avgBpm: number | null
+    distanceKm: number
+  }
+  recovery: {
+    hydration: {
+      days: number
+      coveragePct: number
+      avgMl: number | null
+      medianMl: number | null
+      goalMl: number
+      daysAtGoal: number
+      latestDate: string | null
+    }
+    sleep: {
+      nights: number
+      coveragePct: number
+      avgMinutes: number | null
+      medianMinutes: number | null
+      nightsUnder7h: number
+      midpointDriftMin: number | null
+      latestDate: string | null
+    }
+  }
+  questions: string[]
+}
+
+function percentage(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle]
+}
+
+function standardDeviation(values: number[]): number | null {
+  const mean = average(values)
+  if (mean === null || values.length < 2) return null
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length
+  return Math.sqrt(variance)
+}
+
+function periodConfidence(points: number, spanDays: number): DataConfidence {
+  if (points >= 6 && spanDays >= 21) return "alta"
+  if (points >= 3 && spanDays >= 14) return "moderada"
+  return "baixa"
+}
+
+function coverageConfidence(coveragePct: number): DataConfidence {
+  if (coveragePct >= 70) return "alta"
+  if (coveragePct >= 40) return "moderada"
+  return "baixa"
+}
+
+function coachPeriodStatus(period: ReportPeriod): CoachReport["periodStatus"] {
+  if (!period.id.startsWith("bjj-")) return "janela-movel"
+  const id = period.id.slice(4)
+  const block = bjjBlockWindows().find((window) => window.id === id)
+  return block?.end && period.to >= block.end ? "concluido" : "parcial"
+}
+
+function coachWeeks(workouts: WorkoutLog[], from: string, to: string): CoachWeek[] {
+  const weeks: CoachWeek[] = []
+  const total = daysInPeriod(from, to)
+  for (let index = 0; index * 7 < total; index++) {
+    const start = shiftKey(from, index * 7)
+    const end = [shiftKey(start, 6), to].sort()[0]
+    const rows = workouts.filter(
+      (workout) => workout.date >= start && workout.date <= end && workout.sessionId !== "rest"
+    )
+    weeks.push({
+      key: start,
+      label: formatDayMonth(start),
+      sessions: rows.length,
+      strengthSessions: rows.filter((workout) => workout.entries.length > 0).length,
+      durationMin: Math.round(
+        rows.reduce(
+          (sum, workout) => sum + (workout.durationMin ?? totalCardioMinutes(workout)),
+          0
+        )
+      ),
+      load: Math.round(rows.reduce((sum, workout) => sum + internalLoad(workout), 0)),
+      z2Minutes: rows.reduce((sum, workout) => sum + zone2Minutes(workout), 0),
+      intenseMinutes: rows.reduce((sum, workout) => sum + intenseMinutes(workout), 0),
+      sportMinutes: rows.reduce((sum, workout) => sum + sportMinutes(workout), 0),
+    })
+  }
+  return weeks
+}
+
+function coachLifts(workouts: WorkoutLog[], latestWeightKg: number | null): CoachLift[] {
+  type SessionPoint = {
+    date: string
+    e1rm: number
+    sets: number
+    rirSets: number
+    explicitName?: string
+    muscleGroup?: MuscleGroup
+  }
+  const byExercise = new Map<string, SessionPoint[]>()
+
+  for (const workout of workouts) {
+    for (const entry of workout.entries) {
+      const comparableSets = entry.sets.filter(
+        (set) => set.weight > 0 && set.reps > 0 && set.reps <= 12
+      )
+      if (comparableSets.length === 0) continue
+      const e1rm = bestE1RMAdjusted({ ...entry, sets: comparableSets })
+      if (e1rm <= 0) continue
+      const points = byExercise.get(entry.exerciseId) ?? []
+      points.push({
+        date: workout.date,
+        e1rm,
+        sets: comparableSets.length,
+        rirSets: comparableSets.filter((set) => set.rir !== undefined).length,
+        explicitName: entry.exerciseName,
+        muscleGroup: entry.muscleGroup,
+      })
+      byExercise.set(entry.exerciseId, points)
+    }
+  }
+
+  const rows: CoachLift[] = []
+  for (const [exerciseId, rawPoints] of byExercise) {
+    const points = [...rawPoints].sort((a, b) => a.date.localeCompare(b.date))
+    if (points.length < 2) continue
+    const explicitNames = new Set(
+      points.map((point) => point.explicitName?.trim()).filter((name): name is string => Boolean(name))
+    )
+    const variantChanged = explicitNames.size > 1
+    const edge = points.length >= 4 ? 2 : 1
+    const baseE1rm = average(points.slice(0, edge).map((point) => point.e1rm))!
+    const recentE1rm = average(points.slice(-edge).map((point) => point.e1rm))!
+    const spanDays = Math.round(
+      (fromDateKey(points[points.length - 1].date).getTime() - fromDateKey(points[0].date).getTime()) /
+        DAY_MS
+    )
+    const sets = points.reduce((sum, point) => sum + point.sets, 0)
+    const rirSets = points.reduce((sum, point) => sum + point.rirSets, 0)
+    const catalog = EXERCISES_BY_ID[exerciseId]
+    const explicitName = [...explicitNames][explicitNames.size - 1]
+    rows.push({
+      exerciseId,
+      name: explicitName ?? catalog?.name ?? exerciseId,
+      muscleGroup: points.findLast((point) => point.muscleGroup)?.muscleGroup ?? catalog?.muscleGroup ?? null,
+      sessions: points.length,
+      sets,
+      rirCoveragePct: percentage(rirSets, sets),
+      baseE1rm: Math.round(baseE1rm * 10) / 10,
+      recentE1rm: Math.round(recentE1rm * 10) / 10,
+      bestE1rm: Math.round(Math.max(...points.map((point) => point.e1rm)) * 10) / 10,
+      deltaPct:
+        variantChanged || baseE1rm <= 0
+          ? null
+          : Math.round(((recentE1rm - baseE1rm) / baseE1rm) * 1000) / 10,
+      firstDate: points[0].date,
+      lastDate: points[points.length - 1].date,
+      confidence: variantChanged ? "baixa" : periodConfidence(points.length, spanDays),
+      variantChanged,
+    })
+  }
+
+  return rows
+    .sort((a, b) => b.sessions - a.sessions || b.sets - a.sets || b.bestE1rm - a.bestE1rm)
+    .slice(0, latestWeightKg ? 8 : 7)
+}
+
+function sleepMidpointMinutes(log: GymData["sleep"][number]): number | null {
+  const parse = (value: string) => {
+    const [hours, minutes] = value.split(":").map(Number)
+    return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : null
+  }
+  const start = parse(log.sleptAt)
+  if (start === null) return null
+  const adjustedStart = start < 12 * 60 ? start + 24 * 60 : start
+  return adjustedStart + log.durationMin / 2
+}
+
+/**
+ * Documento de passagem para um preparador físico.
+ *
+ * Prioriza exposição, carga, desempenho e confiabilidade dos registros. Não
+ * prescreve o próximo ciclo e não transforma estimativas calóricas em achado.
+ */
+export function coachReport(
+  data: GymData,
+  period: ReportPeriod,
+  program: TrainingProgram
+): CoachReport {
+  const { from, to } = period
+  const days = daysInPeriod(from, to)
+  const weeks = weeksInPeriod(from, to)
+  const workouts = data.workouts.filter(
+    (workout) => workout.date >= from && workout.date <= to && workout.sessionId !== "rest"
+  )
+  const bodyLogs = data.body
+    .filter((log) => log.date >= from && log.date <= to)
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const weightLogs = bodyLogs.filter((log) => (log.weightKg ?? 0) > 0)
+  const compositionLogs = bodyLogs.filter((log) => fatMassOf(log) !== undefined)
+  const waistLogs = bodyLogs.filter((log) => (log.waistCm ?? 0) > 0)
+  const latestBody = bodyLogs[bodyLogs.length - 1] ?? null
+  const latestWeightKg = [...weightLogs].reverse()[0]?.weightKg ?? null
+  const durationLogs = workouts.filter((workout) => (workout.durationMin ?? 0) > 0)
+  const srpeLogs = workouts.filter((workout) => (workout.srpe ?? 0) > 0)
+  const totalDurationMin = Math.round(
+    workouts.reduce(
+      (sum, workout) => sum + (workout.durationMin ?? totalCardioMinutes(workout)),
+      0
+    )
+  )
+  const totalLoad = Math.round(workouts.reduce((sum, workout) => sum + internalLoad(workout), 0))
+  const activeDays = new Set(workouts.map((workout) => workout.date)).size
+
+  const sessionMap = new Map<
+    string,
+    { id: string; label: string; sessions: number; durationMin: number; load: number }
+  >()
+  for (const workout of workouts) {
+    const current = sessionMap.get(workout.sessionId) ?? {
+      id: workout.sessionId,
+      label: PLAN_BY_ID[workout.sessionId]?.title ?? workout.sessionId,
+      sessions: 0,
+      durationMin: 0,
+      load: 0,
+    }
+    current.sessions += 1
+    current.durationMin += workout.durationMin ?? totalCardioMinutes(workout)
+    current.load += internalLoad(workout)
+    sessionMap.set(workout.sessionId, current)
+  }
+
+  const groups = hardSetsByGroup(workouts)
+  const muscles: MuscleVolume[] = MUSCLE_GROUPS.map(({ id }) => ({
+    group: id,
+    hardSets: groups[id],
+    perWeek: Math.round((groups[id] / weeks) * 10) / 10,
+  }))
+    .filter((row) => row.hardSets > 0)
+    .sort((a, b) => b.hardSets - a.hardSets)
+
+  const blocks = workouts.flatMap((workout) =>
+    cardioBlocks(workout).map((block) => ({
+      block,
+      purpose: cardioPurposeOf(block, workout.sessionId),
+      minutes:
+        block.durationSeconds !== undefined && block.durationSeconds > 0
+          ? block.durationSeconds / 60
+          : block.minutes,
+    }))
+  )
+  const totalCardio = blocks.reduce((sum, item) => sum + item.minutes, 0)
+  const bpmBlocks = blocks.filter((item) => (item.block.avgBpm ?? 0) > 0)
+  const bpmMinutes = bpmBlocks.reduce((sum, item) => sum + item.minutes, 0)
+  const weightedBpm = bpmBlocks.reduce(
+    (sum, item) => sum + item.block.avgBpm! * item.minutes,
+    0
+  )
+
+  const hydrationLogs = data.hydration.filter(
+    (log) => log.date >= from && log.date <= to && log.ml > 0
+  )
+  const hydrationGoal = waterGoalMl(data.body)
+  const sleepLogs = data.sleep.filter(
+    (log) => log.date >= from && log.date <= to && log.durationMin > 0
+  )
+  const sleepMidpoints = sleepLogs
+    .map(sleepMidpointMinutes)
+    .filter((value): value is number => value !== null)
+
+  const windows = compareWindows(from, to)
+  const trend = massTrend(data.body, from, to)
+  const weightSpan =
+    weightLogs.length >= 2
+      ? Math.round(
+          (fromDateKey(weightLogs[weightLogs.length - 1].date).getTime() -
+            fromDateKey(weightLogs[0].date).getTime()) /
+            DAY_MS
+        )
+      : 0
+  const durationCoveragePct = percentage(durationLogs.length, workouts.length)
+  const srpeCoveragePct = percentage(srpeLogs.length, workouts.length)
+  const hydrationCoveragePct = percentage(hydrationLogs.length, days)
+  const sleepCoveragePct = percentage(sleepLogs.length, days)
+  const liftRows = coachLifts(workouts, latestWeightKg)
+
+  const quality: CoachQualityItem[] = [
+    {
+      domain: "Treino",
+      value: `${workouts.length} sessões`,
+      detail: `${durationCoveragePct}% com duração · ${srpeCoveragePct}% com sRPE`,
+      confidence:
+        workouts.length >= 6 && durationCoveragePct >= 75 && srpeCoveragePct >= 70
+          ? "alta"
+          : workouts.length >= 3
+            ? "moderada"
+            : "baixa",
+    },
+    {
+      domain: "Corpo",
+      value: `${weightLogs.length} pesagens`,
+      detail: `${compositionLogs.length} com composição · ${waistLogs.length} cinturas`,
+      confidence: periodConfidence(weightLogs.length, weightSpan),
+    },
+    {
+      domain: "Sono",
+      value: `${sleepLogs.length}/${days} noites`,
+      detail: `${sleepCoveragePct}% do periodo`,
+      confidence: coverageConfidence(sleepCoveragePct),
+    },
+    {
+      domain: "Hidratação",
+      value: `${hydrationLogs.length}/${days} dias`,
+      detail: `${hydrationCoveragePct}% do periodo`,
+      confidence: coverageConfidence(hydrationCoveragePct),
+    },
+  ]
+
+  const waistStart = average(waistLogs.slice(0, Math.min(2, waistLogs.length)).map((log) => log.waistCm!))
+  const waistEnd = average(waistLogs.slice(-Math.min(2, waistLogs.length)).map((log) => log.waistCm!))
+  const periodStatus = coachPeriodStatus(period)
+  const conditioningMinutes = {
+    zone2: blocks.filter((item) => item.purpose === "zone2").reduce((sum, item) => sum + item.minutes, 0),
+    intense: blocks.filter((item) => item.purpose === "intense").reduce((sum, item) => sum + item.minutes, 0),
+    sport: blocks.filter((item) => item.purpose === "sport").reduce((sum, item) => sum + item.minutes, 0),
+  }
+
+  const questions = [
+    "Definir o objetivo primário e o critério de sucesso do próximo ciclo.",
+    "Escolher 3 a 5 testes estáveis de força e condicionamento para reavaliação.",
+    "Revisar a distribuição semanal entre sala, cardio e prática esportiva.",
+  ]
+  if (periodStatus === "parcial") {
+    questions.push("Tratar este recorte como parcial; o bloco atual ainda não terminou.")
+  }
+  if (program === "bjj" && conditioningMinutes.sport === 0) {
+    questions.push("Quantificar minutos de tatame e rounds; essa exposição não aparece no período.")
+  }
+  if (sleepCoveragePct < 40 || hydrationCoveragePct < 40) {
+    questions.push("Confirmar recuperação na anamnese; sono ou hidratação tem baixa cobertura.")
+  }
+  if (liftRows.some((lift) => lift.variantChanged)) {
+    questions.push("Padronizar aparelho/variante antes de usar 1RM estimada como teste.")
+  }
+
+  return {
+    period,
+    days,
+    weeks: Math.round(weeks * 10) / 10,
+    program,
+    purpose:
+      program === "bjj"
+        ? "Revisão da preparação física para jiu-jitsu e reconstrução do plano."
+        : "Revisão de hipertrofia, força e composição corporal para reconstrução do plano.",
+    periodStatus,
+    quality,
+    training: {
+      sessions: workouts.length,
+      activeDays,
+      sessionsPerWeek: Math.round((workouts.length / weeks) * 10) / 10,
+      strengthSessions: workouts.filter((workout) => workout.entries.length > 0).length,
+      conditioningSessions: workouts.filter((workout) => cardioBlocks(workout).length > 0).length,
+      totalDurationMin,
+      durationCoveragePct,
+      srpeCoveragePct,
+      avgSrpe: srpeLogs.length > 0 ? average(srpeLogs.map((workout) => workout.srpe!)) : null,
+      totalLoad,
+      loadPerWeek: Math.round(totalLoad / weeks),
+      sessionTypes: [...sessionMap.values()]
+        .map((row) => ({ ...row, durationMin: Math.round(row.durationMin), load: Math.round(row.load) }))
+        .sort((a, b) => b.sessions - a.sessions || b.durationMin - a.durationMin),
+    },
+    weekly: coachWeeks(workouts, from, to),
+    lifts: liftRows,
+    muscles,
+    body: {
+      latest: latestBody,
+      trend,
+      comparison: bodyProgress(data.body, windows),
+      mass: massSeries(data.body, from, to),
+      weightPoints: weightLogs.length,
+      compositionPoints: compositionLogs.length,
+      waistPoints: waistLogs.length,
+      waistStartCm: waistStart !== null ? Math.round(waistStart * 10) / 10 : null,
+      waistEndCm: waistEnd !== null ? Math.round(waistEnd * 10) / 10 : null,
+      waistDeltaCm:
+        waistStart !== null && waistEnd !== null
+          ? Math.round((waistEnd - waistStart) * 10) / 10
+          : null,
+    },
+    conditioning: {
+      blocks: blocks.length,
+      inferredPurposeBlocks: blocks.filter((item) => item.block.purpose === undefined).length,
+      totalMinutes: Math.round(totalCardio),
+      minutesPerWeek: Math.round(totalCardio / weeks),
+      z2Minutes: Math.round(conditioningMinutes.zone2),
+      intenseMinutes: Math.round(conditioningMinutes.intense),
+      sportMinutes: Math.round(conditioningMinutes.sport),
+      bpmBlocks: bpmBlocks.length,
+      bpmCoveragePct: percentage(bpmBlocks.length, blocks.length),
+      avgBpm: bpmMinutes > 0 ? Math.round(weightedBpm / bpmMinutes) : null,
+      distanceKm:
+        Math.round(
+          blocks.reduce((sum, item) => sum + (item.block.distanceKm ?? 0), 0) * 10
+        ) / 10,
+    },
+    recovery: {
+      hydration: {
+        days: hydrationLogs.length,
+        coveragePct: hydrationCoveragePct,
+        avgMl: hydrationLogs.length > 0 ? Math.round(average(hydrationLogs.map((log) => log.ml))!) : null,
+        medianMl:
+          hydrationLogs.length > 0 ? Math.round(median(hydrationLogs.map((log) => log.ml))!) : null,
+        goalMl: hydrationGoal,
+        daysAtGoal: hydrationLogs.filter((log) => log.ml >= hydrationGoal).length,
+        latestDate: [...hydrationLogs].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date ?? null,
+      },
+      sleep: {
+        nights: sleepLogs.length,
+        coveragePct: sleepCoveragePct,
+        avgMinutes: sleepLogs.length > 0 ? Math.round(average(sleepLogs.map((log) => log.durationMin))!) : null,
+        medianMinutes:
+          sleepLogs.length > 0 ? Math.round(median(sleepLogs.map((log) => log.durationMin))!) : null,
+        nightsUnder7h: sleepLogs.filter((log) => log.durationMin < 7 * 60).length,
+        midpointDriftMin:
+          sleepMidpoints.length >= 2 ? Math.round(standardDeviation(sleepMidpoints)!) : null,
+        latestDate: [...sleepLogs].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date ?? null,
+      },
+    },
+    questions: questions.slice(0, 6),
   }
 }
