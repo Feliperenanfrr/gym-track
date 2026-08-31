@@ -41,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="min-h-dvh">
-        <div className="mx-auto w-full max-w-md px-4 pb-28 pt-5 md:max-w-2xl">
+        <div className="app-shell mx-auto w-full max-w-md px-4 pb-28 pt-5 md:max-w-2xl">
           {children}
         </div>
         <BottomNav />
