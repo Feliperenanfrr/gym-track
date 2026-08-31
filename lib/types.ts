@@ -13,6 +13,8 @@ export type SessionId =
   | "competitionUpper"
   | "competitionPower"
   | "competitionZ2"
+  /** Container diário de caminhadas/corridas importadas do Strava. */
+  | "strava"
   | "free"
   | "sport"
   | "rest"
@@ -102,10 +104,21 @@ export interface ExerciseLog {
 
 export interface CardioLog {
   minutes: number
+  /** Duração precisa quando a origem informa segundos (o campo minutes segue compatível). */
+  durationSeconds?: number
   avgBpm?: number
   mode: string
   /** Ausente em registros antigos, que são interpretados pelo tipo da sessão. */
   purpose?: CardioPurpose
+  /** Metadados opcionais de uma atividade externa, hoje importada do Strava. */
+  source?: "strava"
+  sourceId?: string
+  title?: string
+  startTime?: string
+  distanceKm?: number
+  steps?: number
+  elevationGainM?: number
+  location?: string
 }
 
 /** Linha de cardio na UI de registro (strings cruas dos inputs) */

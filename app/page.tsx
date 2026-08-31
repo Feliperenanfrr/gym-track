@@ -967,7 +967,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
-      <CollapsibleSection title="Treino — 6 semanas">
+      <CollapsibleSection title="Treino — 6 semanas" defaultOpen>
         <Card className="rise rise-4">
         <div className="mb-3 flex gap-1.5">
           {(["grupos", "total"] as const).map((v) => (
@@ -1032,7 +1032,7 @@ export default function Dashboard() {
       </CollapsibleSection>
 
       {/* Progressão de força */}
-      <CollapsibleSection title="Força — 1RM estimada">
+      <CollapsibleSection title="Força — 1RM estimada" defaultOpen>
         <Card className="rise rise-5">
         <div className="mb-3 flex flex-wrap gap-1.5">
           {KEY_LIFTS.map((k) => (
@@ -1065,7 +1065,7 @@ export default function Dashboard() {
       </CollapsibleSection>
 
       {/* Zona 2 */}
-      <CollapsibleSection title="Base aeróbica — min/semana" accent="zone">
+      <CollapsibleSection title="Base aeróbica — min/semana" accent="zone" defaultOpen>
         <Card className="rise rise-6 border-l-4 border-l-zone">
         <ZoneChart
           data={view.weeks.map((w) => ({ label: w.label, z2: w.z2, intense: w.intense }))}

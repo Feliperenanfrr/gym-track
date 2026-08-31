@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   computeReadiness,
+  cardioMet,
   internalLoad,
   liftMetForSrpe,
   prEvents,
@@ -223,15 +224,15 @@ describe("weightTrend7d", () => {
 /* ---------------------------------------------------------------- */
 
 describe("liftMetForSrpe", () => {
-  it("sem sRPE mantém o vigoroso típico (5 METs)", () => {
-    expect(liftMetForSrpe(undefined)).toBe(5)
-    expect(liftMetForSrpe(0)).toBe(5)
+  it("sem sRPE usa a sessão típica de hipertrofia do Compendium (3,5 METs)", () => {
+    expect(liftMetForSrpe(undefined)).toBe(3.5)
+    expect(liftMetForSrpe(0)).toBe(3.5)
   })
   it("mapeia faixas de esforço para METs da tabela Compendium", () => {
     expect(liftMetForSrpe(1)).toBe(3)
     expect(liftMetForSrpe(3)).toBe(3)
-    expect(liftMetForSrpe(4)).toBe(4)
-    expect(liftMetForSrpe(5)).toBe(4)
+    expect(liftMetForSrpe(4)).toBe(3.5)
+    expect(liftMetForSrpe(5)).toBe(3.5)
     expect(liftMetForSrpe(6)).toBe(5)
     expect(liftMetForSrpe(7)).toBe(5)
     expect(liftMetForSrpe(8)).toBe(6)
@@ -282,7 +283,7 @@ describe("sessionKcal", () => {
     })
     const est = sessionKcal(w, 80)!
     expect(est.minutes).toBe(60)
-    expect(est.mid).toBe(60 * 5 * 1.4)
+    expect(est.mid).toBe(Math.round((60 * 3.5 * 1.4) / 10) * 10)
   })
 
   it("treino leve (sRPE baixo) usa MET moderado, não o flat de 5", () => {
@@ -325,11 +326,45 @@ describe("sessionKcal", () => {
       ],
     })
     const est = sessionKcal(w, 80)!
-    // 30′ Z2 × 6.5 × 1.4 = 273 · 15′ intenso × 8.5 × 1.4 = 178,5 → 451,5 → 450
+    // Bike Z2 6,5 + corrida intensa 8,5 + caminhada genérica 3,8 MET.
+    // Caminhada não herda 6,5 só porque foi marcada como Zona 2.
     expect(est.minutes).toBe(45)
-    expect(est.mid).toBe(450)
+    expect(est.mid).toBe(390)
     // sem musculação, o MET exibido é o do bloco mais longo (empate → o 1º)
     expect(est.met).toBe(6.5)
+  })
+
+  it("caminhada do Strava usa cadência e segundos, não o fallback de 6,5 MET", () => {
+    const block = {
+      minutes: 63,
+      durationSeconds: 3780,
+      mode: "Caminhada",
+      purpose: "zone2" as const,
+      distanceKm: 5.62,
+      steps: 6870,
+      source: "strava" as const,
+    }
+    expect(cardioMet(block, "strava")).toBe(3.7)
+    const est = sessionKcal(
+      workout({ date: dayKey(-1), sessionId: "strava", cardios: [block] }),
+      80
+    )!
+    expect(est.minutes).toBe(63)
+    expect(est.met).toBe(3.7)
+    expect(est.mid).toBe(330)
+  })
+
+  it("ganho de elevação corrige a caminhada e corrida usa o ritmo", () => {
+    const uphillWalk = {
+      minutes: 18,
+      durationSeconds: 1092,
+      mode: "Caminhada",
+      purpose: "zone2" as const,
+      distanceKm: 1.61,
+      elevationGainM: 45,
+    }
+    expect(cardioMet(uphillWalk, "strava")).toBe(5.1)
+    expect(cardioMet({ minutes: 60, mode: "Corrida", distanceKm: 10 }, "strava")).toBe(9.3)
   })
 
   it("esporte usa minutos × 8 METs; sem cardio não há estimativa", () => {
@@ -382,7 +417,7 @@ describe("weeklySummary", () => {
       ],
     }
     const s = weeklySummary(data, monday)
-    const expected = Math.round(((5 * 3.5 * 80) / 200) * 60 / 10) * 10 // MET_LIFT × 60 min @ 80 kg
+    const expected = Math.round(((3.5 * 3.5 * 80) / 200) * 60 / 10) * 10 // MET_LIFT × 60 min @ 80 kg
     expect(s.kcal).toBe(expected)
   })
 

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Check, FileUp, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isBjjSession } from "@/lib/bjj-plan"
@@ -17,6 +17,11 @@ import { isLegacySession } from "@/lib/legacy-plan"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
+import {
+  formatActivityDuration,
+  parseStravaCsv,
+  toStravaCardioLog,
+} from "@/lib/strava"
 import { CardioLog, CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { cn, formatKg, fromDateKey, toDateKey, workoutVolume } from "@/lib/utils"
 
@@ -46,6 +51,8 @@ interface EditableCardio {
   bpm: string
   mode: string
   purpose: CardioPurpose
+  /** Preserva distância/passos/elevação do Strava ao editar campos básicos. */
+  original?: CardioLog
 }
 
 function editableCardioFrom(log: WorkoutLog): EditableCardio[] {
@@ -54,6 +61,7 @@ function editableCardioFrom(log: WorkoutLog): EditableCardio[] {
     bpm: block.avgBpm !== undefined ? String(block.avgBpm) : "",
     mode: block.mode,
     purpose: cardioPurposeOf(block, log.sessionId),
+    original: block,
   }))
 }
 
@@ -123,6 +131,15 @@ export default function Historico() {
   const [editError, setEditError] = useState<string | null>(null)
   /** data escolhida para registrar um treino esquecido */
   const [backfillDate, setBackfillDate] = useState("")
+  const [stravaText, setStravaText] = useState("")
+  const [stravaSaving, setStravaSaving] = useState(false)
+  const [stravaError, setStravaError] = useState<string | null>(null)
+  const [stravaSavedCount, setStravaSavedCount] = useState(0)
+
+  const stravaParse = useMemo(
+    () => (stravaText.trim() ? parseStravaCsv(stravaText) : null),
+    [stravaText]
+  )
 
   const workouts = useMemo(() => {
     if (!data) return []
@@ -221,17 +238,113 @@ export default function Historico() {
     ])
   }
 
+  const loadStravaFile = async (file: File | undefined) => {
+    if (!file) return
+    setStravaError(null)
+    try {
+      setStravaText(await file.text())
+    } catch {
+      setStravaError("Não foi possível ler o arquivo CSV.")
+    }
+  }
+
+  const saveStravaActivities = async () => {
+    if (!data) return
+    if (!stravaParse || stravaParse.activities.length === 0 || stravaParse.errors.length > 0) {
+      setStravaError("Revise os campos do CSV antes de salvar.")
+      return
+    }
+
+    const incomingByDate = new Map<string, CardioLog[]>()
+    for (const activity of stravaParse.activities) {
+      const blocks = incomingByDate.get(activity.date) ?? []
+      blocks.push(toStravaCardioLog(activity))
+      incomingByDate.set(activity.date, blocks)
+    }
+
+    const pending: WorkoutLog[] = []
+    let inserted = 0
+    for (const [date, incoming] of incomingByDate) {
+      const existing = data.workouts.find(
+        (workout) => workout.date === date && workout.sessionId === "strava"
+      )
+      const previousBlocks = existing ? cardioBlocks(existing) : []
+      const knownIds = new Set(previousBlocks.map((block) => block.sourceId).filter(Boolean))
+      const fresh = incoming.filter((block) => !block.sourceId || !knownIds.has(block.sourceId))
+      if (fresh.length === 0) continue
+
+      const blocks = [...previousBlocks, ...fresh].sort((a, b) =>
+        (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99")
+      )
+      const durationMin = Math.max(
+        1,
+        Math.round(
+          blocks.reduce(
+            (sum, block) =>
+              sum +
+              (block.durationSeconds !== undefined
+                ? block.durationSeconds / 60
+                : block.minutes),
+            0
+          )
+        )
+      )
+      pending.push({
+        ...(existing ?? {
+          id: `strava-${date}-${Date.now()}`,
+          date,
+          sessionId: "strava" as const,
+          entries: [],
+        }),
+        durationMin,
+        cardio: blocks[0],
+        cardios: blocks,
+      })
+      inserted += fresh.length
+    }
+
+    if (inserted === 0) {
+      setStravaError("Todas essas atividades já foram importadas.")
+      return
+    }
+
+    setStravaSaving(true)
+    setStravaError(null)
+    try {
+      await Promise.all(pending.map((workout) => addWorkout(workout)))
+      setStravaText("")
+      setStravaSavedCount(inserted)
+      window.setTimeout(() => setStravaSavedCount(0), 3500)
+    } catch (e) {
+      setStravaError(e instanceof Error ? e.message : "Erro ao salvar atividades do Strava")
+    } finally {
+      setStravaSaving(false)
+    }
+  }
+
   const removeEditableCardio = (index: number) => {
     setEditCardio((prev) => prev.filter((_, i) => i !== index))
   }
 
   const saveEdit = async (w: WorkoutLog) => {
-    const cardios: CardioLog[] = editCardio.map((row) => ({
-      minutes: parseInt(row.minutes) || 0,
-      avgBpm: parseInt(row.bpm) || undefined,
-      mode: row.mode.trim(),
-      purpose: row.purpose,
-    }))
+    const cardios: CardioLog[] = editCardio.map((row) => {
+      const minutes = parseInt(row.minutes) || 0
+      return {
+        ...(row.original ?? {}),
+        minutes,
+        ...(row.original?.durationSeconds !== undefined
+          ? {
+              durationSeconds:
+                minutes === row.original.minutes
+                  ? row.original.durationSeconds
+                  : minutes * 60,
+            }
+          : {}),
+        avgBpm: parseInt(row.bpm) || undefined,
+        mode: row.mode.trim(),
+        purpose: row.purpose,
+      }
+    })
 
     // mesmas regras de sanitização do registro na aba Treino
     const entries: ExerciseLog[] = (editEntries ?? [])
@@ -376,6 +489,152 @@ export default function Historico() {
             Abrir registro
           </button>
         </div>
+      </Card>
+
+      {/* importação determinística das caminhadas/corridas exportadas do Strava */}
+      <Card className="rise mb-4 border-l-4 border-l-zone">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-bone">Importar atividades do Strava</p>
+            <p className="mt-0.5 text-xs text-steel-dim">
+              Envie o CSV ou cole o conteúdo. Aceita caminhada/corrida em tabela ou
+              no formato vertical da balança.
+            </p>
+          </div>
+          <FileUp size={19} className="mt-0.5 shrink-0 text-zone" />
+        </div>
+
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase text-steel-dim">Arquivo CSV</span>
+          <input
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            onChange={(event) => loadStravaFile(event.target.files?.[0])}
+            className="w-full rounded border border-seam bg-coal px-2 py-2 text-xs text-steel file:mr-3 file:rounded file:border-0 file:bg-zone file:px-3 file:py-1.5 file:font-semibold file:text-coal"
+          />
+        </label>
+
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="font-mono text-[10px] uppercase text-steel-dim">
+            Ou cole o CSV
+          </span>
+          <textarea
+            value={stravaText}
+            onChange={(event) => {
+              setStravaText(event.target.value)
+              setStravaError(null)
+            }}
+            rows={7}
+            placeholder={
+              "Data;Hora;Tipo;Título;Distância (km);Tempo;Passos;Ganho de elevação (m);Local\n" +
+              "05/08/2026;08:48;Caminhada;Caminhada matinal;5,62;1h 3min;6870;;Campina Grande, Paraíba"
+            }
+            className="w-full resize-y rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none focus:border-zone"
+          />
+        </label>
+
+        {stravaParse && (
+          <div className="mt-3 space-y-2">
+            {stravaParse.activities.map((activity) => {
+              const block = toStravaCardioLog(activity)
+              const previewWorkout: WorkoutLog = {
+                id: activity.sourceId,
+                date: activity.date,
+                sessionId: "strava",
+                durationMin: block.minutes,
+                entries: [],
+                cardio: block,
+                cardios: [block],
+              }
+              const kcal = sessionKcal(
+                previewWorkout,
+                weightKgOn(data.body, activity.date)
+              )
+              return (
+                <div
+                  key={activity.sourceId}
+                  className="rounded border border-seam bg-coal/70 px-3 py-2.5"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-bone">
+                        {activity.title}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[10px] text-steel-dim">
+                        {fromDateKey(activity.date).toLocaleDateString("pt-BR")}
+                        {activity.startTime ? ` · ${activity.startTime}` : ""}
+                        {activity.location ? ` · ${activity.location}` : ""}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase text-zone">
+                      {activity.type === "walk" ? "caminhada" : "corrida"}
+                    </span>
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-steel">
+                    {activity.distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} km
+                    {" · "}{formatActivityDuration(activity.durationSeconds)}
+                    {activity.steps !== undefined
+                      ? ` · ${activity.steps.toLocaleString("pt-BR")} passos`
+                      : ""}
+                    {activity.elevationGainM !== undefined
+                      ? ` · +${Math.round(activity.elevationGainM)} m`
+                      : ""}
+                    {kcal ? (
+                      <span className="text-gold">
+                        {" · "}≈{kcal.mid.toLocaleString("pt-BR")} kcal
+                        <span className="text-steel-dim"> ({kcal.low}–{kcal.high})</span>
+                      </span>
+                    ) : (
+                      <span className="text-gold"> · registre seu peso para calcular kcal</span>
+                    )}
+                  </p>
+                </div>
+              )
+            })}
+
+            {stravaParse.warnings.map((warning, index) => (
+              <p key={index} className="text-xs text-gold">{warning}</p>
+            ))}
+            {stravaParse.errors.length > 0 && (
+              <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
+                {stravaParse.errors.map((message, index) => <p key={index}>{message}</p>)}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          onClick={saveStravaActivities}
+          disabled={
+            stravaSaving ||
+            !stravaParse ||
+            stravaParse.activities.length === 0 ||
+            stravaParse.errors.length > 0
+          }
+          className={cn(
+            "mt-3 flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40",
+            stravaSavedCount > 0
+              ? "bg-zone text-coal"
+              : "bg-ember text-coal hover:bg-ember-hot"
+          )}
+          style={{ fontFamily: "var(--font-condensed)" }}
+        >
+          {stravaSavedCount > 0 ? <Check size={15} /> : <FileUp size={15} />}
+          {stravaSaving
+            ? "Salvando…"
+            : stravaSavedCount > 0
+              ? `${stravaSavedCount} atividade(s) salva(s)`
+              : `Salvar ${stravaParse?.activities.length ?? 0} atividade(s)`}
+        </button>
+        {stravaError && (
+          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+            {stravaError}
+          </p>
+        )}
+        <p className="mt-2.5 text-[11px] leading-relaxed text-steel-dim">
+          Calorias usam seu peso na data, duração precisa, ritmo, passos e elevação
+          disponíveis. É uma estimativa com faixa — não uma medição metabólica.
+        </p>
       </Card>
 
       {/* filtros por tipo */}
