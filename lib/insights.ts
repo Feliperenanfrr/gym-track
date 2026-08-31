@@ -269,6 +269,10 @@ export function weightKgOn(
 export interface SessionKcal {
   /** ponto central da estimativa (kcal) */
   mid: number
+  /** parcela do ponto central atribuída à musculação */
+  lift: number
+  /** parcela do ponto central atribuída a todos os blocos de cardio */
+  cardio: number
   /** extremos da faixa honesta (~−20% / +25%) */
   low: number
   high: number
@@ -386,7 +390,8 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
   const isLiftPart =
     (kind === "lift" || kind === "mixed") && w.entries.length > 0
 
-  let total = 0
+  let liftTotal = 0
+  let cardioTotal = 0
   let metUsed = 0
   let minutes = 0
 
@@ -397,14 +402,14 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
       w.durationMin && w.durationMin > 0
         ? Math.max(1, w.durationMin - cardioMin)
         : LIFT_SESSION_MIN
-    total += liftMin * kcalPerMin(metUsed)
+    liftTotal += liftMin * kcalPerMin(metUsed)
     minutes += liftMin
   }
   let longestBlockMin = 0
   for (const block of blocks) {
     const blockMet = cardioMet(block, w.sessionId)
     const blockMinutes = cardioDurationMinutes(block)
-    total += blockMinutes * kcalPerMin(blockMet)
+    cardioTotal += blockMinutes * kcalPerMin(blockMet)
     minutes += blockMinutes
     // sem musculação, o MET exibido no tooltip é o do bloco mais longo
     if (!isLiftPart && blockMinutes > longestBlockMin) {
@@ -412,15 +417,182 @@ export function sessionKcal(w: WorkoutLog, weightKg?: number): SessionKcal | nul
       metUsed = blockMet
     }
   }
+  const total = liftTotal + cardioTotal
   if (total <= 0) return null
 
   const mid = Math.round(total / 10) * 10
+  // Arredonda uma vez e fecha a segunda parcela pelo total para que o gráfico
+  // empilhado nunca apresente soma diferente do valor geral exibido.
+  const lift = Math.round(liftTotal / 10) * 10
   return {
     mid,
+    lift,
+    cardio: mid - lift,
     low: Math.max(10, Math.round((mid * KCAL_LOW_FACTOR) / 10) * 10),
     high: Math.round((mid * KCAL_HIGH_FACTOR) / 10) * 10,
     met: Math.round(metUsed * 10) / 10,
     minutes: Math.round(minutes * 10) / 10,
+  }
+}
+
+export type CalorieTrendRange = "12w" | "all"
+
+export interface CalorieTrendPoint {
+  /** chave estável do intervalo (data inicial ou yyyy-MM) */
+  key: string
+  /** rótulo curto para o eixo X */
+  label: string
+  lift: number
+  cardio: number
+  total: number
+  /** intervalo ainda não encerrado */
+  current: boolean
+}
+
+export interface CalorieTrend {
+  points: CalorieTrendPoint[]
+  total: number
+  lift: number
+  cardio: number
+  estimatedSessions: number
+  /** primeira atividade estimada dentro do período */
+  from: string | null
+  to: string
+  granularity: "week" | "month"
+}
+
+const MONTH_SHORT = [
+  "jan",
+  "fev",
+  "mar",
+  "abr",
+  "mai",
+  "jun",
+  "jul",
+  "ago",
+  "set",
+  "out",
+  "nov",
+  "dez",
+] as const
+
+function shortDate(date: Date): string {
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function calendarDayIndex(date: Date): number {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS
+}
+
+/**
+ * Série para o painel de gasto calórico.
+ *
+ * - `all`: histórico completo agregado por mês, preservando meses zerados;
+ * - `12w`: doze blocos consecutivos de sete dias, com o último terminando hoje.
+ *
+ * A musculação e o cardio de uma sessão mista são separados. "Cardio" inclui
+ * qualquer bloco aeróbico: Zona 2, intenso, esporte e atividade do Strava.
+ */
+export function calorieTrend(
+  data: GymData,
+  today: Date,
+  range: CalorieTrendRange = "all"
+): CalorieTrend {
+  const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const todayKey = toDateKey(normalizedToday)
+  const rollingStart = new Date(
+    normalizedToday.getFullYear(),
+    normalizedToday.getMonth(),
+    normalizedToday.getDate() - 83
+  )
+  const rollingStartKey = toDateKey(rollingStart)
+
+  const sessions = data.workouts
+    .filter(
+      (workout) =>
+        workout.date <= todayKey && (range === "all" || workout.date >= rollingStartKey)
+    )
+    .map((workout) => ({
+      workout,
+      estimate: sessionKcal(workout, weightKgOn(data.body, workout.date)),
+    }))
+    .filter((item): item is { workout: WorkoutLog; estimate: SessionKcal } => item.estimate !== null)
+    .sort((a, b) => a.workout.date.localeCompare(b.workout.date))
+
+  const empty: CalorieTrend = {
+    points: [],
+    total: 0,
+    lift: 0,
+    cardio: 0,
+    estimatedSessions: 0,
+    from: null,
+    to: todayKey,
+    granularity: range === "all" ? "month" : "week",
+  }
+  if (sessions.length === 0) return empty
+
+  const points: CalorieTrendPoint[] = []
+  if (range === "all") {
+    const first = fromDateKey(sessions[0].workout.date)
+    const cursor = new Date(first.getFullYear(), first.getMonth(), 1)
+    const currentMonth = new Date(normalizedToday.getFullYear(), normalizedToday.getMonth(), 1)
+    while (cursor <= currentMonth) {
+      const year = cursor.getFullYear()
+      const month = cursor.getMonth()
+      points.push({
+        key: `${year}-${String(month + 1).padStart(2, "0")}`,
+        label: `${MONTH_SHORT[month]}/${String(year).slice(-2)}`,
+        lift: 0,
+        cardio: 0,
+        total: 0,
+        current: year === currentMonth.getFullYear() && month === currentMonth.getMonth(),
+      })
+      cursor.setMonth(cursor.getMonth() + 1)
+    }
+    const byKey = new Map(points.map((point) => [point.key, point]))
+    for (const { workout, estimate } of sessions) {
+      const point = byKey.get(workout.date.slice(0, 7))
+      if (!point) continue
+      point.lift += estimate.lift
+      point.cardio += estimate.cardio
+      point.total += estimate.mid
+    }
+  } else {
+    for (let index = 0; index < 12; index++) {
+      const start = new Date(
+        rollingStart.getFullYear(),
+        rollingStart.getMonth(),
+        rollingStart.getDate() + index * 7
+      )
+      const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)
+      points.push({
+        key: toDateKey(start),
+        label: shortDate(end),
+        lift: 0,
+        cardio: 0,
+        total: 0,
+        current: index === 11,
+      })
+    }
+    for (const { workout, estimate } of sessions) {
+      const elapsedDays = calendarDayIndex(fromDateKey(workout.date)) - calendarDayIndex(rollingStart)
+      const point = points[Math.floor(elapsedDays / 7)]
+      if (!point) continue
+      point.lift += estimate.lift
+      point.cardio += estimate.cardio
+      point.total += estimate.mid
+    }
+  }
+
+  return {
+    points,
+    total: points.reduce((sum, point) => sum + point.total, 0),
+    lift: points.reduce((sum, point) => sum + point.lift, 0),
+    cardio: points.reduce((sum, point) => sum + point.cardio, 0),
+    estimatedSessions: sessions.length,
+    from: sessions[0].workout.date,
+    to: todayKey,
+    granularity: range === "all" ? "month" : "week",
   }
 }
 

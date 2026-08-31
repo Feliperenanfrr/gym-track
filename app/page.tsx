@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw } from "lucide-react"
-import { MuscleVolumeChart, StrengthChart, WeeklyVolumeChart, ZoneChart } from "@/components/charts"
+import {
+  CalorieChart,
+  MuscleVolumeChart,
+  StrengthChart,
+  WeeklyVolumeChart,
+  ZoneChart,
+} from "@/components/charts"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
@@ -16,7 +22,15 @@ import {
   ScheduleMode,
   setScheduleMode,
 } from "@/lib/cycle"
-import { computeReadiness, ReadinessLevel, waterGoalMl, weeklySummary, weightTrend7d } from "@/lib/insights"
+import {
+  calorieTrend,
+  type CalorieTrendRange,
+  computeReadiness,
+  ReadinessLevel,
+  waterGoalMl,
+  weeklySummary,
+  weightTrend7d,
+} from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { countsTowardProgramTarget, PLAN_BY_ID, planForProgram, sessionForWeekday } from "@/lib/plan"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
@@ -150,6 +164,7 @@ export default function Dashboard() {
   const today = useOperationalDay()
   const [lift, setLift] = useState("bench")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
+  const [calorieRange, setCalorieRange] = useState<CalorieTrendRange>("all")
   const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
   const [mode, setMode] = useState<ScheduleMode>("ciclo")
   /** nudge de calibração (sem peso no banco) dispensado pelo usuário */
@@ -279,6 +294,10 @@ export default function Dashboard() {
     const weekSummary =
       isoWeekday(today) === 7 ? weeklySummary(data, monday, program) : null
     const achievements = computeAchievements(data, today)
+    const calories = {
+      all: calorieTrend(data, today, "all"),
+      "12w": calorieTrend(data, today, "12w"),
+    }
 
     // hidratação de hoje
     const waterToday = data.hydration.find((h) => h.date === todayKey)?.ml ?? 0
@@ -363,6 +382,7 @@ export default function Dashboard() {
       readiness,
       weekSummary,
       achievements,
+      calories,
       waterToday,
       waterGoal,
       sleepMetrics,
@@ -412,6 +432,10 @@ export default function Dashboard() {
   })
   const rollingView = program === "bjj" || mode === "ciclo"
   const z2Target = program === "bjj" ? BJJ_Z2_TARGET : HYPERTROPHY_Z2_TARGET
+  const calorieView = view.calories[calorieRange]
+  const cardioCalorieShare =
+    calorieView.total > 0 ? Math.round((calorieView.cardio / calorieView.total) * 100) : 0
+  const liftCalorieShare = calorieView.total > 0 ? 100 - cardioCalorieShare : 0
 
   return (
     <main>
@@ -965,6 +989,87 @@ export default function Dashboard() {
           </Link>
         </div>
       </Card>
+
+      {/* Gasto estimado: uma única visualização reúne total, composição e tendência. */}
+      <CollapsibleSection title="Calorias dos treinos" accent="gold" defaultOpen>
+        <Card className="rise rise-4 border-l-4 border-l-gold">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                Gasto estimado · {calorieRange === "all" ? "todo o histórico" : "últimas 12 semanas"}
+              </p>
+              <p className="mt-1 font-mono text-2xl font-semibold text-gold">
+                {calorieView.total > 0 ? calorieView.total.toLocaleString("pt-BR") : "—"}
+                <span className="ml-1 text-xs font-normal text-steel-dim">kcal</span>
+              </p>
+            </div>
+            <div className="flex gap-1.5" aria-label="Período do gráfico de calorias">
+              {(["all", "12w"] as const).map((range) => (
+                <button
+                  key={range}
+                  onClick={() => setCalorieRange(range)}
+                  aria-pressed={calorieRange === range}
+                  className={cn(
+                    "rounded border px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-colors",
+                    calorieRange === range
+                      ? "border-gold bg-gold/10 text-gold"
+                      : "border-seam text-steel hover:text-bone"
+                  )}
+                  style={{ fontFamily: "var(--font-condensed)" }}
+                >
+                  {range === "all" ? "Tudo" : "12 sem"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {calorieView.points.length > 0 ? (
+            <>
+              <div className="mt-4 grid grid-cols-2 gap-3 border-y border-seam py-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-sm bg-zone" />
+                    Cardio
+                  </p>
+                  <p className="mt-1 font-mono text-lg font-semibold text-bone">
+                    {calorieView.cardio.toLocaleString("pt-BR")}
+                    <span className="ml-1 text-[10px] font-normal text-steel-dim">kcal</span>
+                  </p>
+                  <p className="font-mono text-[10px] text-zone">
+                    {cardioCalorieShare}% do total
+                  </p>
+                </div>
+                <div className="min-w-0 border-l border-seam pl-3">
+                  <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-sm bg-ember" />
+                    Musculação
+                  </p>
+                  <p className="mt-1 font-mono text-lg font-semibold text-bone">
+                    {calorieView.lift.toLocaleString("pt-BR")}
+                    <span className="ml-1 text-[10px] font-normal text-steel-dim">kcal</span>
+                  </p>
+                  <p className="font-mono text-[10px] text-ember">
+                    {liftCalorieShare}% do total
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <CalorieChart data={calorieView.points} />
+              </div>
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Cada barra mostra o total {calorieView.granularity === "month" ? "do mês" : "de 7 dias"};
+                cardio inclui Zona 2, intenso, esporte e Strava. A última barra ainda está em andamento.
+                Valores estimados pelo peso registrado na data, duração e intensidade.
+              </p>
+            </>
+          ) : (
+            <p className="py-10 text-center text-xs text-steel-dim">
+              Registre ao menos um treino e uma pesagem para calcular o gasto calórico.
+            </p>
+          )}
+        </Card>
+      </CollapsibleSection>
 
       {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
       <CollapsibleSection title="Treino — 6 semanas" defaultOpen>

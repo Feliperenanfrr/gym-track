@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  calorieTrend,
   computeReadiness,
   cardioMet,
   internalLoad,
@@ -270,6 +271,8 @@ describe("sessionKcal", () => {
     const est = sessionKcal(w, 80)!
     // 50 min × MET 6 × 1.4 = 420 kcal
     expect(est.mid).toBe(420)
+    expect(est.lift).toBe(420)
+    expect(est.cardio).toBe(0)
     expect(est.met).toBe(6)
     expect(est.minutes).toBe(50)
     expect(est.low).toBe(Math.round((420 * 0.8) / 10) * 10)
@@ -312,6 +315,8 @@ describe("sessionKcal", () => {
     // sala: 20 × 5 × 1.4 = 140 · Z2: 20 × 6.5 × 1.4 = 182 → 322 → 320
     expect(est.minutes).toBe(40)
     expect(est.mid).toBe(320)
+    expect(est.lift).toBe(140)
+    expect(est.cardio).toBe(180)
   })
 
   it("cada bloco de cardio entra com o MET da sua finalidade", () => {
@@ -352,6 +357,8 @@ describe("sessionKcal", () => {
     expect(est.minutes).toBe(63)
     expect(est.met).toBe(3.7)
     expect(est.mid).toBe(330)
+    expect(est.lift).toBe(0)
+    expect(est.cardio).toBe(330)
   })
 
   it("ganho de elevação corrige a caminhada e corrida usa o ritmo", () => {
@@ -385,6 +392,94 @@ describe("sessionKcal", () => {
     })
     expect(sessionKcal(w, undefined)).toBeNull()
     expect(sessionKcal(w, 0)).toBeNull()
+  })
+})
+
+/* ---------------------------------------------------------------- */
+/* Tendência e composição das calorias                              */
+/* ---------------------------------------------------------------- */
+
+describe("calorieTrend", () => {
+  it("agrega todo o histórico por mês e separa cardio de musculação", () => {
+    const data: GymData = {
+      ...emptyData,
+      body: [{ date: dayKey(-120), weightKg: 80 }],
+      workouts: [
+        workout({
+          date: dayKey(-67),
+          durationMin: 50,
+          srpe: 9,
+          entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+        }),
+        workout({
+          date: dayKey(-2),
+          sessionId: "free",
+          durationMin: 40,
+          srpe: 7,
+          entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 10 }] }],
+          cardios: [{ minutes: 20, mode: "Bike", purpose: "zone2" }],
+        }),
+        workout({
+          date: dayKey(-1),
+          sessionId: "strava",
+          cardios: [{
+            minutes: 63,
+            durationSeconds: 3780,
+            mode: "Caminhada",
+            purpose: "zone2",
+            distanceKm: 5.62,
+            steps: 6870,
+          }],
+        }),
+        workout({
+          date: dayKey(0),
+          sessionId: "sport",
+          cardios: [{ minutes: 60, mode: "Futsal", purpose: "sport" }],
+        }),
+      ],
+    }
+
+    const trend = calorieTrend(data, TODAY, "all")
+    expect(trend.points.map((point) => point.label)).toEqual(["jun/26", "jul/26", "ago/26"])
+    expect(trend.points[0]).toMatchObject({ lift: 420, cardio: 0, total: 420 })
+    expect(trend.points[1]).toMatchObject({ lift: 0, cardio: 0, total: 0 })
+    expect(trend.points[2]).toMatchObject({ lift: 140, cardio: 1180, total: 1320 })
+    expect(trend.lift).toBe(560)
+    expect(trend.cardio).toBe(1180)
+    expect(trend.total).toBe(1740)
+    expect(trend.estimatedSessions).toBe(4)
+    expect(trend.points.every((point) => point.total === point.lift + point.cardio)).toBe(true)
+  })
+
+  it("em 12 semanas exclui atividade antiga e futura e mantém os 12 intervalos", () => {
+    const lift = (date: string) => workout({
+      date,
+      durationMin: 60,
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }],
+    })
+    const trend = calorieTrend({
+      ...emptyData,
+      body: [{ date: dayKey(-120), weightKg: 80 }],
+      workouts: [lift(dayKey(-84)), lift(dayKey(-83)), lift(dayKey(+1))],
+    }, TODAY, "12w")
+
+    expect(trend.points).toHaveLength(12)
+    expect(trend.points[0].total).toBe(290)
+    expect(trend.points[11].current).toBe(true)
+    expect(trend.total).toBe(290)
+    expect(trend.estimatedSessions).toBe(1)
+    expect(trend.from).toBe(dayKey(-83))
+  })
+
+  it("sem peso não inventa calorias para o gráfico", () => {
+    const trend = calorieTrend({
+      ...emptyData,
+      workouts: [workout({
+        date: dayKey(-1),
+        entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }],
+      })],
+    }, TODAY)
+    expect(trend).toMatchObject({ points: [], total: 0, lift: 0, cardio: 0 })
   })
 })
 

@@ -50,6 +50,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 - Calorias são estimadas com o peso da época. Caminhada/corrida usa ritmo,
   cadência e elevação quando disponíveis; musculação usa duração real e MET
   ajustado pelo sRPE. O app exibe uma faixa porque não substitui calorimetria.
+- O Painel resume o gasto de todo o histórico ou das últimas 12 semanas em
+  barras empilhadas, separando cardio (incluindo esporte e Strava) de musculação.
 - `workout_templates.template` guarda o plano editável de cada sessão. O treino do
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.

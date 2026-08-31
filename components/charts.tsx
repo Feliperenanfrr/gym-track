@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import type { CalorieTrendPoint } from "@/lib/insights"
 
 const EMBER = "#ff5a1f"
 const EMBER_HOT = "#ff7a45"
@@ -281,6 +282,100 @@ export function ZoneChart({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+  )
+}
+
+function CalorieTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { value: number; dataKey?: string | number }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  const lift = payload.find((item) => item.dataKey === "lift")?.value ?? 0
+  const cardio = payload.find((item) => item.dataKey === "cardio")?.value ?? 0
+  const format = (value: number) => value.toLocaleString("pt-BR")
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-1 font-semibold text-bone">
+        {label} · {format(lift + cardio)} kcal
+      </p>
+      <p className="flex items-center gap-1.5 text-steel">
+        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ZONE }} />
+        Cardio: {format(cardio)} kcal
+      </p>
+      <p className="flex items-center gap-1.5 text-steel">
+        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: EMBER }} />
+        Musculação: {format(lift)} kcal
+      </p>
+    </div>
+  )
+}
+
+function kcalAxisTick(value: number): string {
+  if (Math.abs(value) < 1000) return String(Math.round(value))
+  return `${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`
+}
+
+/**
+ * Gasto estimado por período. Barras empilhadas preservam simultaneamente a
+ * tendência do total (altura) e a composição cardio × musculação (segmentos).
+ */
+export function CalorieChart({ data }: { data: CalorieTrendPoint[] }) {
+  const summary = data
+    .map((point) => `${point.label}: ${point.total.toLocaleString("pt-BR")} kcal`)
+    .join("; ")
+  return (
+    <div
+      role="img"
+      aria-label={`Gasto calórico estimado por período. ${summary}`}
+      className="w-full"
+    >
+      <ResponsiveContainer width="100%" height={205}>
+        <BarChart data={data} margin={{ top: 10, right: 4, left: -14, bottom: 0 }}>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={TICK}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+            minTickGap={18}
+          />
+          <YAxis
+            tick={TICK}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={kcalAxisTick}
+          />
+          <Tooltip
+            content={<CalorieTip />}
+            cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          />
+          <Bar dataKey="lift" name="Musculação" stackId="kcal">
+            {data.map((point) => (
+              <Cell
+                key={point.key}
+                fill={EMBER}
+                fillOpacity={point.current ? 0.45 : 0.82}
+              />
+            ))}
+          </Bar>
+          <Bar dataKey="cardio" name="Cardio" stackId="kcal" radius={[3, 3, 0, 0]}>
+            {data.map((point) => (
+              <Cell
+                key={point.key}
+                fill={ZONE}
+                fillOpacity={point.current ? 0.45 : 0.82}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
