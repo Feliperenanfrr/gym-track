@@ -222,8 +222,11 @@ describe("energyReport", () => {
   })
 
   it("alvos saem do gasto e do peso, em %/semana", () => {
-    const { targets } = energyReport(data, TODAY)
-    expect(targets).toEqual({ maintain: 2270, cut: 1780, bulk: 2520 })
+    const report = energyReport(data, TODAY)
+    // manter é exatamente o gasto — sem arredondamento que crie dois números
+    // para o mesmo conceito no relatório
+    expect(report.targets!.maintain).toBe(report.budget!.tdee)
+    expect(report.targets).toEqual({ maintain: 2272, cut: 1779, bulk: 2518 })
   })
 
   it("acusa treino irrelevante no gasto e baixa frequência", () => {

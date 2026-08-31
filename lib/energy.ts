@@ -306,12 +306,18 @@ export interface EnergyReport {
 const CUT_RATE_PCT = 0.5
 const BULK_RATE_PCT = 0.25
 
+/**
+ * Sem arredondar para dezenas: `maintain` PRECISA ser o mesmo número que o
+ * gasto exibido ao lado dele. Arredondado, o relatório imprimia "manutenção
+ * 2.523" no resumo e "manter 2.520" no alvo — o mesmo conceito com dois
+ * valores, o tipo de detalhe que corrói a confiança de quem lê o documento.
+ */
 function targetsFor(tdee: number, weightKg: number) {
   const kcalPerPct = (pct: number) => (weightKg * (pct / 100) * KCAL_PER_KG_WEIGHT) / 7
   return {
-    maintain: Math.round(tdee / 10) * 10,
-    cut: Math.round((tdee - kcalPerPct(CUT_RATE_PCT)) / 10) * 10,
-    bulk: Math.round((tdee + kcalPerPct(BULK_RATE_PCT)) / 10) * 10,
+    maintain: Math.round(tdee),
+    cut: Math.round(tdee - kcalPerPct(CUT_RATE_PCT)),
+    bulk: Math.round(tdee + kcalPerPct(BULK_RATE_PCT)),
   }
 }
 

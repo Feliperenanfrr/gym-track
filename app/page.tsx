@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowRight, Check, CloudOff, Droplets, History, LogOut, Moon, RotateCcw } from "lucide-react"
+import { ArrowRight, Check, CloudOff, Droplets, FileText, History, LogOut, Moon, RotateCcw } from "lucide-react"
 import {
   MuscleVolumeChart,
   StrengthChart,
@@ -459,6 +459,13 @@ export default function Dashboard() {
               title="Histórico de Treinos"
             >
               <History size={12} /> histórico
+            </Link>
+            <Link
+              href="/relatorios"
+              className="flex items-center gap-1.5 rounded border border-seam px-2.5 py-1.5 font-mono text-[10px] text-steel-dim transition-colors hover:border-steel hover:text-bone"
+              title="Relatórios em PDF"
+            >
+              <FileText size={12} /> relatórios
             </Link>
             <button
               onClick={signOut}

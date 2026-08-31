@@ -481,6 +481,29 @@ export function bjjPhaseFor(date: Date): BjjPhase {
   }
 }
 
+export interface BjjBlockWindow {
+  id: BjjPhaseId
+  label: string
+  /** yyyy-MM-dd */
+  start: string
+  /** yyyy-MM-dd; null no bloco aberto */
+  end: string | null
+}
+
+/**
+ * Janelas dos blocos em datas cruas, para quem precisa recortar o histórico
+ * por bloco (o relatório de fechamento). `BJJ_PROGRESSION` serve à tabela do
+ * Plano e traz as datas já formatadas para leitura.
+ */
+export function bjjBlockWindows(): BjjBlockWindow[] {
+  return blockWindows().map(({ block, start, end }) => ({
+    id: block.id,
+    label: block.label,
+    start,
+    end,
+  }))
+}
+
 /** Tabela de progressão exibida no Plano, com as janelas já calculadas. */
 export const BJJ_PROGRESSION = blockWindows().map(({ block, dates }) => ({
   period: dates,

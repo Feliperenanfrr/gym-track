@@ -28,6 +28,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
+| **Relatórios** | Dois documentos em PDF: fechamento de bloco (antes × depois do mesociclo) e acompanhamento nutricional |
 
 ## Dados & Auth
 
@@ -63,6 +64,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.
 
+## Relatórios em PDF
+
+Em **/relatorios** (link no cabeçalho do painel), dois documentos prontos para
+salvar ou entregar a outra pessoa:
+
+- **Fechamento de bloco** — o comparativo início × fim do mesociclo: 1RM estimada
+  por levantamento, composição corporal, volume por grupo muscular contra o piso
+  de 10 séries duras/semana, base aeróbica, energia do bloco, PRs agrupados por
+  exercício e a leitura em duas colunas do que progrediu e do que ficou para trás.
+  As pontas comparadas são um terço do período em cada lado (mínimo de 7 dias),
+  não o melhor dia isolado.
+- **Acompanhamento nutricional** — perfil de bioimpedância (com a altura derivada
+  do IMC), ingestão estimada com faixa, decomposição do gasto, alvos para cortar,
+  manter ou ganhar, variação de massa em painéis de escala própria, gasto com
+  treino, hidratação, sono e uma seção de metodologia e limitações — o documento
+  vai para quem não conhece o método.
+
+Períodos: os blocos do jiu-jitsu entram como preset com as janelas reais
+(derivadas de `BJJ_START_DATE`, truncadas em hoje quando ainda em curso); a
+hipertrofia, que roda em ciclo rotativo sem bloco, usa janelas móveis de 4, 8 ou
+12 semanas. Datas personalizadas também.
+
+O PDF sai pela impressão do navegador (**Salvar como PDF** no destino; no celular,
+pelo menu de compartilhamento) — sem dependência nova num app offline-first. A
+folha tem largura de A4 útil e, na tela, é reduzida por `transform` como preview
+de documento: o que aparece no celular é o próprio PDF em miniatura. Tema claro
+próprio e gráficos em SVG escrito à mão, porque em impressão o `ResponsiveContainer`
+do recharts mede antes do navegador refazer o layout, e tooltip e animação não
+têm o que fazer num papel.
+
 ## Na academia (fluidez)
 
 - **Timer de descanso**: ao marcar uma série, dispara um countdown com o descanso
@@ -88,6 +119,8 @@ lib/plan.ts     o plano do PDF como dados tipados
 lib/bjj-plan.ts o bloco de preparação física para o jiu-jitsu
 lib/legacy-plan.ts  protocolos aposentados, só para o histórico
 lib/energy.ts   balanço energético: tendência de massa, TDEE e ingestão estimada
+lib/reports.ts  montagem dos relatórios (períodos, antes × depois, séries semanais)
+components/report/  folhas A4, kit de gráficos SVG e primitivas de documento
 lib/store.ts    hook useGymData (Supabase: fetch + upsert)
 lib/supabase/   browser client (@supabase/ssr)
 middleware.ts   proteção de rotas via sessão

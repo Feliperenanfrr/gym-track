@@ -159,3 +159,29 @@ input[type='number']::-webkit-inner-spin-button {
 .arrive-flash {
   animation: arrive-flash 2.2s ease-out both;
 }
+
+/*
+ * Impressão: o app inteiro sai da frente para o relatório ocupar a página.
+ * O grain de fundo e a barra fixa apareceriam em toda folha impressa.
+ */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body::after {
+    display: none !important;
+  }
+
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  /* a casca do app deixa de limitar a largura: a folha manda na página */
+  .app-shell {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+}

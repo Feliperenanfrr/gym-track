@@ -1,0 +1,373 @@
+/*
+ * Folha de estilo dos relatórios.
+ *
+ * O app é escuro; o relatório é documento — vai para papel, para o PDF do
+ * celular e para a mão de outra pessoa. Por isso tem tema claro próprio, e não
+ * a paleta do painel: fundo escuro em impressão gasta tinta, borra em
+ * impressora a jato e lê como slide, não como laudo.
+ *
+ * A folha tem largura fixa de A4 útil (182 mm = 210 − 2×14 de margem). Na
+ * tela pequena ela é REDUZIDA por transform, como um preview de documento, em
+ * vez de reflowar: assim o que você vê no celular é exatamente o que sai no
+ * PDF, e o texto dentro do SVG mantém o tamanho nativo.
+ */
+
+.report-preview-frame {
+  overflow: hidden;
+}
+
+.report-preview {
+  transform-origin: top left;
+  width: max-content;
+}
+
+@media print {
+  .report-preview-frame {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}
+
+.report-sheet {
+  width: 182mm;
+  background: #fff;
+  color: #1c1917;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 0 0 4mm;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.report-sheet * {
+  box-sizing: border-box;
+}
+
+/* cabeçalho ------------------------------------------------------- */
+
+.report-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 2px solid #1c1917;
+  padding-bottom: 8px;
+  margin-bottom: 14px;
+}
+
+.report-wordmark {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: #1c1917;
+}
+
+.report-head h1 {
+  font-family: var(--font-condensed);
+  font-size: 21px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  margin: 5px 0 0;
+}
+
+.report-head .report-meta {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: #57534e;
+  text-align: right;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* seções ---------------------------------------------------------- */
+
+.report-section {
+  margin-top: 15px;
+  break-inside: avoid;
+}
+
+.report-section > h2 {
+  font-family: var(--font-condensed);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #1c1917;
+  border-bottom: 1px solid #d6d3d1;
+  padding-bottom: 3px;
+  margin: 0 0 8px;
+}
+
+.report-section > h2 span {
+  float: right;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: #78716c;
+  text-transform: none;
+}
+
+.report-note {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 1.6;
+  color: #78716c;
+  margin: 6px 0 0;
+}
+
+.report-lead {
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 0 0 8px;
+}
+
+/* KPIs ------------------------------------------------------------ */
+
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #e7e5e4;
+  border: 1px solid #e7e5e4;
+}
+
+.report-kpis > div {
+  background: #fff;
+  padding: 7px 9px;
+}
+
+.report-kpis dt {
+  font-family: var(--font-condensed);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #78716c;
+  margin: 0;
+}
+
+.report-kpis dd {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 1px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-kpis dd small {
+  font-size: 9px;
+  font-weight: 400;
+  color: #78716c;
+  margin-left: 2px;
+}
+
+/* tabelas --------------------------------------------------------- */
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table th {
+  text-align: right;
+  font-family: var(--font-condensed);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #78716c;
+  border-bottom: 1px solid #d6d3d1;
+  padding: 0 0 3px;
+}
+
+.report-table th:first-child,
+.report-table td:first-child {
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 10px;
+}
+
+.report-table td {
+  text-align: right;
+  padding: 3.5px 0;
+  border-bottom: 1px solid #f0efed;
+}
+
+.report-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.report-table td.up {
+  color: #15803d;
+}
+
+.report-table td.down {
+  color: #b91c1c;
+}
+
+.report-table td.flat {
+  color: #78716c;
+}
+
+/* legenda --------------------------------------------------------- */
+
+.report-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  color: #57534e;
+  margin-top: 4px;
+}
+
+.report-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.report-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  display: inline-block;
+}
+
+.report-legend b {
+  color: #1c1917;
+  font-weight: 600;
+}
+
+/* listas de veredito ---------------------------------------------- */
+
+.report-findings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.report-findings ul {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.report-findings li {
+  margin-bottom: 4px;
+}
+
+.report-findings h3 {
+  font-family: var(--font-condensed);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 5px;
+}
+
+.report-findings .good h3 {
+  color: #15803d;
+}
+
+.report-findings .warn h3 {
+  color: #b45309;
+}
+
+/* small multiples ------------------------------------------------- */
+
+.report-sparks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.report-sparks > div {
+  border: 1px solid #e7e5e4;
+  padding: 6px 8px 2px;
+}
+
+/* alvos ----------------------------------------------------------- */
+
+.report-targets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.report-targets > div {
+  border: 1px solid #e7e5e4;
+  border-top: 2px solid #1c1917;
+  padding: 6px 8px;
+}
+
+.report-targets dt {
+  font-family: var(--font-condensed);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #78716c;
+}
+
+.report-targets dd {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 1px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-targets dd small {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 400;
+  color: #78716c;
+}
+
+.report-foot {
+  margin-top: 16px;
+  border-top: 1px solid #d6d3d1;
+  padding-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.6;
+  color: #78716c;
+}
+
+.report-cols-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+/* impressão ------------------------------------------------------- */
+
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@media print {
+  .report-preview {
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  .report-sheet {
+    width: auto;
+    font-size: 10.5px;
+  }
+
+  .report-page-break {
+    break-before: page;
+  }
+}
