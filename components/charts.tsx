@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import type { EnergyBalancePoint } from "@/lib/energy"
 import type { CalorieTrendPoint } from "@/lib/insights"
 
 const EMBER = "#ff5a1f"
@@ -285,57 +286,111 @@ export function ZoneChart({
   )
 }
 
-function CalorieTip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean
-  payload?: { value: number; dataKey?: string | number }[]
-  label?: string
-}) {
-  if (!active || !payload?.length) return null
-  const lift = payload.find((item) => item.dataKey === "lift")?.value ?? 0
-  const cardio = payload.find((item) => item.dataKey === "cardio")?.value ?? 0
-  const format = (value: number) => value.toLocaleString("pt-BR")
-  return (
-    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
-      <p className="mb-1 font-semibold text-bone">
-        {label} · {format(lift + cardio)} kcal
-      </p>
-      <p className="flex items-center gap-1.5 text-steel">
-        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ZONE }} />
-        Cardio: {format(cardio)} kcal
-      </p>
-      <p className="flex items-center gap-1.5 text-steel">
-        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: EMBER }} />
-        Musculação: {format(lift)} kcal
-      </p>
-    </div>
-  )
-}
-
+/**
+ * Tick do eixo em kcal. A casa decimal fica mesmo em valores de cinco dígitos:
+ * arredondar 10.500 para "11k" põe um número errado no eixo. O que se ajusta é
+ * a calha do eixo (`width`), larga o bastante para "10,5k".
+ */
 function kcalAxisTick(value: number): string {
   if (Math.abs(value) < 1000) return String(Math.round(value))
   return `${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`
 }
 
 /**
- * Gasto estimado por período. Barras empilhadas preservam simultaneamente a
- * tendência do total (altura) e a composição cardio × musculação (segmentos).
+ * Cor do fundo do card. As barras recebem tons um passo mais escuros que os
+ * tokens de marca: `#ff5a1f`/`#2dd4bf` são vivos demais como área grande sobre
+ * fundo escuro (ficam fora da banda de luminosidade validada). O token vivo
+ * volta no realce do intervalo em foco e nos marcadores da legenda, então a
+ * identidade "brasa = musculação / turquesa = cardio" se mantém.
  */
-export function CalorieChart({ data }: { data: CalorieTrendPoint[] }) {
+const SURFACE = "#141216"
+const LIFT_FILL = "#e05a20"
+const CARDIO_FILL = "#22a894"
+
+interface ChartClickState {
+  activeTooltipIndex?: number | null
+}
+
+function focusHandler(onFocus?: (index: number) => void) {
+  if (!onFocus) return undefined
+  return (state: ChartClickState) => {
+    const index = state?.activeTooltipIndex
+    if (typeof index === "number" && index >= 0) onFocus(index)
+  }
+}
+
+/**
+ * Gasto por intervalo, empilhado: a altura da barra é o total e os dois
+ * segmentos são a composição — as três leituras que o painel precisa, num
+ * gráfico só.
+ *
+ * Decisões que valem a pena registrar:
+ * - a linha tracejada é a média dos intervalos FECHADOS, o que transforma cada
+ *   barra numa comparação ("essa semana rendeu acima do meu normal") em vez de
+ *   um número solto;
+ * - o intervalo em curso vem hachurado, não esmaecido: opacidade baixa lê-se
+ *   como "pouco", quando o que acontece é "incompleto";
+ * - o valor de cada barra é lido por toque no leitor fixo acima do gráfico, e
+ *   não só por tooltip flutuante — no celular não existe hover, e um balão sob
+ *   o dedo tapa justamente a barra que se quer ver.
+ */
+export function CalorieChart({
+  data,
+  average,
+  focusIndex,
+  onFocus,
+}: {
+  data: CalorieTrendPoint[]
+  /** média por intervalo fechado (linha de referência) */
+  average: number
+  /** intervalo destacado no leitor */
+  focusIndex: number
+  onFocus?: (index: number) => void
+}) {
   const summary = data
     .map((point) => `${point.label}: ${point.total.toLocaleString("pt-BR")} kcal`)
     .join("; ")
+  const handleFocus = focusHandler(onFocus)
   return (
     <div
       role="img"
       aria-label={`Gasto calórico estimado por período. ${summary}`}
       className="w-full"
     >
-      <ResponsiveContainer width="100%" height={205}>
-        <BarChart data={data} margin={{ top: 10, right: 4, left: -14, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart
+          data={data}
+          margin={{ top: 12, right: 8, left: 2, bottom: 0 }}
+          barCategoryGap="18%"
+          onClick={handleFocus}
+          onMouseMove={handleFocus}
+        >
+          {/* Hachura do intervalo em curso — "ainda enchendo", não "menor".
+              O <defs> precisa ser elemento nativo aqui: o recharts descarta
+              componentes que não reconhece, e a referência url(#...) fica
+              pendurada no vazio (barra invisível, não hachurada). */}
+          <defs>
+            <pattern
+              id="kcalHatchLift"
+              width={6}
+              height={6}
+              patternTransform="rotate(45)"
+              patternUnits="userSpaceOnUse"
+            >
+              <rect width={6} height={6} fill={LIFT_FILL} fillOpacity={0.3} />
+              <line x1={0} y1={0} x2={0} y2={6} stroke={LIFT_FILL} strokeWidth={3} />
+            </pattern>
+            <pattern
+              id="kcalHatchCardio"
+              width={6}
+              height={6}
+              patternTransform="rotate(45)"
+              patternUnits="userSpaceOnUse"
+            >
+              <rect width={6} height={6} fill={CARDIO_FILL} fillOpacity={0.3} />
+              <line x1={0} y1={0} x2={0} y2={6} stroke={CARDIO_FILL} strokeWidth={3} />
+            </pattern>
+          </defs>
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis
             dataKey="label"
@@ -343,33 +398,193 @@ export function CalorieChart({ data }: { data: CalorieTrendPoint[] }) {
             axisLine={false}
             tickLine={false}
             interval="preserveStartEnd"
-            minTickGap={18}
+            minTickGap={22}
           />
           <YAxis
             tick={TICK}
             axisLine={false}
             tickLine={false}
+            tickCount={4}
+            width={40}
             tickFormatter={kcalAxisTick}
           />
-          <Tooltip
-            content={<CalorieTip />}
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
-          />
-          <Bar dataKey="lift" name="Musculação" stackId="kcal">
-            {data.map((point) => (
+          <Tooltip content={() => null} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+          {/* sem rótulo: encostava no tick do eixo Y, e a legenda abaixo do
+              gráfico já diz o que o tracejado significa */}
+          {average > 0 && (
+            <ReferenceLine
+              y={average}
+              stroke="#97919e"
+              strokeDasharray="3 4"
+              strokeOpacity={0.75}
+            />
+          )}
+          {/* stroke da cor do fundo = respiro de 2px entre os segmentos */}
+          {/* animação desligada: o gráfico re-renderiza a cada toque para
+              mover o foco, e o recharts reinicia a animação de crescimento a
+              cada render — as barras piscavam do zero a cada leitura */}
+          <Bar
+            dataKey="lift"
+            name="Musculação"
+            stackId="kcal"
+            stroke={SURFACE}
+            strokeWidth={2}
+            isAnimationActive={false}
+          >
+            {data.map((point, index) => (
               <Cell
                 key={point.key}
-                fill={EMBER}
-                fillOpacity={point.current ? 0.45 : 0.82}
+                fill={point.current ? "url(#kcalHatchLift)" : LIFT_FILL}
+                fillOpacity={focusIndex === index || focusIndex < 0 ? 1 : 0.55}
               />
             ))}
           </Bar>
-          <Bar dataKey="cardio" name="Cardio" stackId="kcal" radius={[3, 3, 0, 0]}>
-            {data.map((point) => (
+          <Bar
+            dataKey="cardio"
+            name="Cardio"
+            stackId="kcal"
+            radius={[3, 3, 0, 0]}
+            stroke={SURFACE}
+            strokeWidth={2}
+            isAnimationActive={false}
+          >
+            {data.map((point, index) => (
               <Cell
                 key={point.key}
-                fill={ZONE}
-                fillOpacity={point.current ? 0.45 : 0.82}
+                fill={point.current ? "url(#kcalHatchCardio)" : CARDIO_FILL}
+                fillOpacity={focusIndex === index || focusIndex < 0 ? 1 : 0.55}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+/** Extremidade arredondada no lado do dado; base reta na linha do zero. */
+function divergingPath(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  up: boolean
+): string {
+  const r = Math.max(0, Math.min(3, w / 2, h))
+  return up
+    ? `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + w - r},${y} Q${x + w},${y} ${x + w},${y + r} L${x + w},${y + h} Z`
+    : `M${x},${y} L${x},${y + h - r} Q${x},${y + h} ${x + r},${y + h} L${x + w - r},${y + h} Q${x + w},${y + h} ${x + w},${y + h - r} L${x + w},${y} Z`
+}
+
+interface BarShapeProps {
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  fill?: string
+  fillOpacity?: number
+  payload?: EnergyBalancePoint
+}
+
+function BalanceBar(props: BarShapeProps) {
+  const { x = 0, y = 0, width = 0, height = 0, fill, fillOpacity, payload } = props
+  if (!height || !width) return <g />
+  const up = (payload?.balance ?? 0) >= 0
+  return (
+    <path d={divergingPath(x, y, width, height, up)} fill={fill} fillOpacity={fillOpacity} />
+  )
+}
+
+/**
+ * Saldo energético semanal: acima da linha o corpo guardou energia (comeu mais
+ * do que gastou), abaixo dela liberou. Zero é manutenção.
+ *
+ * É um gráfico divergente porque a pergunta é de polaridade — "sobrou ou
+ * faltou?" — e não de magnitude. Peso e calorias moram no mesmo eixo por
+ * conversão, não por dois eixos: kg/semana vira kcal/dia pela densidade dos
+ * tecidos, então uma escala só descreve as duas coisas honestamente.
+ *
+ * A linha tracejada do gasto médio com treino dá a régua que responde à
+ * pergunta prática: se o saldo oscila 600 kcal/dia e o treino vale 200, o
+ * ponteiro está na cozinha, não na academia.
+ */
+export function EnergyBalanceChart({
+  data,
+  trainingReference,
+  focusIndex,
+  onFocus,
+}: {
+  data: EnergyBalancePoint[]
+  /** kcal/dia médias de treino, desenhadas como referência */
+  trainingReference: number
+  focusIndex: number
+  onFocus?: (index: number) => void
+}) {
+  const summary = data
+    .filter((point) => point.balance !== null)
+    .map(
+      (point) =>
+        `${point.label}: ${point.balance! > 0 ? "+" : ""}${point.balance} kcal por dia`
+    )
+    .join("; ")
+  const handleFocus = focusHandler(onFocus)
+  return (
+    <div
+      role="img"
+      aria-label={`Saldo energético estimado por semana. ${summary}`}
+      className="w-full"
+    >
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart
+          data={data}
+          margin={{ top: 12, right: 8, left: 2, bottom: 0 }}
+          barCategoryGap="22%"
+          onClick={handleFocus}
+          onMouseMove={handleFocus}
+        >
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={TICK}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+            minTickGap={22}
+          />
+          <YAxis
+            tick={TICK}
+            axisLine={false}
+            tickLine={false}
+            tickCount={4}
+            width={40}
+            tickFormatter={kcalAxisTick}
+          />
+          <Tooltip content={() => null} cursor={{ fill: "rgba(255,255,255,0.05)" }} />
+          {/* extendDomain: o gasto com treino costuma cair fora da faixa dos
+              saldos, e é justamente a comparação que o gráfico existe para fazer */}
+          {trainingReference > 0 && (
+            <ReferenceLine
+              y={trainingReference}
+              stroke="#97919e"
+              strokeDasharray="3 4"
+              strokeOpacity={0.7}
+              ifOverflow="extendDomain"
+              label={{
+                value: `treino ${trainingReference}`,
+                position: "insideTopRight",
+                fill: "#97919e",
+                fontSize: 9,
+                fontFamily: "'JetBrains Mono Variable', monospace",
+              }}
+            />
+          )}
+          <ReferenceLine y={0} stroke="#5f5a66" strokeWidth={1} />
+          <Bar dataKey="balance" name="Saldo" shape={<BalanceBar />} isAnimationActive={false}>
+            {data.map((point, index) => (
+              <Cell
+                key={point.key}
+                fill={(point.balance ?? 0) >= 0 ? LIFT_FILL : CARDIO_FILL}
+                fillOpacity={focusIndex === index || focusIndex < 0 ? 1 : 0.5}
               />
             ))}
           </Bar>
