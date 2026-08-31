@@ -24,7 +24,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 
 | Aba | O que faz |
 | --- | --- |
-| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado e minutos de base aeróbica |
+| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos e balanço energético (ingestão estimada × variação de massa) |
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
@@ -50,8 +50,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 - Calorias são estimadas com o peso da época. Caminhada/corrida usa ritmo,
   cadência e elevação quando disponíveis; musculação usa duração real e MET
   ajustado pelo sRPE. O app exibe uma faixa porque não substitui calorimetria.
-- O Painel resume o gasto de todo o histórico ou das últimas 12 semanas em
-  barras empilhadas, separando cardio (incluindo esporte e Strava) de musculação.
+- O Painel mostra o gasto como TAXA (kcal/semana) contra o período anterior, com
+  barras empilhadas separando cardio (incluindo esporte e Strava) de musculação,
+  linha da média e leitor por toque. 12 semanas ou histórico por mês.
+- **Balanço energético**: a variação de massa dos últimos 28 dias vira energia
+  (gordura a 9.440 kcal/kg e magra a 1.816 kcal/kg quando há bioimpedância;
+  7.700 kcal/kg de peso no fallback) e, somada ao gasto modelado — basal medido
+  na balança ou Katch-McArdle, rotina/digestão a 25% do basal e as calorias de
+  treino diluídas por dia — estima a ingestão diária, os alvos para cortar,
+  manter ou ganhar, e o saldo semana a semana num gráfico divergente.
 - `workout_templates.template` guarda o plano editável de cada sessão. O treino do
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.
@@ -80,6 +87,7 @@ components/     bottom-nav, cards/ui, gráficos recharts
 lib/plan.ts     o plano do PDF como dados tipados
 lib/bjj-plan.ts o bloco de preparação física para o jiu-jitsu
 lib/legacy-plan.ts  protocolos aposentados, só para o histórico
+lib/energy.ts   balanço energético: tendência de massa, TDEE e ingestão estimada
 lib/store.ts    hook useGymData (Supabase: fetch + upsert)
 lib/supabase/   browser client (@supabase/ssr)
 middleware.ts   proteção de rotas via sessão

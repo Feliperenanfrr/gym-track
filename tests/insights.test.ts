@@ -479,7 +479,63 @@ describe("calorieTrend", () => {
         entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }],
       })],
     }, TODAY)
-    expect(trend).toMatchObject({ points: [], total: 0, lift: 0, cardio: 0 })
+    expect(trend).toMatchObject({
+      points: [],
+      total: 0,
+      lift: 0,
+      cardio: 0,
+      perWeek: 0,
+      perSession: 0,
+      perPoint: 0,
+      previousPerWeek: null,
+    })
+  })
+
+  it("converte o acumulado em taxa: por semana, por sessão e por intervalo", () => {
+    const lift = (date: string) => workout({
+      date,
+      durationMin: 60,
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }],
+    })
+    const trend = calorieTrend({
+      ...emptyData,
+      body: [{ date: dayKey(-200), weightKg: 80 }],
+      // um treino na janela atual e um na janela anterior, p/ o delta
+      workouts: [lift(dayKey(-84)), lift(dayKey(-83))],
+    }, TODAY, "12w")
+
+    expect(trend.days).toBe(84)
+    expect(trend.perWeek).toBe(Math.round((290 / 84) * 7))
+    expect(trend.perSession).toBe(290)
+    // a média de referência ignora o intervalo em curso (11 fechados de 12)
+    expect(trend.perPoint).toBe(Math.round(290 / 11))
+    expect(trend.previousPerWeek).toBe(Math.round((290 / 84) * 7))
+  })
+
+  it("no histórico completo os dias contam da 1ª atividade e não há anterior", () => {
+    const data: GymData = {
+      ...emptyData,
+      body: [{ date: dayKey(-120), weightKg: 80 }],
+      workouts: [
+        workout({
+          date: dayKey(-67),
+          durationMin: 50,
+          srpe: 9,
+          entries: [{ exerciseId: "bench", sets: [{ weight: 100, reps: 5 }] }],
+        }),
+        workout({
+          date: dayKey(0),
+          sessionId: "sport",
+          cardios: [{ minutes: 60, mode: "Futsal", purpose: "sport" }],
+        }),
+      ],
+    }
+    const trend = calorieTrend(data, TODAY, "all")
+    expect(trend.days).toBe(68)
+    expect(trend.perWeek).toBe(Math.round((trend.total / 68) * 7))
+    expect(trend.previousPerWeek).toBeNull()
+    // ago/26 está em curso: a régua sai de jun e jul
+    expect(trend.perPoint).toBe(Math.round(420 / 2))
   })
 })
 

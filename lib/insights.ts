@@ -459,6 +459,23 @@ export interface CalorieTrend {
   from: string | null
   to: string
   granularity: "week" | "month"
+  /** dias cobertos pelo período — converte o total em taxa */
+  days: number
+  /** média de kcal por semana no período (a taxa, não o acumulado) */
+  perWeek: number
+  /**
+   * Mesma taxa na janela imediatamente anterior, para o delta. null no
+   * histórico completo, que não tem "anterior" com que se comparar.
+   */
+  previousPerWeek: number | null
+  /** média de kcal por sessão estimada */
+  perSession: number
+  /**
+   * Média por intervalo fechado do gráfico — a linha de referência. O
+   * intervalo em curso fica de fora: metade de uma semana rebaixaria a régua
+   * contra a qual as semanas cheias são lidas.
+   */
+  perPoint: number
 }
 
 const MONTH_SHORT = [
@@ -484,6 +501,25 @@ function calendarDayIndex(date: Date): number {
   return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS
 }
 
+/** Sessões do intervalo [from, to] que têm estimativa calórica, em ordem. */
+function estimatedSessionsIn(
+  data: GymData,
+  from: string,
+  to: string
+): { workout: WorkoutLog; estimate: SessionKcal }[] {
+  return data.workouts
+    .filter((workout) => workout.date >= from && workout.date <= to)
+    .map((workout) => ({
+      workout,
+      estimate: sessionKcal(workout, weightKgOn(data.body, workout.date)),
+    }))
+    .filter(
+      (item): item is { workout: WorkoutLog; estimate: SessionKcal } =>
+        item.estimate !== null
+    )
+    .sort((a, b) => a.workout.date.localeCompare(b.workout.date))
+}
+
 /**
  * Série para o painel de gasto calórico.
  *
@@ -507,17 +543,11 @@ export function calorieTrend(
   )
   const rollingStartKey = toDateKey(rollingStart)
 
-  const sessions = data.workouts
-    .filter(
-      (workout) =>
-        workout.date <= todayKey && (range === "all" || workout.date >= rollingStartKey)
-    )
-    .map((workout) => ({
-      workout,
-      estimate: sessionKcal(workout, weightKgOn(data.body, workout.date)),
-    }))
-    .filter((item): item is { workout: WorkoutLog; estimate: SessionKcal } => item.estimate !== null)
-    .sort((a, b) => a.workout.date.localeCompare(b.workout.date))
+  const sessions = estimatedSessionsIn(
+    data,
+    range === "all" ? "0000-01-01" : rollingStartKey,
+    todayKey
+  )
 
   const empty: CalorieTrend = {
     points: [],
@@ -528,6 +558,11 @@ export function calorieTrend(
     from: null,
     to: todayKey,
     granularity: range === "all" ? "month" : "week",
+    days: 0,
+    perWeek: 0,
+    previousPerWeek: null,
+    perSession: 0,
+    perPoint: 0,
   }
   if (sessions.length === 0) return empty
 
@@ -584,15 +619,59 @@ export function calorieTrend(
     }
   }
 
+  const total = points.reduce((sum, point) => sum + point.total, 0)
+  // "all" começa na primeira atividade estimada; "12w" tem 84 dias fixos,
+  // mesmo que os primeiros estejam vazios — o zero é informação.
+  const firstDay =
+    range === "all" ? fromDateKey(sessions[0].workout.date) : rollingStart
+  const days = Math.max(
+    1,
+    calendarDayIndex(normalizedToday) - calendarDayIndex(firstDay) + 1
+  )
+  const closed = points.filter((point) => !point.current)
+  const reference = closed.length > 0 ? closed : points
+
+  let previousPerWeek: number | null = null
+  if (range === "12w") {
+    const previousEnd = new Date(
+      rollingStart.getFullYear(),
+      rollingStart.getMonth(),
+      rollingStart.getDate() - 1
+    )
+    const previousStart = new Date(
+      previousEnd.getFullYear(),
+      previousEnd.getMonth(),
+      previousEnd.getDate() - 83
+    )
+    const previous = estimatedSessionsIn(
+      data,
+      toDateKey(previousStart),
+      toDateKey(previousEnd)
+    )
+    previousPerWeek =
+      previous.length > 0
+        ? Math.round(
+            (previous.reduce((sum, item) => sum + item.estimate.mid, 0) / 84) * 7
+          )
+        : null
+  }
+
   return {
     points,
-    total: points.reduce((sum, point) => sum + point.total, 0),
+    total,
     lift: points.reduce((sum, point) => sum + point.lift, 0),
     cardio: points.reduce((sum, point) => sum + point.cardio, 0),
     estimatedSessions: sessions.length,
     from: sessions[0].workout.date,
     to: todayKey,
     granularity: range === "all" ? "month" : "week",
+    days,
+    perWeek: Math.round((total / days) * 7),
+    previousPerWeek,
+    perSession: Math.round(total / sessions.length),
+    perPoint: Math.round(
+      reference.reduce((sum, point) => sum + point.total, 0) / reference.length
+    ),
   }
 }
 
