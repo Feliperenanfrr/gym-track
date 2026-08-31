@@ -64,6 +64,35 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.
 
+## Backup do banco
+
+O plano Free do Supabase **não faz backup nenhum** — nem diário, nem snapshot ao
+pausar o projeto. É por nossa conta:
+
+```bash
+pnpm backup     # backups/<data>/{schema.sql, data.sql, dados.json, MANIFEST.json}
+```
+
+Usa o `SUPABASE_ACCESS_TOKEN` do `.env.local` (Management API roda SQL como
+`postgres`): não precisa de Docker nem da senha do banco. Salva tabelas,
+constraints, índices, funções, triggers, RLS e policies do schema `public`, mais
+todas as linhas — em SQL para restaurar e em JSON para ler.
+
+`backups/` está no `.gitignore`: são dados de saúde, nunca vão para o repositório.
+Copie para fora da máquina (Drive, HD externo) — backup no mesmo disco não é backup.
+
+Restaurar num projeto vazio, na ordem: `schema.sql`, depois `data.sql`. As FKs
+apontam para `auth.users`, então o usuário precisa existir antes (mesmo `user_id`)
+ou as linhas são rejeitadas.
+
+`pnpm backup:pgdump` é a rota alternativa via `pg_dump` (CLI do Supabase +
+Docker + `SUPABASE_DB_URL`, a string do *Session pooler*). Mais lenta de
+preparar, mas pega também roles e os schemas `auth`/`storage`.
+
+> As migrations em `supabase/migrations/` **não** recriam o banco sozinhas:
+> `workouts` e `body_logs` nasceram no dashboard e só aparecem ali em `alter table`.
+> O `schema.sql` do backup é o que fecha esse buraco.
+
 ## Relatórios em PDF
 
 Em **/relatorios** (link no cabeçalho do painel), dois documentos prontos para
