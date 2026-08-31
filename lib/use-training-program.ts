@@ -1,27 +1,30 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { BJJ_START_DATE } from "./bjj-plan"
+import { ENGINE_START_DATE } from "./engine-plan"
 import { TrainingProgram } from "./types"
 import { toDateKey } from "./utils"
 
 /**
- * v2: a chave antiga guardava a escolha feita durante o protocolo do flag
- * football. Versionar faz o padrão do bloco novo valer uma vez, sem carregar
- * uma preferência que era de outro objetivo.
+ * v3: as chaves anteriores guardavam a escolha feita durante o flag football
+ * e a preparação para jiu-jitsu. Versionar faz o padrão do ciclo novo valer
+ * uma vez, sem carregar uma preferência que era de outro objetivo.
  */
-const PROGRAM_KEY = "gym-track:training-program:v2"
+const PROGRAM_KEY = "gym-track:training-program:v3"
 const PROGRAM_EVENT = "gym-track:training-program-change"
 
-/** O bloco de jiu-jitsu é aberto: uma vez começado, é o objetivo padrão. */
+/**
+ * O ciclo de motor aeróbico é o objetivo padrão desde 31/08/2026: é ele que
+ * abre o app enquanto o usuário não escolher a hipertrofia explicitamente.
+ */
 function defaultProgramFor(date: Date): TrainingProgram {
-  return toDateKey(date) >= BJJ_START_DATE ? "bjj" : "hypertrophy"
+  return toDateKey(date) >= ENGINE_START_DATE ? "engine" : "hypertrophy"
 }
 
 export function getTrainingProgram(date = new Date()): TrainingProgram {
   try {
     const stored = localStorage.getItem(PROGRAM_KEY)
-    if (stored === "hypertrophy" || stored === "bjj") return stored
+    if (stored === "hypertrophy" || stored === "engine") return stored
   } catch {
     // O padrão por data também funciona quando o storage não está disponível.
   }

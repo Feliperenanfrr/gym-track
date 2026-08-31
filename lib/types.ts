@@ -4,6 +4,14 @@ export type SessionId =
   | "lowerA"
   | "upperB"
   | "lowerB"
+  /* ciclo de motor aeróbico e déficit (ago/2026) */
+  | "engineForceA"
+  | "engineForceB"
+  | "engineMotor"
+  | "engineIntervals"
+  | "engineZ2"
+  | "engineHome"
+  /* aposentados: preparação para jiu-jitsu, mantidos só para o histórico */
   | "bjjPull"
   | "bjjBase"
   | "bjjEngine"
@@ -19,7 +27,7 @@ export type SessionId =
   | "sport"
   | "rest"
 
-export type TrainingProgram = "bjj" | "hypertrophy"
+export type TrainingProgram = "engine" | "hypertrophy"
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 

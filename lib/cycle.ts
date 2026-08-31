@@ -45,7 +45,7 @@ export interface CycleSuggestion {
   daysSinceLastLift: number | null
   /**
    * Dias desde a última musculação registrada, venha ela do avulso, do bloco
-   * de jiu-jitsu ou da fila. É esta a conta que decide "voltando de pausa":
+   * do ciclo de motor ou da fila. É esta a conta que decide "voltando de pausa":
    * quem treinou avulso ontem não está voltando de nada.
    */
   daysSinceStrength: number | null
@@ -79,7 +79,7 @@ function dateKeyDaysAgo(today: Date, days: number): string {
 
 /**
  * Uma sessão com séries registradas É musculação, venha ela da fila
- * Upper/Lower, do avulso ou do bloco de jiu-jitsu. Sessões de sala prescritas
+ * Upper/Lower, do avulso ou do ciclo de motor. Sessões de sala prescritas
  * contam pela própria natureza, mesmo sem séries digitadas. Cardio, esporte e
  * importações do Strava ficam de fora: fadiga de sala é outra coisa.
  */

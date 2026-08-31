@@ -1,4 +1,4 @@
-import { bjjBlockWindows } from "./bjj-plan"
+import { engineBlockWindows } from "./engine-plan"
 import {
   cardioBlocks,
   cardioPurposeOf,
@@ -82,20 +82,20 @@ export function formatFullDate(key: string): string {
 /**
  * Períodos oferecidos no seletor.
  *
- * O jiu-jitsu tem blocos nomeados com janelas próprias (derivadas da data de
- * início do plano), então eles entram como preset — é literalmente "fechar o
- * bloco". A hipertrofia roda em ciclo rotativo, sem bloco: ali só fazem
- * sentido as janelas móveis. Blocos que ainda não começaram ficam de fora.
+ * O ciclo de motor tem blocos nomeados com janelas próprias (derivadas da
+ * data de início do plano), então eles entram como preset — é literalmente
+ * "fechar o bloco". A hipertrofia roda em ciclo rotativo, sem bloco: ali só
+ * fazem sentido as janelas móveis. Blocos que ainda não começaram ficam de fora.
  */
 export function reportPeriods(today: Date): ReportPeriod[] {
   const todayKey = toDateKey(today)
   const periods: ReportPeriod[] = []
 
-  for (const window of bjjBlockWindows()) {
+  for (const window of engineBlockWindows()) {
     if (window.start > todayKey) continue
     const end = window.end === null || window.end > todayKey ? todayKey : window.end
     periods.push({
-      id: `bjj-${window.id}`,
+      id: `engine-${window.id}`,
       label: window.label,
       from: window.start,
       to: end,
@@ -882,9 +882,9 @@ function coverageConfidence(coveragePct: number): DataConfidence {
 }
 
 function coachPeriodStatus(period: ReportPeriod): CoachReport["periodStatus"] {
-  if (!period.id.startsWith("bjj-")) return "janela-movel"
-  const id = period.id.slice(4)
-  const block = bjjBlockWindows().find((window) => window.id === id)
+  if (!period.id.startsWith("engine-")) return "janela-movel"
+  const id = period.id.slice("engine-".length)
+  const block = engineBlockWindows().find((window) => window.id === id)
   return block?.end && period.to >= block.end ? "concluido" : "parcial"
 }
 
@@ -1162,8 +1162,10 @@ export function coachReport(
   if (periodStatus === "parcial") {
     questions.push("Tratar este recorte como parcial; o bloco atual ainda não terminou.")
   }
-  if (program === "bjj" && conditioningMinutes.sport === 0) {
-    questions.push("Quantificar minutos de tatame e rounds; essa exposição não aparece no período.")
+  if (program === "engine") {
+    questions.push(
+      "Confirmar as zonas de FC com teste ergométrico; as faixas em uso são estimadas a partir do próprio registro."
+    )
   }
   if (sleepCoveragePct < 40 || hydrationCoveragePct < 40) {
     questions.push("Confirmar recuperação na anamnese; sono ou hidratação tem baixa cobertura.")
@@ -1178,8 +1180,8 @@ export function coachReport(
     weeks: Math.round(weeks * 10) / 10,
     program,
     purpose:
-      program === "bjj"
-        ? "Revisão da preparação física para jiu-jitsu e reconstrução do plano."
+      program === "engine"
+        ? "Revisão do ciclo de capacidade cardiorrespiratória e perda de gordura."
         : "Revisão de hipertrofia, força e composição corporal para reconstrução do plano.",
     periodStatus,
     quality,

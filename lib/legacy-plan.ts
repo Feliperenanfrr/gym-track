@@ -1,10 +1,13 @@
 import { SessionId, SessionPlan } from "./types"
 
 /**
- * Protocolo aposentado da preparação para o campeonato de flag football
- * (18/07 a 15/08/2026). Não entra em nenhum programa ativo nem no seed de
- * templates — vive aqui só para que os treinos já registrados continuem
+ * Protocolos aposentados. Nenhum entra em programa ativo ou no seed de
+ * templates — vivem aqui só para que os treinos já registrados continuem
  * exibindo título, exercícios e prescrição no Histórico.
+ *
+ *  - Flag football (18/07 a 15/08/2026): preparação para o campeonato.
+ *  - Jiu-jitsu (25/08 a 31/08/2026): substituído pelo ciclo de motor
+ *    aeróbico e déficit, em `engine-plan.ts`.
  */
 export const LEGACY_SESSIONS: SessionPlan[] = [
   {
@@ -294,13 +297,322 @@ export const LEGACY_SESSIONS: SessionPlan[] = [
       "Bike ou esteira inclinada em ritmo de conversa, FC 125–140. Meta semanal: 60–90 min; zero HIIT na academia. Se o campo já foi pesado, pode pular.",
     exercises: [],
   },
+
+  /* ---- preparação para jiu-jitsu (ago/2026) ---- */
+
+  {
+    id: "bjjPull",
+    title: "A · Tração & Pegada",
+    subtitle: "A academia que aparece na rola",
+    weekday: 0,
+    duration: "~55–60 min",
+    kind: "lift",
+    accent: "gold",
+    description:
+      "Tudo que segura o kimono: dorsal, antebraço e trapézio, com o que toda academia tem — máquina de puxada, barra e halteres. Faça no dia sem tatame ou depois do treino técnico — nunca antes.",
+    exercises: [
+      {
+        id: "pulldown",
+        name: "Puxada alta na máquina",
+        nameEn: "Lat Pulldown",
+        muscleGroup: "Costas",
+        sets: 4,
+        repsMin: 6,
+        repsMax: 10,
+        unit: "reps",
+        rest: "2 min",
+        note:
+          "Pegada pronada um pouco mais aberta que os ombros, barra até o peito alto. É o puxar vertical que mais transfere para controlar gola e manga — progrida a carga quando fechar as 4 séries na faixa.",
+      },
+      {
+        id: "row",
+        name: "Remada curvada com barra",
+        nameEn: "Barbell Row",
+        muscleGroup: "Costas",
+        sets: 4,
+        repsMin: 6,
+        repsMax: 8,
+        unit: "reps",
+        rest: "90 s",
+        note:
+          "RIR 2 · 45–55 kg. Puxar é o padrão nº 1 do gi: controle de gola e de manga sai daqui.",
+      },
+      {
+        id: "db-ohp",
+        name: "Desenvolvimento com halteres",
+        nameEn: "Dumbbell Shoulder Press",
+        muscleGroup: "Ombro",
+        sets: 3,
+        repsMin: 6,
+        repsMax: 10,
+        unit: "reps",
+        rest: "90 s",
+        note:
+          "RIR 2 · 14–16 kg. Ombro forte é o que aguenta stack, americana e chave de braço — seu elo fraco de força, então é prioridade.",
+      },
+      {
+        id: "shrug",
+        name: "Encolhimento com barra ou halteres",
+        nameEn: "Shrug",
+        muscleGroup: "Pescoço",
+        sets: 3,
+        repsMin: 10,
+        repsMax: 15,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "Ombros sobem até as orelhas com pausa de 1 s no topo, sem rodar. Trapézio forte é a blindagem cervical contra stack e estrangulamento — e ainda carrega a pegada.",
+      },
+      {
+        id: "hammer",
+        name: "Rosca martelo",
+        nameEn: "Hammer Curl",
+        muscleGroup: "Braço",
+        sets: 3,
+        repsMin: 8,
+        repsMax: 12,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "RIR 1 · braquial e antebraço são a blindagem do cotovelo contra armlock e kimura.",
+      },
+      {
+        id: "wrist-curl",
+        name: "Rosca de punho com barra",
+        nameEn: "Barbell Wrist Curl",
+        muscleGroup: "Braço",
+        sets: 3,
+        repsMin: 15,
+        repsMax: 20,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "Antebraços apoiados no banco, punhos livres além da borda, amplitude completa. Os flexores de punho são o motor da pegada de gola — aqui é volume e controle, não carga máxima.",
+      },
+      {
+        id: "pallof",
+        name: "Pallof press na polia",
+        nameEn: "Pallof Press",
+        muscleGroup: "Core",
+        sets: 3,
+        repsMin: 10,
+        repsMax: 10,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "Polia à altura do peito, 10 por lado · anti-rotação é o que impede sua guarda de ser aberta e o que segura a passagem.",
+      },
+    ],
+  },
+  {
+    id: "bjjBase",
+    title: "B · Quadril & Base",
+    subtitle: "Upa, raspagem e base de pé",
+    weekday: 0,
+    duration: "~55–65 min",
+    kind: "lift",
+    accent: "gold",
+    description:
+      "A força de quadril que você já tem do powerlifting, convertida em ponte, raspagem e base difícil de derrubar. Peça 24 h de folga de rola dura.",
+    exercises: [
+      {
+        id: "squat",
+        name: "Agachamento livre",
+        nameEn: "Back Squat",
+        muscleGroup: "Quadríceps",
+        sets: 3,
+        repsMin: 4,
+        repsMax: 6,
+        unit: "reps",
+        rest: "2–3 min",
+        note:
+          "RIR 2–3 · 85–95 kg. Manutenção de força: sem grind e sem PR. Sua base de pé nasce aqui.",
+      },
+      {
+        id: "rdl",
+        name: "Terra romeno (RDL)",
+        nameEn: "Romanian Deadlift",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 3,
+        repsMin: 6,
+        repsMax: 8,
+        unit: "reps",
+        rest: "2 min",
+        note:
+          "RIR 2 · 55–70 kg, excêntrico controlado. Cadeia posterior é puxar o oponente para a guarda e levantar de baixo.",
+      },
+      {
+        id: "hipthrust",
+        name: "Elevação pélvica (hip thrust)",
+        nameEn: "Barbell Hip Thrust",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 3,
+        repsMin: 8,
+        repsMax: 12,
+        unit: "reps",
+        rest: "90 s",
+        note: "60–90 kg · é o upa com carga. Pausa de 1 s no topo com o quadril travado.",
+      },
+      {
+        id: "bulgarian",
+        name: "Agachamento búlgaro / afundo",
+        nameEn: "Bulgarian Split Squat / Lunge",
+        muscleGroup: "Quadríceps",
+        sets: 3,
+        repsMin: 6,
+        repsMax: 8,
+        unit: "reps",
+        rest: "90 s",
+        note:
+          "Por perna · base unilateral para passar a guarda e não perder o pé quando puxam sua perna.",
+      },
+      {
+        id: "copenhagen",
+        name: "Prancha Copenhagen",
+        nameEn: "Copenhagen Plank",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 3,
+        repsMin: 20,
+        repsMax: 30,
+        unit: "seconds",
+        rest: "60 s",
+        note:
+          "Por lado, no banco · adutor é a lesão clássica de quem fecha a guarda. Comece com o joelho apoiado e só depois estenda a perna.",
+      },
+      {
+        id: "back-extension",
+        name: "Hiperextensão lombar",
+        nameEn: "Back Extension",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 3,
+        repsMin: 12,
+        repsMax: 15,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "RIR 2 · lombar resistente é postura na guarda e resistência ao stack. Suba até a linha neutra, sem hiperestender.",
+      },
+      {
+        id: "hip-90-90",
+        name: "Mobilidade de quadril 90/90",
+        nameEn: "90/90 Hip Switch",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 2,
+        repsMin: 8,
+        repsMax: 10,
+        unit: "reps",
+        rest: "30 s",
+        note:
+          "Por lado, lento e sem impulso · rotação de quadril é o que permite recompor a guarda, inverter e passar de joelho sem cobrar do joelho.",
+      },
+    ],
+  },
+  {
+    id: "bjjEngine",
+    title: "C · Potência na Barra",
+    subtitle: "Opcional · explosão com barra e máquina",
+    weekday: 0,
+    duration: "~40–50 min",
+    kind: "lift",
+    accent: "gold",
+    description:
+      "Potência repetida sem equipamento exótico: clean, push press e perna explosiva na máquina. É a primeira sessão a sair de uma semana pesada de tatame — se a rola já foi dura, pule sem culpa.",
+    exercises: [
+      {
+        id: "power-clean",
+        name: "Power clean",
+        nameEn: "Power Clean",
+        muscleGroup: "Posterior/Glúteo",
+        sets: 4,
+        repsMin: 3,
+        repsMax: 5,
+        unit: "reps",
+        rest: "2–3 min",
+        note:
+          "O motor do upa e da raspagem: salto que termina com a barra no ombro. Técnica antes de carga — encerre a série assim que a velocidade cair.",
+      },
+      {
+        id: "push-press",
+        name: "Push press",
+        nameEn: "Push Press",
+        muscleGroup: "Ombro",
+        sets: 3,
+        repsMin: 5,
+        repsMax: 5,
+        unit: "reps",
+        rest: "2 min",
+        note:
+          "Mergulho curto de joelho e drive para passar a barra. Tríplice extensão coordenada vira pressão de cima e quadro difícil de derrubar.",
+      },
+      {
+        id: "legpress",
+        name: "Leg press 45° explosivo",
+        nameEn: "Explosive Leg Press",
+        muscleGroup: "Quadríceps",
+        sets: 3,
+        repsMin: 8,
+        repsMax: 8,
+        unit: "reps",
+        rest: "90 s",
+        note:
+          "Subida rápida e intencional, descida em 2–3 s, sem travar o joelho no topo. Potência de perna com a segurança da máquina.",
+      },
+      {
+        id: "cablecrunch",
+        name: "Abdominal na polia alta",
+        nameEn: "Cable Crunch",
+        muscleGroup: "Core",
+        sets: 3,
+        repsMin: 12,
+        repsMax: 15,
+        unit: "reps",
+        rest: "60 s",
+        note:
+          "Joelhos no chão, quadril fixo, enrole o tronco puxando a corda. Core sob carga com o que toda academia tem.",
+      },
+    ],
+  },
+  {
+    id: "bjjZ2",
+    title: "Zona 2 · Jiu-Jitsu",
+    subtitle: "Fôlego entre os rounds",
+    weekday: 0,
+    duration: "25–35 min",
+    kind: "cardio",
+    accent: "zone",
+    cardioTarget: {
+      min: 25,
+      max: 40,
+      defaultMinutes: 30,
+      bpmMin: 125,
+      bpmMax: 140,
+    },
+    description:
+      "Bike ou esteira inclinada em ritmo de conversa, FC 125–140. Meta semanal: 60–120 min. É a base aeróbica que devolve o fôlego entre um round e o próximo — e o remédio da tontura.",
+    exercises: [],
+  },
 ]
 
 const LEGACY_SESSION_IDS = new Set<SessionId>(
   LEGACY_SESSIONS.map((session) => session.id)
 )
 
+const BJJ_LEGACY_SESSION_IDS = new Set<SessionId>([
+  "bjjPull",
+  "bjjBase",
+  "bjjEngine",
+  "bjjZ2",
+])
+
+export type LegacyProgram = "flag-football" | "jiu-jitsu"
+
 /** Registro pertence a um protocolo aposentado (marcado como tal no Histórico). */
 export function isLegacySession(sessionId: SessionId): boolean {
   return LEGACY_SESSION_IDS.has(sessionId)
+}
+
+/** Identifica o protocolo aposentado para preservar o contexto no Histórico. */
+export function legacyProgramOf(sessionId: SessionId): LegacyProgram | null {
+  if (!isLegacySession(sessionId)) return null
+  return BJJ_LEGACY_SESSION_IDS.has(sessionId) ? "jiu-jitsu" : "flag-football"
 }

@@ -14,7 +14,7 @@ import {
 } from "../lib/reports"
 import { BodyLog, GymData, WorkoutLog } from "../lib/types"
 
-const TODAY = new Date(2026, 9, 15) // 15/10/2026 — depois do início do bloco de BJJ
+const TODAY = new Date(2026, 9, 15) // 15/10/2026 — dentro do Bloco 2 do ciclo de motor
 
 function dayKey(offsetDays: number, base = TODAY): string {
   const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offsetDays)
@@ -47,26 +47,28 @@ const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
 /* ---------------------------------------------------------------- */
 
 describe("reportPeriods", () => {
-  it("oferece os blocos de BJJ já iniciados e as janelas móveis", () => {
+  it("oferece os blocos do ciclo de motor já iniciados e as janelas móveis", () => {
     const periods = reportPeriods(TODAY)
     const ids = periods.map((p) => p.id)
-    expect(ids).toContain("bjj-adaptacao")
+    expect(ids).toContain("engine-fundacao")
     expect(ids).toContain("last-4w")
     expect(ids).toContain("last-12w")
-    // o bloco 1 começa em 25/08/2026 e dura 3 semanas
-    const adaptacao = periods.find((p) => p.id === "bjj-adaptacao")!
-    expect(adaptacao.from).toBe("2026-08-25")
-    expect(adaptacao.to).toBe("2026-09-14")
+    // o bloco 1 começa em 31/08/2026 e dura 4 semanas
+    const fundacao = periods.find((p) => p.id === "engine-fundacao")!
+    expect(fundacao.from).toBe("2026-08-31")
+    expect(fundacao.to).toBe("2026-09-27")
+    // o bloco 3 só começa em 26/10 — ainda não deve aparecer em 15/10
+    expect(ids).not.toContain("engine-consolidacao")
   })
 
   it("não oferece bloco que ainda não começou", () => {
     // um dia depois do início: só o primeiro bloco existe
-    const periods = reportPeriods(new Date(2026, 7, 26))
-    const bjj = periods.filter((p) => p.id.startsWith("bjj-"))
-    expect(bjj).toHaveLength(1)
-    expect(bjj[0].id).toBe("bjj-adaptacao")
+    const periods = reportPeriods(new Date(2026, 8, 1))
+    const engine = periods.filter((p) => p.id.startsWith("engine-"))
+    expect(engine).toHaveLength(1)
+    expect(engine[0].id).toBe("engine-fundacao")
     // bloco em curso é truncado em hoje, não na data futura de fim
-    expect(bjj[0].to).toBe("2026-08-26")
+    expect(engine[0].to).toBe("2026-09-01")
   })
 
   it("janela móvel de 4 semanas cobre exatamente 28 dias", () => {
@@ -371,16 +373,16 @@ describe("coachReport", () => {
     expect(report.recovery.sleep.coveragePct).toBeLessThan(10)
   })
 
-  it("marca bloco de BJJ ainda em curso como parcial", () => {
+  it("marca bloco do ciclo de motor ainda em curso como parcial", () => {
     const partial = coachReport(
       emptyData,
       {
-        id: "bjj-adaptacao",
-        label: "Bloco 1 · Adaptação",
-        from: "2026-08-25",
-        to: "2026-08-26",
+        id: "engine-fundacao",
+        label: "Bloco 1 · Fundação",
+        from: "2026-08-31",
+        to: "2026-09-01",
       },
-      "bjj"
+      "engine"
     )
     expect(partial.periodStatus).toBe("parcial")
     expect(partial.questions.some((question) => question.includes("parcial"))).toBe(true)

@@ -86,8 +86,8 @@ export function describeCardio(workout: WorkoutLog): string {
 /**
  * Converte os blocos em edição nos blocos que vão para o banco. Linhas sem
  * minutos são descartadas — bloco em branco não vira registro —, esporte não
- * guarda BPM e `forceZone2` atende a sessão de Zona 2 do jiu-jitsu, onde a
- * finalidade é fixa.
+ * guarda BPM e `forceZone2` atende a sessão de Zona 2 longa do ciclo de
+ * motor, onde a finalidade é fixa.
  */
 export function cardioRowsToBlocks(
   rows: CardioRow[],
