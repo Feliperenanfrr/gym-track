@@ -25,7 +25,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | Aba | O que faz |
 | --- | --- |
 | **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos e balanço energético (ingestão estimada × variação de massa) |
-| **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, rascunho automático e histórico compartilhado |
+| **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, sugestão de carga no passo do aparelho, reabertura do registro do dia, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
 | **Relatórios** | Dois documentos em PDF: fechamento de bloco (antes × depois do mesociclo) e acompanhamento nutricional |
@@ -94,6 +94,25 @@ próprio e gráficos em SVG escrito à mão, porque em impressão o `ResponsiveC
 do recharts mede antes do navegador refazer o layout, e tooltip e animação não
 têm o que fazer num papel.
 
+## Progressão de carga (o app sugere, você decide)
+
+- O campo de carga vem com **o que você fez da última vez naquele exercício**, em
+  qualquer sessão — avulso incluído. O app não reescreve mais a carga sozinho.
+- Ao lado dos campos fica a sugestão: **subir** (topo da faixa em todas as
+  séries), **manter e buscar mais uma repetição**, ou **reentrar ~10% abaixo**
+  ao voltar de pausa. *Aplicar* preenche num toque as séries ainda não marcadas;
+  manter carga é só orientação, nunca escreve no campo.
+- O passo respeita o equipamento: é o maior incremento de academia (1, 2, 2,5 ou
+  5 kg) que divide **todas** as cargas já registradas naquele exercício. Numa
+  máquina de pino que anda de 5 em 5, a sugestão nunca pede 52,5 kg. Dá para
+  fixar o passo à mão no próprio card (até 20 kg, para leg press com anilha).
+- "Voltando de pausa" conta **qualquer musculação registrada** — avulso e sala do
+  jiu-jitsu incluídos. Só cardio, tatame e Strava não seguram a pausa: musculação
+  é o que tem série anotada (ou uma sessão da fila Upper/Lower).
+- Já existe registro desta sessão hoje? A tela **reabre o que foi salvo** em vez
+  de partir do zero — a gravação é upsert por dia+sessão, então salvar de novo
+  completa o registro em vez de apagar o anterior.
+
 ## Na academia (fluidez)
 
 - **Timer de descanso**: ao marcar uma série, dispara um countdown com o descanso
@@ -121,6 +140,8 @@ lib/legacy-plan.ts  protocolos aposentados, só para o histórico
 lib/energy.ts   balanço energético: tendência de massa, TDEE e ingestão estimada
 lib/reports.ts  montagem dos relatórios (períodos, antes × depois, séries semanais)
 components/report/  folhas A4, kit de gráficos SVG e primitivas de documento
+lib/progression.ts  sugestão de carga e passo real de cada aparelho
+lib/workout-form.ts reabertura de um registro já salvo no formulário
 lib/store.ts    hook useGymData (Supabase: fetch + upsert)
 lib/supabase/   browser client (@supabase/ssr)
 middleware.ts   proteção de rotas via sessão
