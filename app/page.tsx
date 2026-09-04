@@ -4,15 +4,25 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Check, CloudOff, Droplets, FileText, History, LogOut, Moon, RotateCcw } from "lucide-react"
 import {
+  ConsistencyChart,
   MuscleVolumeChart,
-  StrengthChart,
+  TopSetChart,
   WeeklyVolumeChart,
   ZoneChart,
 } from "@/components/charts"
+import { TrainingCalendar } from "@/components/training-calendar"
 import { CaloriePanel, EnergyPanel } from "@/components/energy-panels"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
+import {
+  consistencySummary,
+  consistencyWeeks,
+  trainingCalendar,
+  weeklySessionTarget,
+} from "@/lib/consistency"
+import { computeRecovery, RecoveryDriver } from "@/lib/readiness"
+import { exerciseStrength, frequentExercises } from "@/lib/strength"
 import { energyBalanceSeries, energyReport } from "@/lib/energy"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
@@ -26,7 +36,6 @@ import {
 import {
   calorieTrend,
   type CalorieTrendRange,
-  computeReadiness,
   ReadinessLevel,
   waterGoalMl,
   weeklySummary,
@@ -34,6 +43,7 @@ import {
 } from "@/lib/insights"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { countsTowardProgramTarget, PLAN_BY_ID, planForProgram, sessionForWeekday } from "@/lib/plan"
+import { formatWeight } from "@/lib/progression"
 import { computeSleepMetrics, formatSleepDuration } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { GymData, SessionId, SessionPlan, TrainingProgram } from "@/lib/types"
@@ -41,7 +51,6 @@ import { useOperationalDay } from "@/lib/use-operational-day"
 import { useTrainingProgram } from "@/lib/use-training-program"
 import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 import {
-  bestE1RMAdjusted,
   cn,
   daysSince,
   formatKg,
@@ -53,44 +62,51 @@ import {
   workoutVolume,
 } from "@/lib/utils"
 
-const KEY_LIFTS: { id: string; label: string }[] = [
-  { id: "bench", label: "Supino" },
-  { id: "squat", label: "Agacho" },
-  { id: "deadlift", label: "Terra" },
-  { id: "ohp", label: "Desenv." },
-  { id: "row", label: "Remada" },
-]
-
 const HYPERTROPHY_Z2_TARGET = { min: 60, max: 70 }
 
 const READINESS_UI: Record<
   ReadinessLevel,
-  { emoji: string; title: string; desc: string; border: string }
+  { emoji: string; title: string; border: string; dot: string }
 > = {
   building: {
     emoji: "⚪",
     title: "Construindo base",
-    desc: "Registre 2+ semanas de treino para calibrar o sinal de fadiga.",
     border: "border-l-steel-dim",
+    dot: "bg-steel-dim",
   },
-  green: {
-    emoji: "🟢",
-    title: "Pronto pra carga",
-    desc: "Carga interna dentro da sua base recente — pode progredir.",
-    border: "border-l-zone",
-  },
+  green: { emoji: "🟢", title: "Pronto pra carga", border: "border-l-zone", dot: "bg-zone" },
   yellow: {
     emoji: "🟡",
-    title: "Carga subindo rápido",
-    desc: "Esforço acima da média das últimas 3 semanas. Capricha em sono e proteína.",
+    title: "Atenção na recuperação",
     border: "border-l-gold",
+    dot: "bg-gold",
   },
-  red: {
-    emoji: "🔴",
-    title: "Alerta de fadiga",
-    desc: "Bem acima da base recente — considere uma semana mais leve.",
-    border: "border-l-ember",
-  },
+  red: { emoji: "🔴", title: "Alerta de fadiga", border: "border-l-ember", dot: "bg-ember" },
+}
+
+/**
+ * A prontidão deixou de ser só ACWR: agora o nível é o pior entre carga, sono
+ * e hidratação, e a frase nomeia QUAL deles puxou para baixo — sem isso o
+ * semáforo diz "amarelo" sem dizer o que fazer a respeito.
+ */
+function recoveryMessage(level: ReadinessLevel, limiter: RecoveryDriver | null): string {
+  if (level === "building" || !limiter) {
+    return "Registre 2+ semanas de treino, sono e água para calibrar o sinal."
+  }
+  if (level === "green") return "Carga, sono e água dentro da faixa — pode progredir."
+  if (limiter.id === "load") {
+    return level === "red"
+      ? "Carga bem acima da base recente — considere uma semana mais leve."
+      : "Esforço acima da média das últimas 3 semanas. Capricha em sono e proteína."
+  }
+  if (limiter.id === "sleep") {
+    return level === "red"
+      ? "Sono é o limitador: média abaixo de 6 h. Corte carga antes que ela te corte."
+      : "Sono é o limitador da semana. Antecipe o horário de dormir antes de subir carga."
+  }
+  return level === "red"
+    ? "Hidratação bem abaixo da meta — piora fôlego e recuperação antes de qualquer outra coisa."
+    : "Hidratação abaixo da meta. É o ajuste mais barato da semana."
 }
 
 function dayMonth(d: Date): string {
@@ -172,7 +188,8 @@ export default function Dashboard() {
   const { program, selectProgram } = useTrainingProgram()
   const { templates, templateById } = useWorkoutTemplates()
   const today = useOperationalDay()
-  const [lift, setLift] = useState("bench")
+  const [lift, setLift] = useState<string | null>(null)
+  const [strengthMode, setStrengthMode] = useState<"carga" | "e1rm">("carga")
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
   const [calorieRange, setCalorieRange] = useState<CalorieTrendRange>("all")
   const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
@@ -250,40 +267,28 @@ export default function Dashboard() {
     const currentWeight = weights[weights.length - 1]?.weightKg
     const weightTrend = weightTrend7d(data.body, today)
 
-    // progressão de força do exercício selecionado
-    const strength = data.workouts
-      .filter((w) => w.entries.some((e) => e.exerciseId === lift))
-      .map((w) => {
-        const entry = w.entries.find((e) => e.exerciseId === lift)!
-        const d = fromDateKey(w.date)
-        return {
-          label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
-          e1rm: Math.round(bestE1RMAdjusted(entry) * 10) / 10,
-        }
-      })
+    // Força: o seletor sai da frequência real dos últimos 90 dias, não de uma
+    // lista fixa que oferecia terra (zero registros) e escondia os três
+    // exercícios mais treinados.
+    const liftOptions = frequentExercises(data.workouts, today, { limit: 6 })
+    const activeLiftId =
+      liftOptions.find((option) => option.id === lift)?.id ?? liftOptions[0]?.id ?? null
+    const strength = activeLiftId
+      ? exerciseStrength(data.workouts, activeLiftId)
+      : null
 
     // streak e dias ativos
     const firstWorkout = data.workouts.length > 0 ? fromDateKey(data.workouts[0].date) : null
     const daysActive = firstWorkout ? daysSince(firstWorkout, today) + 1 : 0
 
-    let streak = 0
-    if (data.workouts.length > 0) {
-      const startMonday = mondayOf(firstWorkout!)
-      let m = new Date(monday) // current monday
-      let counted = 0
-      while (m >= startMonday) {
-        const start = toDateKey(m)
-        const end = toDateKey(new Date(m.getFullYear(), m.getMonth(), m.getDate() + 6))
-        const hasWorkout = data.workouts.some((w) => w.date >= start && w.date <= end)
-        if (hasWorkout) {
-          counted++
-        } else if (m.getTime() !== monday.getTime()) {
-          break
-        }
-        m.setDate(m.getDate() - 7)
-      }
-      streak = counted
-    }
+    // Consistência: a variável que explica o bloco. O "streak" antigo contava
+    // semanas com PELO MENOS UM treino — uma sessão solta salvava a semana e a
+    // métrica dizia que estava tudo bem. Agora conta semanas cumprindo o alvo.
+    const consistency = consistencySummary(data.workouts, today, program)
+    const consistencyChart = consistencyWeeks(data.workouts, today, program)
+    const calendar = trainingCalendar(data.workouts, today)
+    const weeklyTarget = weeklySessionTarget(program, monday)
+    const streak = consistency.weeksOnTarget
 
     // distribuição de séries duras por grupo muscular — últimas 4 semanas
     const since28 = toDateKey(
@@ -299,7 +304,7 @@ export default function Dashboard() {
       pct: groupTotal > 0 ? Math.round((byGroup[g.id] / groupTotal) * 100) : 0,
     })).sort((a, b) => b.sets - a.sets)
 
-    const readiness = computeReadiness(data.workouts, today)
+    const readiness = computeRecovery(data, today)
     // fechamento de domingo: resumo da semana corrente
     const weekSummary =
       isoWeekday(today) === 7 ? weeklySummary(data, monday, program) : null
@@ -388,8 +393,14 @@ export default function Dashboard() {
       currentWeight,
       weightTrend,
       strength,
+      liftOptions,
+      activeLiftId,
       daysActive,
       streak,
+      consistency,
+      consistencyChart,
+      calendar,
+      weeklyTarget,
       groupShare,
       readiness,
       weekSummary,
@@ -830,20 +841,47 @@ export default function Dashboard() {
               {READINESS_UI[view.readiness.level].title}
             </p>
             <p className="mt-0.5 text-xs text-steel">
-              {READINESS_UI[view.readiness.level].desc}
+              {recoveryMessage(view.readiness.level, view.readiness.limiter)}
             </p>
           </div>
-          {view.readiness.ratio !== null && (
+          {view.readiness.load.ratio !== null && (
             <div className="shrink-0 text-right">
               <p className="score text-2xl text-bone">
-                {Math.round(view.readiness.ratio * 100)}%
+                {Math.round(view.readiness.load.ratio * 100)}%
               </p>
               <p className="font-mono text-[10px] text-steel-dim">
-                da base de {Math.round(view.readiness.chronic).toLocaleString("pt-BR")} AU/sem
+                da base de{" "}
+                {Math.round(view.readiness.load.chronic).toLocaleString("pt-BR")} AU/sem
               </p>
             </div>
           )}
         </div>
+
+        {/* Os três componentes, cada um com seu nível: o semáforo sozinho não
+            diz O QUE ajustar. Sono e água entram aqui — antes eram gravados
+            todo dia e não saíam em decisão nenhuma. */}
+        <div className="mt-3 grid grid-cols-3 gap-2 border-t border-seam pt-3">
+          {view.readiness.drivers.map((driver) => (
+            <div key={driver.id} className="min-w-0">
+              <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                <span
+                  className={cn(
+                    "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                    READINESS_UI[driver.level].dot
+                  )}
+                />
+                {driver.label}
+              </p>
+              <p className="mt-0.5 font-mono text-sm text-bone">{driver.value}</p>
+            </div>
+          ))}
+        </div>
+        {view.readiness.limiter && view.readiness.level !== "green" && (
+          <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+            limitador: {view.readiness.limiter.label.toLowerCase()} &middot;{" "}
+            {view.readiness.limiter.detail}
+          </p>
+        )}
       </Card>
 
       {/* Sono — recuperação diária */}
@@ -907,7 +945,7 @@ export default function Dashboard() {
               <span className="text-lg text-steel-dim">/{sessionTarget}</span>
             </>
           }
-          detail={`${program === "engine" ? "meta: 2 força + 1–2 intenso + 3–4 Z2" : "meta: 4 musc + 1 cardio"}${view.streak > 1 ? ` · ${view.streak} sem. seguidas 🔥` : ""}`}
+          detail={`${program === "engine" ? "meta: 2 força + 1–2 intenso + 3–4 Z2" : "meta: 4 musc + 1 cardio"}${view.streak > 0 ? ` · ${view.streak} sem. no alvo 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"
@@ -1030,6 +1068,79 @@ export default function Dashboard() {
         </Card>
       </CollapsibleSection>
 
+      {/* Consistência — a variável que explica o resultado do bloco */}
+      <CollapsibleSection
+        title="Consistência"
+        badge={`${String(view.consistency.avgDaysPerWeek).replace(".", ",")}/sem`}
+        defaultOpen
+      >
+        <Card className="rise rise-4">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                Aderência
+              </p>
+              <p className="score mt-0.5 text-2xl text-bone">
+                {view.consistency.adherencePct}
+                <span className="text-sm text-steel-dim">%</span>
+              </p>
+              <p className="font-mono text-[10px] text-steel-dim">{`${view.consistency.daysTrained} de ${view.consistency.daysInPeriod} dias`}</p>
+            </div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                Maior lacuna
+              </p>
+              <p
+                className={cn(
+                  "score mt-0.5 text-2xl",
+                  view.consistency.longestGapDays >= 7 ? "text-ember-hot" : "text-bone"
+                )}
+              >
+                {view.consistency.longestGapDays}
+                <span className="text-sm text-steel-dim">d</span>
+              </p>
+              <p className="font-mono text-[10px] text-steel-dim">seguidos sem treino</p>
+            </div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                Semanas no alvo
+              </p>
+              <p
+                className={cn(
+                  "score mt-0.5 text-2xl",
+                  view.consistency.weeksOnTarget > 0 ? "text-zone" : "text-steel-dim"
+                )}
+              >
+                {view.consistency.weeksOnTarget}
+              </p>
+              <p className="font-mono text-[10px] text-steel-dim">
+                seguidas &middot; alvo {view.weeklyTarget}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-seam pt-4">
+            <TrainingCalendar weeks={view.calendar} />
+          </div>
+        </Card>
+
+        <Card className="rise rise-4 mt-3">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+            Sessões por semana &middot; 12 semanas
+          </p>
+          <ConsistencyChart data={view.consistencyChart} target={view.weeklyTarget} />
+          <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+            Semana seg&ndash;dom fechada contra o alvo do programa: {" "}
+            <span className="text-zone">verde</span> cumpriu, {" "}
+            <span className="text-ember">brasa</span> ficou abaixo. A semana em curso
+            vem mais clara &mdash; ainda dá para virar.
+            {view.consistency.daysSinceLift !== null &&
+              view.consistency.daysSinceLift >= 7 &&
+              ` ${view.consistency.daysSinceLift} dias sem sala.`}
+          </p>
+        </Card>
+      </CollapsibleSection>
+
       {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
       <CollapsibleSection title="Treino — 6 semanas" defaultOpen>
         <Card className="rise rise-4">
@@ -1095,36 +1206,137 @@ export default function Dashboard() {
         </Card>
       </CollapsibleSection>
 
-      {/* Progressão de força */}
-      <CollapsibleSection title="Força — 1RM estimada" defaultOpen>
+      {/* Progressão de força — carga do top set, não 1RM extrapolada */}
+      <CollapsibleSection title="Força — carga do top set" defaultOpen>
         <Card className="rise rise-5">
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {KEY_LIFTS.map((k) => (
-            <button
-              key={k.id}
-              onClick={() => setLift(k.id)}
-              className={cn(
-                "rounded border px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-colors",
-                lift === k.id
-                  ? "border-ember bg-ember/10 text-ember"
-                  : "border-seam text-steel hover:text-bone"
-              )}
-              style={{ fontFamily: "var(--font-condensed)" }}
+        {view.liftOptions.length > 0 ? (
+          <>
+            <div
+              className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1"
+              style={{ overscrollBehaviorX: "contain" }}
             >
-              {k.label}
-            </button>
-          ))}
-        </div>
-        {view.strength.length > 0 ? (
-          <StrengthChart data={view.strength} />
+              {view.liftOptions.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setLift(option.id)}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap rounded border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors",
+                    view.activeLiftId === option.id
+                      ? "border-ember bg-ember/10 text-ember"
+                      : "border-seam text-steel hover:text-bone"
+                  )}
+                  style={{ fontFamily: "var(--font-condensed)" }}
+                >
+                  {option.name}
+                  <span className="ml-1.5 font-mono text-[10px] normal-case tracking-normal text-steel-dim">
+                    {option.sets}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {view.strength && view.strength.last ? (
+              <>
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="score text-2xl text-ember-hot">
+                      {formatWeight(view.strength.last.carga)}
+                      <span className="ml-1 text-sm text-steel-dim">
+                        kg &times; {view.strength.last.reps}
+                        {view.strength.last.rir !== undefined
+                          ? ` @RIR ${view.strength.last.rir}`
+                          : ""}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 font-mono text-[10px] text-steel-dim">
+                      última sessão &middot; {view.strength.last.label}
+                      {view.strength.deltaKg !== null &&
+                        ` · ${view.strength.deltaKg >= 0 ? "+" : ""}${formatWeight(view.strength.deltaKg)} kg no período`}
+                    </p>
+                  </div>
+                  {/* 1RM só onde Epley se sustenta: séries de até 8 reps
+                      efetivas. Extrapolar de 15 reps era o que fazia a mesma
+                      cadeira extensora "variar" de 154 a 63 kg. */}
+                  <div className="flex shrink-0 gap-1">
+                    {(["carga", "e1rm"] as const).map((m) => {
+                      const disabled =
+                        m === "e1rm" && view.strength!.reliableE1rmPoints < 2
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => !disabled && setStrengthMode(m)}
+                          disabled={disabled}
+                          title={
+                            disabled
+                              ? "Precisa de 2+ séries de até 8 reps efetivas (reps + RIR)"
+                              : undefined
+                          }
+                          className={cn(
+                            "rounded border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors disabled:opacity-35",
+                            strengthMode === m && !disabled
+                              ? "border-ember text-ember"
+                              : "border-seam text-steel-dim"
+                          )}
+                        >
+                          {m === "carga" ? "carga" : "1RM est."}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <TopSetChart
+                  data={view.strength.points}
+                  mode={
+                    strengthMode === "e1rm" && view.strength.reliableE1rmPoints >= 2
+                      ? "e1rm"
+                      : "carga"
+                  }
+                />
+
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-seam pt-3 font-mono text-[10px]">
+                  <div>
+                    <p className="uppercase tracking-wider text-steel-dim">Melhor carga</p>
+                    <p className="mt-0.5 text-bone">
+                      {formatWeight(view.strength.bestWeight)} kg
+                    </p>
+                  </div>
+                  <div>
+                    <p className="uppercase tracking-wider text-steel-dim">Sem subir carga</p>
+                    <p
+                      className={cn(
+                        "mt-0.5",
+                        (view.strength.sessionsSinceIncrease ?? 0) >= 4
+                          ? "text-gold"
+                          : "text-bone"
+                      )}
+                    >
+                      {view.strength.sessionsSinceIncrease === null
+                        ? "—"
+                        : view.strength.sessionsSinceIncrease === 0
+                          ? "subiu agora"
+                          : `${view.strength.sessionsSinceIncrease} sessões`}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+                  {strengthMode === "e1rm" && view.strength.reliableE1rmPoints >= 2
+                    ? `1RM estimada só das séries com até 8 reps efetivas (${view.strength.reliableE1rmPoints} de ${view.strength.points.length} sessões) — acima disso a extrapolação erra mais que o efeito.`
+                    : "Carga da série mais pesada de cada sessão: dado bruto, sem extrapolação. Ponto dourado = carga recorde."}
+                </p>
+              </>
+            ) : (
+              <p className="py-10 text-center text-xs text-steel-dim">
+                Sem registros deste exercício ainda — salve um treino na aba Treino.
+              </p>
+            )}
+          </>
         ) : (
           <p className="py-10 text-center text-xs text-steel-dim">
-            Sem registros deste exercício ainda — salve um treino na aba Treino.
+            Registre uma sessão com carga para o painel escolher os exercícios.
           </p>
         )}
-        <p className="mt-2 font-mono text-[10px] text-steel-dim">
-          Epley com reps ajustadas por RIR quando informado · PRs continuam pela fórmula clássica
-        </p>
         </Card>
       </CollapsibleSection>
 

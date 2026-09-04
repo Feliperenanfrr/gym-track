@@ -19,7 +19,7 @@ import {
   MUSCLE_GROUP_OPTIONS,
 } from "@/lib/exercise-catalog"
 import {
-  bestE1RM,
+  bestE1RMAdjusted,
   cn,
   daysSince,
   formatKg,
@@ -772,10 +772,13 @@ export default function TreinoPage() {
     const totalMinutes = liftMinutes + cardioMinutes
     if (totalMinutes > 0) log.durationMin = Math.min(480, totalMinutes)
 
+    // mesma fórmula do painel, dos relatórios e de prEvents: Epley com reps
+    // ajustadas por RIR. Duas contas diferentes faziam o "PR!" da tela de
+    // registro discordar da conquista e do PDF de fechamento.
     const newPRs: string[] = []
     if (data) {
       for (const entry of entries) {
-        const e1rm = bestE1RM(entry)
+        const e1rm = bestE1RMAdjusted(entry)
         if (e1rm <= 0) continue
 
         let historicalMax = 0
@@ -783,7 +786,7 @@ export default function TreinoPage() {
           if (w.date >= log.date) continue
           const prevEntry = w.entries.find((e) => e.exerciseId === entry.exerciseId)
           if (prevEntry) {
-            historicalMax = Math.max(historicalMax, bestE1RM(prevEntry))
+            historicalMax = Math.max(historicalMax, bestE1RMAdjusted(prevEntry))
           }
         }
 

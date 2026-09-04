@@ -175,37 +175,6 @@ export function MuscleVolumeChart({
   )
 }
 
-export function StrengthChart({
-  data,
-}: {
-  data: { label: string; e1rm: number }[]
-}) {
-  return (
-    <ResponsiveContainer width="100%" height={190}>
-      <LineChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-        <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis
-          tick={TICK}
-          axisLine={false}
-          tickLine={false}
-          domain={["dataMin - 4", "dataMax + 4"]}
-          tickFormatter={(v: number) => `${Math.round(v)}`}
-        />
-        <Tooltip content={<Tip suffix=" kg (1RM est.)" />} cursor={{ stroke: GRID }} />
-        <Line
-          type="monotone"
-          dataKey="e1rm"
-          stroke={EMBER}
-          strokeWidth={2.5}
-          dot={{ r: 3, fill: EMBER, strokeWidth: 0 }}
-          activeDot={{ r: 5, fill: EMBER_HOT }}
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  )
-}
-
 /** Tooltip aeróbico: separa Zona 2 de intenso e mostra o total */
 function AerobicTip({
   active,
@@ -969,5 +938,315 @@ export function WaistChart({
         />
       </AreaChart>
     </ResponsiveContainer>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Consistência                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sessões por semana contra o alvo do programa.
+ *
+ * A barra é a semana inteira (seg–dom) e a linha tracejada é o alvo: cada
+ * barra vira "cumpri ou não cumpri" em vez de um número solto. Semana zerada
+ * ainda ocupa espaço no eixo — zero é informação, e some se a barra não tiver
+ * altura nenhuma.
+ */
+export function ConsistencyChart({
+  data,
+  target,
+}: {
+  data: { label: string; sessions: number; target: number; current: boolean }[]
+  target: number
+}) {
+  const max = Math.max(target, ...data.map((d) => d.sessions))
+  return (
+    <ResponsiveContainer width="100%" height={180}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis
+          dataKey="label"
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          allowDecimals={false}
+          domain={[0, max + 1]}
+        />
+        <Tooltip
+          content={<Tip suffix=" sessões" />}
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        <ReferenceLine
+          y={target}
+          stroke={ZONE}
+          strokeDasharray="4 4"
+          strokeOpacity={0.8}
+          label={{
+            value: `alvo ${target}`,
+            position: "insideTopRight",
+            fill: ZONE,
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono Variable', monospace",
+          }}
+        />
+        <Bar dataKey="sessions" radius={[3, 3, 0, 0]} minPointSize={2}>
+          {data.map((d, i) => (
+            <Cell
+              key={i}
+              fill={d.sessions >= d.target ? ZONE : EMBER}
+              // a semana em curso ainda não pode ser julgada: fica mais clara
+              fillOpacity={d.current ? 0.4 : 0.85}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Força — carga do top set                                            */
+/* ------------------------------------------------------------------ */
+
+interface TopSetDatum {
+  label: string
+  carga: number
+  reps: number
+  rir?: number
+  e1rm: number | null
+  isLoadPr: boolean
+}
+
+function TopSetTip({
+  active,
+  payload,
+  label,
+  mode,
+}: {
+  active?: boolean
+  payload?: { payload: TopSetDatum }[]
+  label?: string
+  mode: "carga" | "e1rm"
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-0.5 text-steel">{label}</p>
+      <p className="font-semibold text-bone">
+        {mode === "e1rm" && d.e1rm !== null
+          ? `${d.e1rm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg (1RM est.)`
+          : `${d.carga.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg × ${d.reps}`}
+      </p>
+      <p className="text-steel-dim">
+        {mode === "e1rm"
+          ? `de ${d.carga.toLocaleString("pt-BR")} kg × ${d.reps}`
+          : d.rir !== undefined
+            ? `RIR ${d.rir}`
+            : "RIR não informado"}
+      </p>
+      {d.isLoadPr ? <p className="mt-0.5 text-gold">↑ carga recorde</p> : null}
+    </div>
+  )
+}
+
+/**
+ * Progressão de carga da série mais pesada.
+ *
+ * Dado bruto, não estimativa: é o número que decide a próxima sessão. Os
+ * pontos em que a carga bateu recorde vêm marcados em dourado; no modo
+ * "1RM est." só entram sessões com reps efetivas dentro do teto confiável.
+ */
+export function TopSetChart({
+  data,
+  mode = "carga",
+}: {
+  data: TopSetDatum[]
+  mode?: "carga" | "e1rm"
+}) {
+  const series = mode === "e1rm" ? data.filter((d) => d.e1rm !== null) : data
+  return (
+    <ResponsiveContainer width="100%" height={190}>
+      <LineChart data={series} margin={{ top: 8, right: 10, left: -18, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        {/* minTickGap derruba a data que colidiria com a vizinha: com 8+
+            sessões num celular de 390 px os rótulos encavalavam */}
+        <XAxis
+          dataKey="label"
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          minTickGap={18}
+        />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={["dataMin - 4", "dataMax + 4"]}
+          tickFormatter={(v: number) => `${Math.round(v)}`}
+        />
+        <Tooltip content={<TopSetTip mode={mode} />} cursor={{ stroke: GRID }} />
+        <Line
+          type="monotone"
+          dataKey={mode === "e1rm" ? "e1rm" : "carga"}
+          stroke={EMBER}
+          strokeWidth={2.5}
+          dot={(props: { cx?: number; cy?: number; index?: number }) => {
+            const datum = series[props.index ?? 0]
+            const pr = mode === "carga" && Boolean(datum?.isLoadPr)
+            return (
+              <circle
+                key={props.index}
+                cx={props.cx}
+                cy={props.cy}
+                r={pr ? 5 : 3}
+                fill={pr ? GOLD : EMBER}
+                stroke="#141216"
+                strokeWidth={pr ? 2 : 0}
+              />
+            )
+          }}
+          activeDot={{ r: 6, fill: EMBER_HOT, stroke: "#141216", strokeWidth: 2 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Sono — faixa de horário                                             */
+/* ------------------------------------------------------------------ */
+
+export interface SleepBand {
+  /** SEG..DOM */
+  label: string
+  /** minutos na régua de relógio; 22h vira 1320, 1h da manhã vira 1500 */
+  startMin: number | null
+  durationMin: number | null
+  /** dd/MM, usado só como chave estável */
+  dateLabel: string
+}
+
+/** Régua: 18h de um dia até 14h do seguinte (20 horas de relógio). */
+const BAND_START = 18 * 60
+const BAND_END = 38 * 60
+
+/**
+ * Cada noite como uma faixa de "dormiu" até "acordou".
+ *
+ * O gráfico de barras mostrava só a duração e jogava fora `sleptAt` e
+ * `wokeAt`, que já estavam no banco. A REGULARIDADE do horário — que pesa
+ * tanto quanto a duração — só aparece quando as faixas ficam alinhadas numa
+ * régua de relógio comum: dormir 7 h sempre à 1h lê-se diferente de dormir
+ * 7 h ora às 22h, ora às 4h.
+ *
+ * SVG escrito à mão porque o recharts não tem barra flutuante (com início
+ * livre, não ancorada no zero) — e porque num celular a leitura por linha é
+ * mais confortável que por coluna.
+ */
+export function SleepScheduleChart({ data }: { data: SleepBand[] }) {
+  const rowH = 22
+  const gap = 4
+  const labelW = 38
+  const width = 320
+  const height = data.length * (rowH + gap) - gap + 26
+  const plotW = width - labelW - 6
+  const span = BAND_END - BAND_START
+  const x = (min: number) => labelW + ((min - BAND_START) / span) * plotW
+  const ticks = [18, 21, 24, 27, 30, 33, 36]
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width="100%"
+      height={height}
+      role="img"
+      aria-label="Horário de dormir e acordar das últimas noites"
+      style={{ display: "block" }}
+    >
+      {ticks.map((h) => (
+        <g key={h}>
+          <line
+            x1={x(h * 60)}
+            y1={14}
+            x2={x(h * 60)}
+            y2={height - 16}
+            stroke={h === 24 ? "rgba(255,255,255,0.16)" : GRID}
+            strokeWidth={1}
+          />
+          <text
+            x={x(h * 60)}
+            y={height - 4}
+            fill="#5f5a66"
+            fontSize={9}
+            fontFamily="'JetBrains Mono Variable', monospace"
+            textAnchor="middle"
+          >
+            {`${String(h % 24).padStart(2, "0")}h`}
+          </text>
+        </g>
+      ))}
+
+      {data.map((d, i) => {
+        const y = 14 + i * (rowH + gap)
+        const has =
+          d.startMin !== null && d.durationMin !== null && d.durationMin > 0
+        const start = has ? Math.max(BAND_START, d.startMin as number) : 0
+        const end = has
+          ? Math.min(BAND_END, (d.startMin as number) + (d.durationMin as number))
+          : 0
+        const barW = has ? Math.max(3, x(end) - x(start)) : 0
+        return (
+          <g key={`${d.dateLabel}-${i}`}>
+            <text
+              x={0}
+              y={y + rowH / 2 + 3.5}
+              fill={has ? "#97919e" : "#5f5a66"}
+              fontSize={9.5}
+              fontFamily="'JetBrains Mono Variable', monospace"
+            >
+              {d.label}
+            </text>
+            <rect
+              x={labelW}
+              y={y}
+              width={plotW}
+              height={rowH}
+              fill="#1b181d"
+              fillOpacity={0.55}
+            />
+            {has ? (
+              <rect
+                x={x(start)}
+                y={y + 3}
+                width={barW}
+                height={rowH - 6}
+                rx={3}
+                fill={SLEEP}
+                fillOpacity={0.85}
+              />
+            ) : (
+              <text
+                x={labelW + plotW / 2}
+                y={y + rowH / 2 + 3.5}
+                fill="#5f5a66"
+                fontSize={9}
+                fontFamily="'JetBrains Mono Variable', monospace"
+                textAnchor="middle"
+              >
+                sem registro
+              </text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
 }

@@ -80,14 +80,20 @@ function formatTimeFromMinutes(minutes: number | null): string | null {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-function adjustedBedtimeMinutes(value: string): number | null {
+/**
+ * Horário de dormir numa régua contínua de relógio: 22:00 vira 1320 e 00:30
+ * do dia seguinte vira 1470, em vez de voltar para 30. Sem isso, uma noite que
+ * atravessa a meia-noite apareceria ANTES da que começou às 22h — tanto na
+ * média quanto no gráfico de faixa.
+ */
+export function bedtimeClockMinutes(value: string): number | null {
   const minutes = timeToMinutes(value)
   if (minutes === null) return null
   return minutes < 12 * 60 ? minutes + 24 * 60 : minutes
 }
 
 function sleepMidpoint(log: SleepLog): number | null {
-  const start = adjustedBedtimeMinutes(log.sleptAt)
+  const start = bedtimeClockMinutes(log.sleptAt)
   if (start === null) return null
   return start + log.durationMin / 2
 }
@@ -106,7 +112,7 @@ export function computeSleepMetrics(logs: SleepLog[], today: Date): SleepMetrics
       : null
 
   const avgBedtime = formatTimeFromMinutes(average(last7.flatMap((s) => {
-    const value = adjustedBedtimeMinutes(s.sleptAt)
+    const value = bedtimeClockMinutes(s.sleptAt)
     return value === null ? [] : [value]
   })))
   const avgWake = formatTimeFromMinutes(average(last7.flatMap((s) => {
