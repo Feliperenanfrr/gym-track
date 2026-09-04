@@ -1,6 +1,12 @@
-import { computeReadiness, Readiness, ReadinessLevel, waterGoalMl } from "./insights"
+import {
+  computeReadiness,
+  MIN_CHRONIC_DAYS,
+  Readiness,
+  ReadinessLevel,
+  waterGoalMl,
+} from "./insights"
 import { computeSleepMetrics, formatSleepDuration, SLEEP_TARGET_MIN } from "./sleep"
-import { GymData } from "./types"
+import { GymData, WorkoutLog } from "./types"
 import { toDateKey } from "./utils"
 
 /**
@@ -164,3 +170,77 @@ export function computeRecovery(data: GymData, today: Date): RecoverySignal {
   )
   return { level: limiter.level, load, drivers, limiter }
 }
+
+/* ------------------------------------------------------------------ */
+/* ACWR ao longo do tempo                                              */
+/* ------------------------------------------------------------------ */
+
+export interface ReadinessPoint {
+  /** yyyy-MM-dd */
+  date: string
+  /** dd/MM */
+  label: string
+  /** carga interna dos 7 dias terminando neste dia (AU) */
+  acute: number
+  /** média semanal AU das 3 semanas anteriores à janela aguda */
+  chronic: number
+  chronicDays: number
+  /** null quando a base crônica tem menos de MIN_CHRONIC_DAYS dias de treino */
+  ratio: number | null
+}
+
+export interface ReadinessSeries {
+  points: ReadinessPoint[]
+  /** pontos com razão legível */
+  readable: number
+  /** dias cobertos */
+  days: number
+}
+
+/**
+ * A prontidão dia a dia, para ver a razão SUBINDO ou DESCENDO em vez de só
+ * saber onde ela está hoje.
+ *
+ * Entrar na zona vermelha vindo de baixo (carga crescendo) e vindo de cima
+ * (base despencando depois de uma parada) são situações opostas que o
+ * semáforo pontual não distingue — e pedem decisões opostas.
+ *
+ * Roda o mesmo computeReadiness em cada dia; a fórmula não é duplicada. Os
+ * dias sem base suficiente saem com ratio null de propósito: o gráfico os
+ * desenha como BURACO, e o buraco é a informação ("voltou de lacuna, ainda
+ * não dá para medir") em vez de uma linha interpolada por cima do vazio.
+ */
+export function readinessSeries(
+  workouts: WorkoutLog[],
+  today: Date,
+  days = 90
+): ReadinessSeries {
+  const points: ReadinessPoint[] = []
+  for (let back = days - 1; back >= 0; back--) {
+    const day = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - back
+    )
+    const r = computeReadiness(workouts, day)
+    points.push({
+      date: toDateKey(day),
+      label: `${String(day.getDate()).padStart(2, "0")}/${String(day.getMonth() + 1).padStart(2, "0")}`,
+      acute: Math.round(r.acute),
+      chronic: Math.round(r.chronic),
+      chronicDays: r.chronicDays,
+      ratio: r.ratio === null ? null : Math.round(r.ratio * 100) / 100,
+    })
+  }
+  return {
+    points,
+    readable: points.filter((p) => p.ratio !== null).length,
+    days,
+  }
+}
+
+/** Faixa de carga considerada sustentável na literatura de ACWR. */
+export const ACWR_SAFE = { min: 0.8, max: 1.3 } as const
+
+/** Piso de dias de treino na base, reexportado para a UI explicar o buraco. */
+export { MIN_CHRONIC_DAYS }

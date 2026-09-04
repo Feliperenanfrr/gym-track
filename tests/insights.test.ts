@@ -190,6 +190,46 @@ describe("computeReadiness", () => {
     expect(red.level).toBe("red")
   })
 
+  it("base com menos de 3 dias de treino não vira razão", () => {
+    // voltar de uma lacuna deixa a base crônica com 1 dia: a divisão explodia
+    // (2377% nos dados reais) e virava "alerta de fadiga" descrevendo o oposto
+    // do que aconteceu — o problema foi ter parado, não ter treinado demais.
+    const r = computeReadiness([mk(-20, 100), mk(-2, 200)], TODAY)
+    expect(r.chronicDays).toBe(1)
+    expect(r.level).toBe("building")
+    expect(r.ratio).toBeNull()
+    // os componentes crus continuam disponíveis para diagnóstico
+    expect(r.acute).toBeGreaterThan(0)
+    expect(r.chronic).toBeGreaterThan(0)
+  })
+
+  it("dois dias de base ainda não bastam; o terceiro destrava", () => {
+    const dois = computeReadiness([mk(-20, 100), mk(-15, 100), mk(-3, 100)], TODAY)
+    expect(dois.chronicDays).toBe(2)
+    expect(dois.ratio).toBeNull()
+
+    const tres = computeReadiness(
+      [mk(-20, 100), mk(-15, 100), mk(-10, 100), mk(-3, 100)],
+      TODAY
+    )
+    expect(tres.chronicDays).toBe(3)
+    expect(tres.ratio).not.toBeNull()
+  })
+
+  it("duas sessões no MESMO dia contam como um dia de base", () => {
+    const r = computeReadiness(
+      [
+        mk(-20, 100),
+        workout({ date: dayKey(-20), sessionId: "cardioZ2", srpe: 8, durationMin: 100 }),
+        mk(-15, 100),
+        mk(-3, 100),
+      ],
+      TODAY
+    )
+    expect(r.chronicDays).toBe(2)
+    expect(r.ratio).toBeNull()
+  })
+
   it("limites exatos do ACWR: ≤1.1 verde · ≤1.4 amarelo · >1.4 vermelho", () => {
     // base: sessão semanal de 700 AU (srpe 10 × 70 min) em -26/-19/-12
     const chronic = [mk(-26, 70, 10), mk(-19, 70, 10), mk(-12, 70, 10)]

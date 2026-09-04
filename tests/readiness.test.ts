@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { computeRecovery } from "../lib/readiness"
+import { ACWR_SAFE, computeRecovery, readinessSeries } from "../lib/readiness"
 import { GymData, HydrationLog, SleepLog, WorkoutLog } from "../lib/types"
 
 const TODAY = new Date(2026, 7, 20)
@@ -102,5 +102,59 @@ describe("computeRecovery", () => {
     const hydration = [...water(4, GOAL_ML), { date: dayKey(-5), ml: 0 }]
     const r = computeRecovery(data({ hydration }), TODAY)
     expect(r.drivers.find((d) => d.id === "water")?.level).toBe("green")
+  })
+})
+
+describe("readinessSeries", () => {
+  /** sessão de 800 AU no dia `offset`. */
+  function mk(offset: number): WorkoutLog {
+    return {
+      id: `s-${offset}`,
+      date: dayKey(offset),
+      sessionId: "upperA",
+      entries: [],
+      srpe: 8,
+      durationMin: 100,
+    }
+  }
+
+  it("devolve um ponto por dia, terminando hoje", () => {
+    const serie = readinessSeries([], TODAY, 30)
+    expect(serie.points).toHaveLength(30)
+    expect(serie.days).toBe(30)
+    expect(serie.points[29].date).toBe(dayKey(0))
+    expect(serie.points[0].date).toBe(dayKey(-29))
+  })
+
+  it("sem treino nenhum, nenhum dia tem leitura", () => {
+    const serie = readinessSeries([], TODAY, 30)
+    expect(serie.readable).toBe(0)
+    expect(serie.points.every((p) => p.ratio === null)).toBe(true)
+  })
+
+  it("dia com base fina sai como buraco, não como pico", () => {
+    // um único dia de treino na base: a razão seria absurda, então é null
+    const serie = readinessSeries([mk(-20), mk(-2)], TODAY, 5)
+    const hoje = serie.points[serie.points.length - 1]
+    expect(hoje.chronicDays).toBe(1)
+    expect(hoje.ratio).toBeNull()
+  })
+
+  it("com base de 3 dias a razão aparece e é a mesma do card", () => {
+    const workouts = [mk(-20), mk(-15), mk(-10), mk(-3)]
+    const serie = readinessSeries(workouts, TODAY, 3)
+    const hoje = serie.points[serie.points.length - 1]
+    expect(hoje.ratio).toBeCloseTo(1, 2)
+    expect(serie.readable).toBeGreaterThan(0)
+    // mesma fonte de verdade que computeRecovery usa no card
+    expect(computeRecovery({ ...data(), workouts }, TODAY).load.ratio).toBeCloseTo(
+      hoje.ratio as number,
+      2
+    )
+  })
+
+  it("a faixa segura declarada é a da literatura de ACWR", () => {
+    expect(ACWR_SAFE.min).toBeLessThan(1)
+    expect(ACWR_SAFE.max).toBeGreaterThan(1)
   })
 })

@@ -9,6 +9,7 @@ import {
   Cell,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -1247,6 +1248,465 @@ export function SleepScheduleChart({ data }: { data: SleepBand[] }) {
           </g>
         )
       })}
+    </svg>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* ACWR ao longo do tempo                                              */
+/* ------------------------------------------------------------------ */
+
+interface AcwrDatum {
+  label: string
+  ratio: number | null
+  acute: number
+  chronic: number
+  chronicDays: number
+}
+
+function AcwrTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { payload: AcwrDatum }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-0.5 text-steel">{label}</p>
+      {d.ratio === null ? (
+        <>
+          <p className="font-semibold text-bone">sem leitura</p>
+          <p className="text-steel-dim">
+            base com {d.chronicDays} {d.chronicDays === 1 ? "dia" : "dias"} de treino
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="font-semibold text-bone">{Math.round(d.ratio * 100)}%</p>
+          <p className="text-steel-dim">
+            {d.acute.toLocaleString("pt-BR")} AU sobre base de{" "}
+            {d.chronic.toLocaleString("pt-BR")}
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Razão carga aguda : base crônica ao longo do tempo.
+ *
+ * O card de prontidão diz onde a razão está hoje; esta linha diz para onde ela
+ * está indo, que é outra informação. Entrar na zona alta com a linha subindo
+ * (carga crescendo) e entrar com ela despencando de um buraco (base sumindo
+ * depois de uma parada) pedem decisões opostas.
+ *
+ * Os trechos sem base suficiente ficam como BURACO na linha — `connectNulls`
+ * fica desligado de propósito. Interpolar por cima do vazio desenharia uma
+ * continuidade que não existiu, e o vazio é justamente o que houve.
+ */
+export function AcwrChart({
+  data,
+  safe,
+}: {
+  data: AcwrDatum[]
+  safe: { min: number; max: number }
+}) {
+  const values = data.map((d) => d.ratio).filter((r): r is number => r !== null)
+  // teto arredondado em meios: o eixo automático do recharts produzia marcas
+  // como 73% e 218%, números sem significado nenhum nesta escala
+  const top = Math.ceil(Math.max(safe.max + 0.4, ...values) * 2) / 2
+  // as marcas que importam são as bordas da faixa segura, não uma régua uniforme
+  const ticks = [0, safe.min, safe.max, top]
+  return (
+    <ResponsiveContainer width="100%" height={190}>
+      <LineChart data={data} margin={{ top: 8, right: 14, left: -14, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <ReferenceArea
+          y1={safe.min}
+          y2={safe.max}
+          fill={ZONE}
+          fillOpacity={0.08}
+          stroke="none"
+        />
+        <XAxis
+          dataKey="label"
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          minTickGap={28}
+        />
+        <YAxis
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          domain={[0, top]}
+          ticks={ticks}
+          tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
+        />
+        <Tooltip content={<AcwrTip />} cursor={{ stroke: GRID }} />
+        <ReferenceLine
+          y={1}
+          stroke={ZONE}
+          strokeDasharray="4 4"
+          strokeOpacity={0.65}
+        />
+        <Line
+          type="monotone"
+          dataKey="ratio"
+          stroke={EMBER}
+          strokeWidth={2.5}
+          dot={false}
+          activeDot={{ r: 5, fill: EMBER_HOT, stroke: "#141216", strokeWidth: 2 }}
+          connectNulls={false}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Estagnação                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface StagnationDatum {
+  name: string
+  sessions: number
+  sessionsSinceIncrease: number | null
+  lastWeight: number
+}
+
+/**
+ * Quantas sessões cada exercício está sem subir carga.
+ *
+ * "Nunca subiu" ganha uma coluna própria à esquerda, separada por uma linha:
+ * não é o mesmo que zero. Zero significa "subiu na última sessão" — o melhor
+ * estado possível — e empilhar os dois no mesmo ponto do eixo inverteria a
+ * leitura justamente nos casos mais graves.
+ *
+ * SVG à mão porque o recharts não faz dot plot com rótulo por linha, e porque
+ * num celular a leitura por linha é mais confortável que por coluna.
+ */
+export function StagnationChart({
+  data,
+  alertAt = 4,
+}: {
+  data: StagnationDatum[]
+  alertAt?: number
+}) {
+  const rowH = 24
+  const labelW = 104
+  const width = 320
+  const height = data.length * rowH + 30
+  // a coluna "nunca" precisa de folga à direita: com pouco espaço o rótulo
+  // dela encostava no "0" do eixo, e os dois significam coisas opostas
+  const neverW = 44
+  const plotL = labelW + neverW + 14
+  const plotR = width - 26
+  const maxSessions = Math.max(
+    alertAt,
+    ...data.map((d) => d.sessionsSinceIncrease ?? 0)
+  )
+  const x = (v: number) => plotL + (v / maxSessions) * (plotR - plotL)
+
+  const ticks = Array.from({ length: maxSessions + 1 }, (_, i) => i).filter(
+    (t) => maxSessions <= 6 || t % 2 === 0
+  )
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width="100%"
+      height={height}
+      role="img"
+      aria-label="Sessões desde o último aumento de carga, por exercício"
+      style={{ display: "block" }}
+    >
+      {ticks.map((t) => (
+        <line
+          key={t}
+          x1={x(t)}
+          y1={12}
+          x2={x(t)}
+          y2={data.length * rowH + 4}
+          stroke={GRID}
+          strokeWidth={1}
+        />
+      ))}
+      {/* fronteira entre "nunca subiu" e a escala de sessões */}
+      <line
+        x1={labelW + neverW + 4}
+        y1={8}
+        x2={labelW + neverW + 4}
+        y2={data.length * rowH + 4}
+        stroke="rgba(255,255,255,0.16)"
+        strokeDasharray="3 3"
+      />
+
+      {data.map((d, i) => {
+        const y = 12 + i * rowH + rowH / 2 - 4
+        const never = d.sessionsSinceIncrease === null
+        const value = d.sessionsSinceIncrease ?? 0
+        const alert = !never && value >= alertAt
+        const color = never ? EMBER : alert ? GOLD : ZONE
+        return (
+          <g key={d.name}>
+            <text
+              x={0}
+              y={y + 3.5}
+              fill="#97919e"
+              fontSize={10}
+              fontFamily="'JetBrains Mono Variable', monospace"
+            >
+              {d.name.length > 15 ? `${d.name.slice(0, 14)}…` : d.name}
+            </text>
+            {never ? (
+              <>
+                <line
+                  x1={labelW + 6}
+                  y1={y}
+                  x2={labelW + neverW - 4}
+                  y2={y}
+                  stroke={EMBER}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.5}
+                />
+                <circle
+                  cx={labelW + neverW - 4}
+                  cy={y}
+                  r={4.5}
+                  fill={color}
+                  stroke="#141216"
+                  strokeWidth={1.5}
+                />
+              </>
+            ) : (
+              <>
+                <line
+                  x1={plotL}
+                  y1={y}
+                  x2={x(value)}
+                  y2={y}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.45}
+                />
+                <circle
+                  cx={x(value)}
+                  cy={y}
+                  r={4.5}
+                  fill={color}
+                  stroke="#141216"
+                  strokeWidth={1.5}
+                />
+                <text
+                  x={x(value) + 9}
+                  y={y + 3.5}
+                  fill="#ece8e1"
+                  fontSize={9.5}
+                  fontFamily="'JetBrains Mono Variable', monospace"
+                >
+                  {value}
+                </text>
+              </>
+            )}
+          </g>
+        )
+      })}
+
+      <text
+        x={labelW + neverW / 2 + 2}
+        y={height - 5}
+        fill={EMBER}
+        fontSize={8.5}
+        fontFamily="'JetBrains Mono Variable', monospace"
+        textAnchor="middle"
+      >
+        nunca
+      </text>
+      {ticks.map((t) => (
+        <text
+          key={t}
+          x={x(t)}
+          y={height - 5}
+          fill="#5f5a66"
+          fontSize={8.5}
+          fontFamily="'JetBrains Mono Variable', monospace"
+          textAnchor="middle"
+        >
+          {t}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Trajetória cintura × peso                                           */
+/* ------------------------------------------------------------------ */
+
+export interface WaistWeightDatum {
+  label: string
+  weightKg: number
+  waistCm: number
+}
+
+/**
+ * O caminho que peso e cintura fizeram juntos.
+ *
+ * Duas linhas separadas escondem a única relação que interessa na
+ * recomposição: descer a cintura sem descer o peso. Aqui os pontos são ligados
+ * em ordem cronológica, então o desenho tem direção — e é a direção que se lê,
+ * não a posição.
+ */
+export function WaistWeightChart({ data }: { data: WaistWeightDatum[] }) {
+  const width = 320
+  const height = 220
+  const L = 34
+  const R = width - 12
+  const T = 14
+  const B = height - 30
+
+  const weights = data.map((d) => d.weightKg)
+  const waists = data.map((d) => d.waistCm)
+  const padX = Math.max(0.6, (Math.max(...weights) - Math.min(...weights)) * 0.15)
+  const padY = Math.max(0.8, (Math.max(...waists) - Math.min(...waists)) * 0.15)
+  const x0 = Math.min(...weights) - padX
+  const x1 = Math.max(...weights) + padX
+  const y0 = Math.min(...waists) - padY
+  const y1 = Math.max(...waists) + padY
+
+  const X = (v: number) => L + ((v - x0) / (x1 - x0)) * (R - L)
+  const Y = (v: number) => B - ((v - y0) / (y1 - y0)) * (B - T)
+
+  // A trajetória se cruza — peso sobe e desce. Sem indicar direção, o desenho
+  // vira um nó: cada segmento é desenhado à parte, do mais apagado (antigo) ao
+  // mais forte (recente), então dá para seguir o caminho sem ler data nenhuma.
+  const segments = data.slice(1).map((d, i) => ({
+    from: data[i],
+    to: d,
+    opacity: 0.18 + (0.62 * (i + 1)) / Math.max(1, data.length - 1),
+  }))
+
+  const xTicks = [x0 + (x1 - x0) * 0.15, (x0 + x1) / 2, x1 - (x1 - x0) * 0.15]
+  const yTicks = [y0 + (y1 - y0) * 0.15, (y0 + y1) / 2, y1 - (y1 - y0) * 0.15]
+  const last = data[data.length - 1]
+  const first = data[0]
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width="100%"
+      height={height}
+      role="img"
+      aria-label="Trajetória de cintura contra peso ao longo do tempo"
+      style={{ display: "block" }}
+    >
+      {yTicks.map((t) => (
+        <g key={`y${t}`}>
+          <line x1={L} y1={Y(t)} x2={R} y2={Y(t)} stroke={GRID} strokeWidth={1} />
+          <text
+            x={L - 5}
+            y={Y(t) + 3.5}
+            fill="#5f5a66"
+            fontSize={9}
+            fontFamily="'JetBrains Mono Variable', monospace"
+            textAnchor="end"
+          >
+            {Math.round(t)}
+          </text>
+        </g>
+      ))}
+      {xTicks.map((t) => (
+        <text
+          key={`x${t}`}
+          x={X(t)}
+          y={height - 14}
+          fill="#5f5a66"
+          fontSize={9}
+          fontFamily="'JetBrains Mono Variable', monospace"
+          textAnchor="middle"
+        >
+          {t.toFixed(1).replace(".", ",")}
+        </text>
+      ))}
+
+      {segments.map((seg, i) => (
+        <line
+          key={`seg-${i}`}
+          x1={X(seg.from.weightKg)}
+          y1={Y(seg.from.waistCm)}
+          x2={X(seg.to.weightKg)}
+          y2={Y(seg.to.waistCm)}
+          stroke={GOLD}
+          strokeWidth={1.8}
+          strokeOpacity={seg.opacity}
+          strokeLinecap="round"
+        />
+      ))}
+
+      {data.map((d, i) => {
+        const isLast = i === data.length - 1
+        const isFirst = i === 0
+        return (
+          <circle
+            key={`${d.label}-${i}`}
+            cx={X(d.weightKg)}
+            cy={Y(d.waistCm)}
+            r={isLast ? 6 : isFirst ? 4.5 : 3}
+            fill={isLast ? GOLD : isFirst ? "#141216" : GOLD}
+            fillOpacity={isLast || isFirst ? 1 : 0.45}
+            stroke={isFirst ? GOLD : "#141216"}
+            strokeWidth={isFirst ? 2 : isLast ? 2 : 0}
+          />
+        )
+      })}
+
+      <text
+        x={X(first.weightKg)}
+        y={Y(first.waistCm) + 15}
+        fill="#5f5a66"
+        fontSize={9}
+        fontFamily="'JetBrains Mono Variable', monospace"
+        textAnchor="middle"
+      >
+        {first.label}
+      </text>
+      <text
+        x={X(last.weightKg)}
+        y={Y(last.waistCm) - 12}
+        fill={GOLD}
+        fontSize={9.5}
+        fontWeight={700}
+        fontFamily="'JetBrains Mono Variable', monospace"
+        textAnchor="middle"
+      >
+        {last.label}
+      </text>
+
+      <text
+        x={L}
+        y={height - 2}
+        fill="#5f5a66"
+        fontSize={8.5}
+        fontFamily="'JetBrains Mono Variable', monospace"
+      >
+        peso (kg) →
+      </text>
+      <text
+        x={2}
+        y={T + 2}
+        fill="#5f5a66"
+        fontSize={8.5}
+        fontFamily="'JetBrains Mono Variable', monospace"
+      >
+        cm
+      </text>
     </svg>
   )
 }

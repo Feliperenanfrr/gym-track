@@ -191,3 +191,86 @@ export function exerciseStrength(
     reliableE1rmPoints: points.filter((p) => p.e1rm !== null).length,
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Estagnação                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface StagnationRow {
+  exerciseId: string
+  name: string
+  /** sessões com carga registrada na janela */
+  sessions: number
+  /**
+   * Sessões desde o último aumento de carga. `null` = a carga NUNCA subiu
+   * acima da primeira sessão do período — estado diferente de zero, que
+   * significa "subiu agora".
+   */
+  sessionsSinceIncrease: number | null
+  lastWeight: number
+  bestWeight: number
+}
+
+/** Sessões sem subir carga a partir das quais o exercício pede atenção. */
+export const STAGNATION_ALERT_SESSIONS = 4
+
+/**
+ * Quadro de estagnação: quanto tempo cada exercício está sem subir carga.
+ *
+ * O número por exercício já existia em `exerciseStrength`, mas só aparecia
+ * depois de trocar de chip no seletor — descobrir o que travou custava seis
+ * toques. Aqui todos saem de uma vez, ordenados por gravidade: primeiro os
+ * que nunca subiram, depois os parados há mais tempo.
+ */
+export function stagnationBoard(
+  workouts: WorkoutLog[],
+  today: Date,
+  {
+    days = 180,
+    minSessions = 2,
+    limit = 12,
+  }: { days?: number; minSessions?: number; limit?: number } = {}
+): StagnationRow[] {
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const since = new Date(midnight.getTime() - (days - 1) * DAY_MS)
+  const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(
+    since.getDate()
+  ).padStart(2, "0")}`
+  const todayKey = `${midnight.getFullYear()}-${String(midnight.getMonth() + 1).padStart(2, "0")}-${String(
+    midnight.getDate()
+  ).padStart(2, "0")}`
+
+  const inWindow = workouts.filter((w) => w.date >= sinceKey && w.date <= todayKey)
+  const ids = new Set<string>()
+  for (const w of inWindow) {
+    for (const entry of w.entries) {
+      if (entry.sets.some((s) => s.weight > 0 && s.reps > 0)) ids.add(entry.exerciseId)
+    }
+  }
+
+  const rows: StagnationRow[] = []
+  for (const id of ids) {
+    const strength = exerciseStrength(inWindow, id)
+    if (strength.points.length < minSessions) continue
+    rows.push({
+      exerciseId: id,
+      name: strength.name,
+      sessions: strength.points.length,
+      sessionsSinceIncrease: strength.sessionsSinceIncrease,
+      lastWeight: strength.last?.carga ?? 0,
+      bestWeight: strength.bestWeight,
+    })
+  }
+
+  // gravidade: nunca subiu é o pior caso, depois quem está parado há mais tempo
+  return rows
+    .sort((a, b) => {
+      const sa = a.sessionsSinceIncrease
+      const sb = b.sessionsSinceIncrease
+      if (sa === null && sb !== null) return -1
+      if (sb === null && sa !== null) return 1
+      if (sa === null && sb === null) return b.sessions - a.sessions
+      return (sb as number) - (sa as number) || b.sessions - a.sessions
+    })
+    .slice(0, limit)
+}
