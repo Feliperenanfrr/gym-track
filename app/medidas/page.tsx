@@ -13,9 +13,11 @@ import {
   VisceralChart,
   WeightChart,
   WaistChart,
+  WaistWeightChart,
 } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
+import { waistWeightTrail } from "@/lib/composition"
 import { waterGoalMl, weightTrend7d } from "@/lib/insights"
 import { BodyLog } from "@/lib/types"
 import {
@@ -239,7 +241,9 @@ export default function MedidasPage() {
         durationMin: log ? log.durationMin : null,
       }
     })
+    const waistWeightPath = waistWeightTrail(body)
     return {
+      waistWeightPath,
       hydration7,
       sleep7,
       sleepBands7,
@@ -610,7 +614,7 @@ export default function MedidasPage() {
       {view.waistChart.length > 0 && (
         <>
           <SectionTitle accent="steel">Evolução de cintura</SectionTitle>
-          <Card className="rise rise-2 mb-6 border-l-4 border-l-[#818cf8]">
+          <Card className="rise rise-2 border-l-4 border-l-[#818cf8]">
             <WaistChart data={view.waistChart} />
             <p className="mt-2 font-mono text-[10px] text-steel-dim">
               redução na cintura é um forte indicativo de perda de gordura
@@ -618,6 +622,31 @@ export default function MedidasPage() {
           </Card>
         </>
       )}
+
+      {/* A relação entre os dois é onde a recomposição aparece — em dois
+          gráficos de linha separados ela some. */}
+      {view.waistWeightPath.length >= 2 ? (
+        <Card className="rise rise-2 mb-6 mt-3 border-l-4 border-l-gold">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+            Trajetória cintura × peso · {view.waistWeightPath.length} pesagens
+          </p>
+          <WaistWeightChart data={view.waistWeightPath} />
+          <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+            Cada ponto é um dia com peso E cintura; a linha liga em ordem
+            cronológica, e o ponto cheio é a medida mais recente. Descer sem andar
+            para a esquerda é <span className="text-gold">recomposição</span> — cintura
+            saindo com o peso parado. Andar para a esquerda sem descer é perder peso
+            sem perder medida.
+          </p>
+        </Card>
+      ) : view.waistChart.length > 0 ? (
+        <Card className="rise rise-2 mb-6 mt-3 border-l-4 border-l-gold">
+          <p className="font-mono text-[10px] leading-relaxed text-steel-dim">
+            A trajetória cintura × peso precisa de 2 pesagens com as DUAS medidas no
+            mesmo dia. Você tem {view.waistWeightPath.length}.
+          </p>
+        </Card>
+      ) : null}
 
       {view.latestBio && (
         <>

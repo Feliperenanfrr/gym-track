@@ -6,6 +6,8 @@ import { ArrowRight, Check, CloudOff, Droplets, FileText, History, LogOut, Moon,
 import {
   ConsistencyChart,
   MuscleVolumeChart,
+  AcwrChart,
+  StagnationChart,
   TopSetChart,
   WeeklyVolumeChart,
   ZoneChart,
@@ -21,8 +23,18 @@ import {
   trainingCalendar,
   weeklySessionTarget,
 } from "@/lib/consistency"
-import { computeRecovery, RecoveryDriver } from "@/lib/readiness"
-import { exerciseStrength, frequentExercises } from "@/lib/strength"
+import {
+  ACWR_SAFE,
+  computeRecovery,
+  readinessSeries,
+  RecoveryDriver,
+} from "@/lib/readiness"
+import {
+  exerciseStrength,
+  frequentExercises,
+  stagnationBoard,
+  STAGNATION_ALERT_SESSIONS,
+} from "@/lib/strength"
 import { energyBalanceSeries, energyReport } from "@/lib/energy"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
@@ -305,6 +317,8 @@ export default function Dashboard() {
     })).sort((a, b) => b.sets - a.sets)
 
     const readiness = computeRecovery(data, today)
+    const readinessTrend = readinessSeries(data.workouts, today, 90)
+    const stagnation = stagnationBoard(data.workouts, today)
     // fechamento de domingo: resumo da semana corrente
     const weekSummary =
       isoWeekday(today) === 7 ? weeklySummary(data, monday, program) : null
@@ -395,6 +409,8 @@ export default function Dashboard() {
       strength,
       liftOptions,
       activeLiftId,
+      readinessTrend,
+      stagnation,
       daysActive,
       streak,
       consistency,
@@ -884,6 +900,32 @@ export default function Dashboard() {
         )}
       </Card>
 
+      {/* Prontidão no tempo — o card diz onde está; a linha, para onde vai */}
+      <CollapsibleSection
+        title="Prontidão — 90 dias"
+        badge={`${view.readinessTrend.readable} de ${view.readinessTrend.days} dias com base suficiente`}
+      >
+        <Card className="rise rise-3">
+          {view.readinessTrend.readable > 0 ? (
+            <>
+              <AcwrChart data={view.readinessTrend.points} safe={ACWR_SAFE} />
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Carga dos últimos 7 dias sobre a base das 3 semanas anteriores. A faixa
+                turquesa (80&ndash;130%) é o território sustentável; a linha tracejada é a
+                base. <span className="text-bone">Buraco na linha</span> é dia sem leitura
+                &mdash; a base tinha menos de 3 dias de treino, e dividir por quase nada
+                produz percentual de quatro dígitos que não descreve fadiga nenhuma.
+              </p>
+            </>
+          ) : (
+            <p className="py-10 text-center text-xs text-steel-dim">
+              Ainda sem base crônica em nenhum dia dos últimos 90. Três dias de treino em
+              três semanas já destravam a leitura.
+            </p>
+          )}
+        </Card>
+      </CollapsibleSection>
+
       {/* Sono — recuperação diária */}
       <Card className="rise rise-3 mt-4 border-l-4 border-l-[#a78bfa]">
         <div className="flex items-start justify-between gap-3">
@@ -1337,6 +1379,32 @@ export default function Dashboard() {
             Registre uma sessão com carga para o painel escolher os exercícios.
           </p>
         )}
+        </Card>
+      </CollapsibleSection>
+
+      {/* Estagnação — o número por exercício existia, mas custava seis toques */}
+      <CollapsibleSection title="Estagnação — sem subir carga" badge={`${view.stagnation.filter((r) => r.sessionsSinceIncrease === null).length} paradas`}>
+        <Card className="rise rise-5">
+          {view.stagnation.length > 0 ? (
+            <>
+              <StagnationChart
+                data={view.stagnation}
+                alertAt={STAGNATION_ALERT_SESSIONS}
+              />
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Sessões desde o último aumento de carga, nos últimos 6 meses.
+                <span className="text-ember"> Nunca</span> é coluna à parte de propósito:
+                não é o mesmo que zero, que significa &ldquo;subiu na última sessão&rdquo;.
+                A partir de {STAGNATION_ALERT_SESSIONS} sessões paradas o ponto fica
+                <span className="text-gold"> dourado</span> &mdash; é onde muda o estímulo,
+                não a força de vontade.
+              </p>
+            </>
+          ) : (
+            <p className="py-10 text-center text-xs text-steel-dim">
+              Precisa de pelo menos dois registros do mesmo exercício com carga.
+            </p>
+          )}
         </Card>
       </CollapsibleSection>
 

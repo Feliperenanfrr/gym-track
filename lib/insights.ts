@@ -116,14 +116,30 @@ export interface Readiness {
   acute: number
   /** média semanal dos 21 dias anteriores à janela aguda (AU) */
   chronic: number
+  /** dias distintos com treino na janela crônica — o denominador é confiável? */
+  chronicDays: number
 }
 
 const DAY_MS = 86_400_000
 
 /**
+ * Dias de treino que a janela crônica precisa ter para a razão valer alguma
+ * coisa. Abaixo disso o denominador é pequeno demais e a divisão explode:
+ * nos dados reais, voltar de uma lacuna de 14 dias produzia razão de 23,77
+ * (2377%) e um "alerta de fadiga" que descrevia o oposto do que aconteceu —
+ * o problema era ter parado, não ter treinado demais. Com o piso de 3 dias a
+ * razão máxima do mesmo histórico cai para 2,82.
+ */
+export const MIN_CHRONIC_DAYS = 3
+
+/**
  * Sinal de fadiga via razão carga aguda:crônica (ACWR): carga interna dos
  * últimos 7 dias contra a média semanal das 3 semanas anteriores.
  * ≤1.1 verde · ≤1.4 amarelo · >1.4 vermelho.
+ *
+ * Base crônica com menos de MIN_CHRONIC_DAYS dias de treino não vira razão:
+ * o retorno é "building" com ratio null, e a UI mostra "—" em vez de um
+ * percentual de quatro dígitos que ninguém deveria usar para decidir carga.
  */
 export function computeReadiness(workouts: WorkoutLog[], today: Date): Readiness {
   const todayKey = toDateKey(today)
@@ -133,17 +149,25 @@ export function computeReadiness(workouts: WorkoutLog[], today: Date): Readiness
 
   let acute = 0
   let chronicTotal = 0
+  const chronicDates = new Set<string>()
   for (const w of workouts) {
     if (w.date >= acuteStart && w.date <= todayKey) acute += internalLoad(w)
-    else if (w.date >= chronicStart && w.date <= chronicEnd) chronicTotal += internalLoad(w)
+    else if (w.date >= chronicStart && w.date <= chronicEnd) {
+      const load = internalLoad(w)
+      chronicTotal += load
+      if (load > 0) chronicDates.add(w.date)
+    }
   }
   const chronic = chronicTotal / 3
+  const chronicDays = chronicDates.size
 
-  if (chronic <= 0) return { level: "building", ratio: null, acute, chronic: 0 }
+  if (chronic <= 0 || chronicDays < MIN_CHRONIC_DAYS) {
+    return { level: "building", ratio: null, acute, chronic, chronicDays }
+  }
 
   const ratio = acute / chronic
   const level: ReadinessLevel = ratio <= 1.1 ? "green" : ratio <= 1.4 ? "yellow" : "red"
-  return { level, ratio, acute, chronic }
+  return { level, ratio, acute, chronic, chronicDays }
 }
 
 /* ------------------------------------------------------------------ */

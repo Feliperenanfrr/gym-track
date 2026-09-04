@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { exerciseStrength, frequentExercises } from "../lib/strength"
+import {
+  exerciseStrength,
+  frequentExercises,
+  stagnationBoard,
+} from "../lib/strength"
 import { ExerciseLog, WorkoutLog } from "../lib/types"
 
 const TODAY = new Date(2026, 7, 20)
@@ -134,5 +138,70 @@ describe("exerciseStrength", () => {
       "row"
     )
     expect(s.points[0].reps).toBe(10)
+  })
+})
+
+describe("stagnationBoard", () => {
+  const workouts = [
+    // supino: 60 → 60 → 60, nunca subiu
+    workout("2026-06-10", [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }]),
+    workout("2026-07-01", [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }]),
+    workout("2026-08-01", [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8 }] }]),
+    // remada: 40 → 45 → 45 → 45, parada há 2 sessões
+    workout("2026-06-11", [{ exerciseId: "row", sets: [{ weight: 40, reps: 8 }] }]),
+    workout("2026-06-20", [{ exerciseId: "row", sets: [{ weight: 45, reps: 8 }] }]),
+    workout("2026-07-05", [{ exerciseId: "row", sets: [{ weight: 45, reps: 8 }] }]),
+    workout("2026-08-05", [{ exerciseId: "row", sets: [{ weight: 45, reps: 8 }] }]),
+    // rosca: 20 → 25, subiu na última
+    workout("2026-07-02", [{ exerciseId: "curl", sets: [{ weight: 20, reps: 10 }] }]),
+    workout("2026-08-10", [{ exerciseId: "curl", sets: [{ weight: 25, reps: 10 }] }]),
+    // agachamento: uma sessão só — abaixo do mínimo
+    workout("2026-08-11", [{ exerciseId: "squat", sets: [{ weight: 100, reps: 5 }] }]),
+  ]
+
+  it("ordena por gravidade: quem nunca subiu vem primeiro", () => {
+    const board = stagnationBoard(workouts, TODAY)
+    expect(board[0].exerciseId).toBe("bench")
+    expect(board[0].sessionsSinceIncrease).toBeNull()
+  })
+
+  it("depois dos 'nunca', ordena por sessões paradas em ordem decrescente", () => {
+    const board = stagnationBoard(workouts, TODAY)
+    const semNunca = board.filter((r) => r.sessionsSinceIncrease !== null)
+    expect(semNunca.map((r) => r.exerciseId)).toEqual(["row", "curl"])
+    expect(semNunca[0].sessionsSinceIncrease).toBe(2)
+    expect(semNunca[1].sessionsSinceIncrease).toBe(0)
+  })
+
+  it("null e zero são estados diferentes, não o mesmo ponto", () => {
+    const board = stagnationBoard(workouts, TODAY)
+    const bench = board.find((r) => r.exerciseId === "bench")
+    const curl = board.find((r) => r.exerciseId === "curl")
+    expect(bench?.sessionsSinceIncrease).toBeNull()
+    expect(curl?.sessionsSinceIncrease).toBe(0)
+  })
+
+  it("exercício abaixo de minSessions fica de fora", () => {
+    const board = stagnationBoard(workouts, TODAY)
+    expect(board.map((r) => r.exerciseId)).not.toContain("squat")
+    expect(stagnationBoard(workouts, TODAY, { minSessions: 1 }).length).toBe(4)
+  })
+
+  it("respeita a janela e o limite", () => {
+    expect(stagnationBoard(workouts, TODAY, { limit: 2 })).toHaveLength(2)
+    // janela de 12 dias (09/08 a 20/08) deixa fora supino (01/08) e remada (05/08)
+    const curto = stagnationBoard(workouts, TODAY, { days: 12, minSessions: 1 })
+    expect(curto.map((r) => r.exerciseId).sort()).toEqual(["curl", "squat"])
+    // dentro dessa janela a rosca tem uma sessão só: vira base, não aumento
+    expect(curto.find((r) => r.exerciseId === "curl")?.sessionsSinceIncrease).toBeNull()
+  })
+
+  it("carrega carga da última sessão e a melhor do período", () => {
+    const row = stagnationBoard(workouts, TODAY).find((r) => r.exerciseId === "row")
+    expect(row).toMatchObject({ lastWeight: 45, bestWeight: 45, sessions: 4 })
+  })
+
+  it("sem histórico devolve lista vazia", () => {
+    expect(stagnationBoard([], TODAY)).toHaveLength(0)
   })
 })
