@@ -7,17 +7,17 @@ import {
   BodyFatChart,
   CompositionChart,
   HydrationChart,
+  IndexedBodyChart,
   LeanFatStackChart,
   SleepChart,
   SleepScheduleChart,
   VisceralChart,
   WeightChart,
   WaistChart,
-  WaistWeightChart,
 } from "@/components/charts"
 import { Card, PageHeader, SectionTitle, Skeleton, StatCard } from "@/components/ui"
 import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
-import { waistWeightTrail } from "@/lib/composition"
+import { indexedBodyTrend } from "@/lib/composition"
 import { waterGoalMl, weightTrend7d } from "@/lib/insights"
 import { BodyLog } from "@/lib/types"
 import {
@@ -241,9 +241,9 @@ export default function MedidasPage() {
         durationMin: log ? log.durationMin : null,
       }
     })
-    const waistWeightPath = waistWeightTrail(body)
+    const bodyTrend = indexedBodyTrend(body)
     return {
-      waistWeightPath,
+      bodyTrend,
       hydration7,
       sleep7,
       sleepBands7,
@@ -623,27 +623,72 @@ export default function MedidasPage() {
         </>
       )}
 
-      {/* A relação entre os dois é onde a recomposição aparece — em dois
-          gráficos de linha separados ela some. */}
-      {view.waistWeightPath.length >= 2 ? (
+      {/* Peso e cintura na mesma régua: o que interessa é a DISTÂNCIA entre as
+          duas linhas, e ela some quando cada uma tem seu próprio gráfico. */}
+      {view.bodyTrend.points.length >= 2 ? (
         <Card className="rise rise-2 mb-6 mt-3 border-l-4 border-l-gold">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim">
-            Trajetória cintura × peso · {view.waistWeightPath.length} pesagens
-          </p>
-          <WaistWeightChart data={view.waistWeightPath} />
-          <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
-            Cada ponto é um dia com peso E cintura; a linha liga em ordem
-            cronológica, e o ponto cheio é a medida mais recente. Descer sem andar
-            para a esquerda é <span className="text-gold">recomposição</span> — cintura
-            saindo com o peso parado. Andar para a esquerda sem descer é perder peso
-            sem perder medida.
-          </p>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+              Peso × cintura
+            </p>
+            <p className="font-mono text-[10px] text-steel-dim">
+              base {view.bodyTrend.points[0].label} · {view.bodyTrend.points.length} medidas
+            </p>
+          </div>
+
+          <IndexedBodyChart data={view.bodyTrend.points} />
+
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-steel">
+            <span className="inline-flex items-center gap-1.5">
+              <i className="inline-block h-2.5 w-2.5 rounded-sm bg-gold" /> peso
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <i
+                className="inline-block h-2.5 w-2.5 rounded-sm"
+                style={{ background: "#818cf8" }}
+              />
+              cintura
+            </span>
+            <span className="text-steel-dim">tracejado = primeira medida</span>
+          </div>
+
+          {view.bodyTrend.latest && (
+            <p className="mt-3 border-t border-seam pt-3 text-xs leading-relaxed text-steel">
+              {view.bodyTrend.latest.divergence < -0.4 ? (
+                <>
+                  Hoje a <span className="text-[#818cf8]">cintura</span> está{" "}
+                  <strong className="text-bone">
+                    {Math.abs(view.bodyTrend.latest.divergence).toFixed(1).replace(".", ",")} pp
+                  </strong>{" "}
+                  à frente do peso — medida saindo mais rápido que massa. É isso que
+                  recomposição parece num gráfico.
+                </>
+              ) : view.bodyTrend.latest.divergence > 0.4 ? (
+                <>
+                  Hoje o <span className="text-gold">peso</span> está{" "}
+                  <strong className="text-bone">
+                    {view.bodyTrend.latest.divergence.toFixed(1).replace(".", ",")} pp
+                  </strong>{" "}
+                  à frente da cintura — o que saiu da balança não saiu da medida.
+                </>
+              ) : (
+                <>As duas linhas estão andando juntas desde a base.</>
+              )}
+              {view.bodyTrend.bestDivergence && (
+                <>
+                  {" "}Melhor momento do período:{" "}
+                  <span className="text-bone">{view.bodyTrend.bestDivergence.label}</span>,
+                  com a cintura {Math.abs(view.bodyTrend.bestDivergence.divergence).toFixed(1).replace(".", ",")} pp à frente.
+                </>
+              )}
+            </p>
+          )}
         </Card>
       ) : view.waistChart.length > 0 ? (
         <Card className="rise rise-2 mb-6 mt-3 border-l-4 border-l-gold">
           <p className="font-mono text-[10px] leading-relaxed text-steel-dim">
-            A trajetória cintura × peso precisa de 2 pesagens com as DUAS medidas no
-            mesmo dia. Você tem {view.waistWeightPath.length}.
+            Comparar peso e cintura precisa de 2 pesagens com as DUAS medidas no mesmo
+            dia. Você tem {view.bodyTrend.points.length}.
           </p>
         </Card>
       ) : null}

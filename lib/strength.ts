@@ -193,36 +193,42 @@ export function exerciseStrength(
 }
 
 /* ------------------------------------------------------------------ */
-/* Estagnação                                                          */
+/* Carga relativa                                                      */
 /* ------------------------------------------------------------------ */
 
-export interface StagnationRow {
+export interface RelativeLoadRow {
   exerciseId: string
   name: string
   /** sessões com carga registrada na janela */
   sessions: number
-  /**
-   * Sessões desde o último aumento de carga. `null` = a carga NUNCA subiu
-   * acima da primeira sessão do período — estado diferente de zero, que
-   * significa "subiu agora".
-   */
-  sessionsSinceIncrease: number | null
   lastWeight: number
   bestWeight: number
+  /** lastWeight ÷ bestWeight × 100 */
+  relativePct: number
+  /** dias desde a sessão que estabeleceu a melhor carga */
+  daysSinceBest: number
+  /** a melhor carga é a da primeira sessão: nunca subiu desde então */
+  neverIncreased: boolean
 }
 
-/** Sessões sem subir carga a partir das quais o exercício pede atenção. */
-export const STAGNATION_ALERT_SESSIONS = 4
+/** Abaixo disso a carga está longe demais do próprio recorde para ser "manutenção". */
+export const RELATIVE_LOAD_ALERT_PCT = 80
 
 /**
- * Quadro de estagnação: quanto tempo cada exercício está sem subir carga.
+ * Quanto cada exercício está abaixo do próprio recorde de carga.
  *
- * O número por exercício já existia em `exerciseStrength`, mas só aparecia
- * depois de trocar de chip no seletor — descobrir o que travou custava seis
- * toques. Aqui todos saem de uma vez, ordenados por gravidade: primeiro os
- * que nunca subiram, depois os parados há mais tempo.
+ * A primeira versão media "sessões desde o último aumento" e não funcionou:
+ * a métrica pressupõe que houve aumentos, e nos dados reais 10 de 12
+ * exercícios caíam em "nunca subiu". Oitenta e três por cento das linhas
+ * empilhadas no mesmo valor não é gráfico, é lista — e a pergunta por trás
+ * estava errada.
+ *
+ * Carga atual ÷ melhor carga tem faixa cheia (46% a 100% no mesmo histórico) e
+ * responde a pergunta que importa depois de uma lacuna: onde eu estou longe do
+ * que já levantei. Um exercício a 46% do próprio recorde não está em platô —
+ * está destreinado, e isso pede voltar progressivamente, não trocar estímulo.
  */
-export function stagnationBoard(
+export function relativeLoadBoard(
   workouts: WorkoutLog[],
   today: Date,
   {
@@ -230,47 +236,55 @@ export function stagnationBoard(
     minSessions = 2,
     limit = 12,
   }: { days?: number; minSessions?: number; limit?: number } = {}
-): StagnationRow[] {
+): RelativeLoadRow[] {
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   const since = new Date(midnight.getTime() - (days - 1) * DAY_MS)
-  const sinceKey = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(
-    since.getDate()
-  ).padStart(2, "0")}`
-  const todayKey = `${midnight.getFullYear()}-${String(midnight.getMonth() + 1).padStart(2, "0")}-${String(
-    midnight.getDate()
-  ).padStart(2, "0")}`
+  const key = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`
+  const sinceKey = key(since)
+  const todayKey = key(midnight)
 
   const inWindow = workouts.filter((w) => w.date >= sinceKey && w.date <= todayKey)
   const ids = new Set<string>()
   for (const w of inWindow) {
     for (const entry of w.entries) {
-      if (entry.sets.some((s) => s.weight > 0 && s.reps > 0)) ids.add(entry.exerciseId)
+      if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(entry.exerciseId)
     }
   }
 
-  const rows: StagnationRow[] = []
+  const rows: RelativeLoadRow[] = []
   for (const id of ids) {
     const strength = exerciseStrength(inWindow, id)
-    if (strength.points.length < minSessions) continue
+    if (strength.points.length < minSessions || strength.bestWeight <= 0) continue
+
+    // data em que o recorde de carga foi estabelecido (a primeira vez que apareceu)
+    const bestPoint = strength.points.find((point) => point.carga === strength.bestWeight)!
+    const last = strength.points[strength.points.length - 1]
+
     rows.push({
       exerciseId: id,
       name: strength.name,
       sessions: strength.points.length,
-      sessionsSinceIncrease: strength.sessionsSinceIncrease,
-      lastWeight: strength.last?.carga ?? 0,
+      lastWeight: last.carga,
       bestWeight: strength.bestWeight,
+      relativePct: Math.round((last.carga / strength.bestWeight) * 100),
+      daysSinceBest: Math.max(
+        0,
+        Math.round((midnight.getTime() - fromDateKey(bestPoint.date).getTime()) / DAY_MS)
+      ),
+      neverIncreased: bestPoint.date === strength.points[0].date,
     })
   }
 
-  // gravidade: nunca subiu é o pior caso, depois quem está parado há mais tempo
+  // pior primeiro: é a fila de quem precisa de atenção, não um ranking de mérito
   return rows
-    .sort((a, b) => {
-      const sa = a.sessionsSinceIncrease
-      const sb = b.sessionsSinceIncrease
-      if (sa === null && sb !== null) return -1
-      if (sb === null && sa !== null) return 1
-      if (sa === null && sb === null) return b.sessions - a.sessions
-      return (sb as number) - (sa as number) || b.sessions - a.sessions
-    })
+    .sort(
+      (a, b) =>
+        a.relativePct - b.relativePct ||
+        b.daysSinceBest - a.daysSinceBest ||
+        a.name.localeCompare(b.name)
+    )
     .slice(0, limit)
 }
