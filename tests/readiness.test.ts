@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ACWR_SAFE, computeRecovery, readinessSeries } from "../lib/readiness"
+import { computeRecovery, weeklyLoadSeries } from "../lib/readiness"
 import { GymData, HydrationLog, SleepLog, WorkoutLog } from "../lib/types"
 
 const TODAY = new Date(2026, 7, 20)
@@ -105,8 +105,8 @@ describe("computeRecovery", () => {
   })
 })
 
-describe("readinessSeries", () => {
-  /** sessão de 800 AU no dia `offset`. */
+describe("weeklyLoadSeries", () => {
+  /** sessão de 800 AU (srpe 8 × 100 min) no dia `offset`. */
   function mk(offset: number): WorkoutLog {
     return {
       id: `s-${offset}`,
@@ -118,43 +118,44 @@ describe("readinessSeries", () => {
     }
   }
 
-  it("devolve um ponto por dia, terminando hoje", () => {
-    const serie = readinessSeries([], TODAY, 30)
-    expect(serie.points).toHaveLength(30)
-    expect(serie.days).toBe(30)
-    expect(serie.points[29].date).toBe(dayKey(0))
-    expect(serie.points[0].date).toBe(dayKey(-29))
+  it("devolve uma semana por ponto, terminando na semana corrente", () => {
+    const points = weeklyLoadSeries([], TODAY, 6)
+    expect(points).toHaveLength(6)
+    // TODAY é quinta 20/08/2026; a segunda dessa semana é 17/08
+    expect(points[5].start).toBe("2026-08-17")
+    expect(points[5].current).toBe(true)
+    expect(points[0].start).toBe("2026-07-13")
   })
 
-  it("sem treino nenhum, nenhum dia tem leitura", () => {
-    const serie = readinessSeries([], TODAY, 30)
-    expect(serie.readable).toBe(0)
-    expect(serie.points.every((p) => p.ratio === null)).toBe(true)
+  it("soma a carga interna das sessões da semana", () => {
+    const points = weeklyLoadSeries([mk(0), mk(-1)], TODAY, 2)
+    expect(points[1].load).toBe(1600)
+    expect(points[1].sessions).toBe(2)
+    expect(points[0].load).toBe(0)
   })
 
-  it("dia com base fina sai como buraco, não como pico", () => {
-    // um único dia de treino na base: a razão seria absurda, então é null
-    const serie = readinessSeries([mk(-20), mk(-2)], TODAY, 5)
-    const hoje = serie.points[serie.points.length - 1]
-    expect(hoje.chronicDays).toBe(1)
-    expect(hoje.ratio).toBeNull()
+  it("semana sem treino é zero, não buraco — zero aqui é informação", () => {
+    const points = weeklyLoadSeries([mk(0)], TODAY, 3)
+    expect(points.map((p) => p.load)).toEqual([0, 0, 800])
   })
 
-  it("com base de 3 dias a razão aparece e é a mesma do card", () => {
-    const workouts = [mk(-20), mk(-15), mk(-10), mk(-3)]
-    const serie = readinessSeries(workouts, TODAY, 3)
-    const hoje = serie.points[serie.points.length - 1]
-    expect(hoje.ratio).toBeCloseTo(1, 2)
-    expect(serie.readable).toBeGreaterThan(0)
-    // mesma fonte de verdade que computeRecovery usa no card
-    expect(computeRecovery({ ...data(), workouts }, TODAY).load.ratio).toBeCloseTo(
-      hoje.ratio as number,
-      2
-    )
+  it("a média de 4 semanas só começa na quarta", () => {
+    const points = weeklyLoadSeries([], TODAY, 6)
+    expect(points.slice(0, 3).every((p) => p.avg4 === null)).toBe(true)
+    expect(points[3].avg4).toBe(0)
   })
 
-  it("a faixa segura declarada é a da literatura de ACWR", () => {
-    expect(ACWR_SAFE.min).toBeLessThan(1)
-    expect(ACWR_SAFE.max).toBeGreaterThan(1)
+  it("a média é das 4 semanas terminando no ponto, incluindo ele", () => {
+    // 800 AU só na semana corrente; a média das 4 últimas é 200
+    const points = weeklyLoadSeries([mk(0)], TODAY, 4)
+    expect(points[3].load).toBe(800)
+    expect(points[3].avg4).toBe(200)
+  })
+
+  it("não usa razão: nenhum ponto pode explodir por base pequena", () => {
+    // uma sessão isolada depois de 5 semanas paradas — o ACWR ia a milhares
+    const points = weeklyLoadSeries([mk(-40), mk(0)], TODAY, 8)
+    expect(points.every((p) => Number.isFinite(p.load))).toBe(true)
+    expect(Math.max(...points.map((p) => p.load))).toBe(800)
   })
 })

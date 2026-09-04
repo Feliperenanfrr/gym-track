@@ -1,5 +1,6 @@
 import {
   computeReadiness,
+  internalLoad,
   MIN_CHRONIC_DAYS,
   Readiness,
   ReadinessLevel,
@@ -7,7 +8,7 @@ import {
 } from "./insights"
 import { computeSleepMetrics, formatSleepDuration, SLEEP_TARGET_MIN } from "./sleep"
 import { GymData, WorkoutLog } from "./types"
-import { toDateKey } from "./utils"
+import { mondayOf, toDateKey } from "./utils"
 
 /**
  * Prontidão composta: carga + sono + hidratação.
@@ -172,75 +173,77 @@ export function computeRecovery(data: GymData, today: Date): RecoverySignal {
 }
 
 /* ------------------------------------------------------------------ */
-/* ACWR ao longo do tempo                                              */
+/* Carga interna por semana                                            */
 /* ------------------------------------------------------------------ */
 
-export interface ReadinessPoint {
-  /** yyyy-MM-dd */
-  date: string
+export interface WeeklyLoadPoint {
+  /** yyyy-MM-dd da segunda */
+  start: string
   /** dd/MM */
   label: string
-  /** carga interna dos 7 dias terminando neste dia (AU) */
-  acute: number
-  /** média semanal AU das 3 semanas anteriores à janela aguda */
-  chronic: number
-  chronicDays: number
-  /** null quando a base crônica tem menos de MIN_CHRONIC_DAYS dias de treino */
-  ratio: number | null
-}
-
-export interface ReadinessSeries {
-  points: ReadinessPoint[]
-  /** pontos com razão legível */
-  readable: number
-  /** dias cobertos */
-  days: number
+  /** carga interna somada da semana (AU) */
+  load: number
+  /** sessões registradas na semana */
+  sessions: number
+  /** média das 4 semanas terminando nesta; null antes de haver 4 */
+  avg4: number | null
+  /** semana ainda em curso */
+  current: boolean
 }
 
 /**
- * A prontidão dia a dia, para ver a razão SUBINDO ou DESCENDO em vez de só
- * saber onde ela está hoje.
+ * Carga interna semana a semana, com média móvel de 4 semanas.
  *
- * Entrar na zona vermelha vindo de baixo (carga crescendo) e vindo de cima
- * (base despencando depois de uma parada) são situações opostas que o
- * semáforo pontual não distingue — e pedem decisões opostas.
+ * Substitui a série de ACWR, que foi construída e descartada: metade dos 90
+ * dias não era leitura de fadiga (33 dias sem base suficiente, 13 exatamente
+ * em zero), e buraco e zero pareciam a mesma coisa na tela significando o
+ * oposto. O ACWR pressupõe treino quase diário; com 2 sessões por semana e
+ * lacunas de duas semanas, o denominador é instável por construção — o
+ * serrilhado descrevia a métrica, não o treino.
  *
- * Roda o mesmo computeReadiness em cada dia; a fórmula não é duplicada. Os
- * dias sem base suficiente saem com ratio null de propósito: o gráfico os
- * desenha como BURACO, e o buraco é a informação ("voltou de lacuna, ainda
- * não dá para medir") em vez de uma linha interpolada por cima do vazio.
+ * Aqui não há denominador. A barra é o que você fez na semana e a linha é a
+ * sua própria média recente, então a leitura é direta: acima da linha a carga
+ * está subindo, abaixo está caindo. Mesmo dado, sem a divisão que explodia.
+ *
+ * O sinal de "como estou hoje" continua no card de prontidão composta.
  */
-export function readinessSeries(
+export function weeklyLoadSeries(
   workouts: WorkoutLog[],
   today: Date,
-  days = 90
-): ReadinessSeries {
-  const points: ReadinessPoint[] = []
-  for (let back = days - 1; back >= 0; back--) {
-    const day = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - back
+  weeks = 12
+): WeeklyLoadPoint[] {
+  const lastMonday = mondayOf(today)
+  const points: WeeklyLoadPoint[] = []
+
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(
+      lastMonday.getFullYear(),
+      lastMonday.getMonth(),
+      lastMonday.getDate() - i * 7
     )
-    const r = computeReadiness(workouts, day)
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)
+    const startKey = toDateKey(start)
+    const endKey = toDateKey(end)
+    const ws = workouts.filter((w) => w.date >= startKey && w.date <= endKey)
     points.push({
-      date: toDateKey(day),
-      label: `${String(day.getDate()).padStart(2, "0")}/${String(day.getMonth() + 1).padStart(2, "0")}`,
-      acute: Math.round(r.acute),
-      chronic: Math.round(r.chronic),
-      chronicDays: r.chronicDays,
-      ratio: r.ratio === null ? null : Math.round(r.ratio * 100) / 100,
+      start: startKey,
+      label: `${String(start.getDate()).padStart(2, "0")}/${String(start.getMonth() + 1).padStart(2, "0")}`,
+      load: Math.round(ws.reduce((sum, w) => sum + internalLoad(w), 0)),
+      sessions: ws.length,
+      avg4: null,
+      current: i === 0,
     })
   }
-  return {
-    points,
-    readable: points.filter((p) => p.ratio !== null).length,
-    days,
+
+  // média móvel só a partir da 4ª semana: com menos que isso a "média" seria
+  // uma linha puxada por uma semana só
+  for (let i = 3; i < points.length; i++) {
+    const window = points.slice(i - 3, i + 1)
+    points[i].avg4 = Math.round(window.reduce((sum, p) => sum + p.load, 0) / 4)
   }
+
+  return points
 }
 
-/** Faixa de carga considerada sustentável na literatura de ACWR. */
-export const ACWR_SAFE = { min: 0.8, max: 1.3 } as const
-
-/** Piso de dias de treino na base, reexportado para a UI explicar o buraco. */
+/** Piso de dias de treino na base, reexportado para a UI explicar o "—". */
 export { MIN_CHRONIC_DAYS }
