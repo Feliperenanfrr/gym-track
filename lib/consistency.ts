@@ -81,6 +81,24 @@ function dayKind(dayWorkouts: WorkoutLog[]): TrainingDayKind {
   return "cardio"
 }
 
+/** Tipo de treino por dia num intervalo — a fita dos relatórios sai daqui. */
+export function trainingDayKinds(
+  workouts: WorkoutLog[],
+  from: string,
+  to: string
+): Map<string, TrainingDayKind> {
+  const byDate = new Map<string, WorkoutLog[]>()
+  for (const w of workouts) {
+    if (w.sessionId === "rest" || w.date < from || w.date > to) continue
+    const list = byDate.get(w.date)
+    if (list) list.push(w)
+    else byDate.set(w.date, [w])
+  }
+  const out = new Map<string, TrainingDayKind>()
+  for (const [date, list] of byDate) out.set(date, dayKind(list))
+  return out
+}
+
 /**
  * Fita de calendário terminando na semana corrente. Cada semana é uma coluna
  * de 7 dias (seg → dom), do jeito que um mapa de calor de treino se lê.
@@ -187,6 +205,105 @@ export function consistencyWeeks(
 }
 
 /* ------------------------------------------------------------------ */
+/* Lacunas e aderência num intervalo qualquer                          */
+/* ------------------------------------------------------------------ */
+
+export interface TrainingGap {
+  /** primeiro dia vazio */
+  from: string
+  /** último dia vazio */
+  to: string
+  days: number
+}
+
+export interface RangeConsistency {
+  from: string
+  to: string
+  /** dias com treino no intervalo */
+  daysTrained: number
+  /** dias corridos do intervalo */
+  daysInPeriod: number
+  /** daysTrained ÷ daysInPeriod, em % */
+  adherencePct: number
+  /** média de dias treinados por semana */
+  avgDaysPerWeek: number
+  longestGapDays: number
+  longestGapFrom: string | null
+  longestGapTo: string | null
+  /** todas as lacunas de `minGapDays` ou mais, em ordem cronológica */
+  gaps: TrainingGap[]
+}
+
+/**
+ * Aderência e lacunas de um intervalo arbitrário — a mesma conta do resumo do
+ * painel, liberta do "hoje".
+ *
+ * Os relatórios precisam disso ancorado no período do documento: um
+ * fechamento de bloco que não diz onde ficaram os buracos descreve o treino
+ * que existiu e some com o que faltou, que costuma ser o fato maior.
+ *
+ * A lacuna é medida em dias vazios, não em distância entre sessões: treinar
+ * dia 18 e voltar dia 5 é "17 dias sem treino". As bordas contam — começar o
+ * bloco duas semanas depois do início é lacuna igual.
+ */
+export function consistencyInRange(
+  workouts: WorkoutLog[],
+  from: string,
+  to: string,
+  { minGapDays = 7 }: { minGapDays?: number } = {}
+): RangeConsistency {
+  const start = fromDateKey(from)
+  const end = fromDateKey(to)
+  const trained = [
+    ...new Set(
+      workouts
+        .filter((w) => w.sessionId !== "rest" && w.date >= from && w.date <= to)
+        .map((w) => w.date)
+    ),
+  ].sort()
+
+  const daysInPeriod = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1)
+
+  const gaps: TrainingGap[] = []
+  let cursor = start
+  const pushGap = (gapFrom: Date, toExclusive: Date) => {
+    const days = Math.round((toExclusive.getTime() - gapFrom.getTime()) / DAY_MS)
+    if (days >= minGapDays) {
+      gaps.push({
+        from: toDateKey(gapFrom),
+        to: toDateKey(new Date(toExclusive.getTime() - DAY_MS)),
+        days,
+      })
+    }
+  }
+  for (const key of trained) {
+    const day = fromDateKey(key)
+    pushGap(cursor, day)
+    cursor = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)
+  }
+  // lacuna aberta até o fim do intervalo
+  pushGap(cursor, new Date(end.getTime() + DAY_MS))
+
+  const longest = gaps.reduce<TrainingGap | null>(
+    (best, gap) => (best === null || gap.days > best.days ? gap : best),
+    null
+  )
+
+  return {
+    from,
+    to,
+    daysTrained: trained.length,
+    daysInPeriod,
+    adherencePct: Math.round((trained.length / daysInPeriod) * 100),
+    avgDaysPerWeek: Math.round((trained.length / (daysInPeriod / 7)) * 10) / 10,
+    longestGapDays: longest?.days ?? 0,
+    longestGapFrom: longest?.from ?? null,
+    longestGapTo: longest?.to ?? null,
+    gaps,
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Resumo                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -239,41 +356,15 @@ export function consistencySummary(
   )
   const startKey = toDateKey(periodStart)
 
-  const trained = [
-    ...new Set(
-      workouts
-        .filter((w) => w.sessionId !== "rest" && w.date >= startKey && w.date <= todayKey)
-        .map((w) => w.date)
-    ),
-  ].sort()
+  // aderência e lacunas saem da mesma conta que os relatórios usam, com o
+  // piso de lacuna em 1 dia: aqui a maior folga interessa mesmo curta
+  const range = consistencyInRange(workouts, startKey, todayKey, { minGapDays: 1 })
 
-  const daysInPeriod = Math.max(
-    1,
-    Math.round((midnight.getTime() - periodStart.getTime()) / DAY_MS) + 1
-  )
-
-  // maior corrida de dias vazios, incluindo as bordas do período
-  let longestGapDays = 0
-  let longestGapFrom: string | null = null
-  let longestGapTo: string | null = null
-  let cursor = periodStart
-  const checkGap = (from: Date, toExclusive: Date) => {
-    const gap = Math.round((toExclusive.getTime() - from.getTime()) / DAY_MS)
-    if (gap > longestGapDays) {
-      longestGapDays = gap
-      longestGapFrom = toDateKey(from)
-      longestGapTo = toDateKey(new Date(toExclusive.getTime() - DAY_MS))
-    }
-  }
-  for (const key of trained) {
-    const day = fromDateKey(key)
-    checkGap(cursor, day)
-    cursor = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)
-  }
-  // lacuna ainda aberta: do dia seguinte ao último treino até hoje inclusive
-  checkGap(cursor, new Date(midnight.getTime() + DAY_MS))
-
-  const lastAny = trained[trained.length - 1]
+  const lastAny = workouts
+    .filter((w) => w.sessionId !== "rest" && w.date >= startKey && w.date <= todayKey)
+    .map((w) => w.date)
+    .sort()
+    .pop()
   const lastLift = workouts
     .filter((w) => isStrengthLog(w) && w.date <= todayKey)
     .map((w) => w.date)
@@ -298,13 +389,13 @@ export function consistencySummary(
   }
 
   return {
-    daysTrained: trained.length,
-    daysInPeriod,
-    adherencePct: Math.round((trained.length / daysInPeriod) * 100),
-    avgDaysPerWeek: Math.round((trained.length / (daysInPeriod / 7)) * 10) / 10,
-    longestGapDays,
-    longestGapFrom,
-    longestGapTo,
+    daysTrained: range.daysTrained,
+    daysInPeriod: range.daysInPeriod,
+    adherencePct: range.adherencePct,
+    avgDaysPerWeek: range.avgDaysPerWeek,
+    longestGapDays: range.longestGapDays,
+    longestGapFrom: range.longestGapFrom,
+    longestGapTo: range.longestGapTo,
     daysSinceLift: daysFrom(lastLift),
     daysSinceAny: daysFrom(lastAny),
     weeksOnTarget,

@@ -525,3 +525,22 @@
     break-before: page;
   }
 }
+
+/* estado neutro nas etiquetas de faixa (marcador sem referência) */
+.report-confidence-neutra {
+  color: #57534e;
+  background: #f0efed;
+}
+
+/* o Δ e a faixa de referência do resumo de saúde ficam legíveis lado a lado */
+.report-markers td:last-child {
+  white-space: nowrap;
+}
+
+/* pares "fita de calendário + tabela" e comparativos de duas colunas */
+.report-side {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+}

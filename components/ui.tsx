@@ -134,6 +134,60 @@ export function CollapsibleSection({
   )
 }
 
+/**
+ * Etiqueta de bloco de controle — o rótulo de 10px em versalete que já
+ * aparecia escrito à mão em três lugares da página de relatórios.
+ */
+export function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="mb-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-steel"
+      style={{ fontFamily: "var(--font-condensed)" }}
+    >
+      {children}
+    </p>
+  )
+}
+
+/**
+ * Chip de seleção. Ativo é ember em todo o app — bottom-nav, chips do
+ * histórico, botões primários; gold significa atenção (prontidão amarela,
+ * avisos, a série "peso"). A página de relatórios usava gold para "escolhido"
+ * e dizia outra coisa sem querer.
+ */
+export function Chip({
+  active,
+  onClick,
+  children,
+  className,
+  title,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+  className?: string
+  title?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={title}
+      className={cn(
+        "rounded border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors",
+        active
+          ? "border-ember bg-ember/10 text-ember"
+          : "border-seam text-steel hover:border-steel-dim hover:text-bone",
+        className
+      )}
+      style={{ fontFamily: "var(--font-condensed)" }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function StatCard({
   label,
   value,

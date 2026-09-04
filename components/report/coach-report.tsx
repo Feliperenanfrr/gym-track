@@ -2,6 +2,7 @@
 
 import {
   PRINT,
+  ReportCalendarStrip,
   ReportColumns,
   ReportHBars,
   ReportLegend,
@@ -17,7 +18,8 @@ import {
   Sheet,
 } from "@/components/report/report-ui"
 import type { CoachReport, DataConfidence } from "@/lib/reports"
-import { formatFullDate } from "@/lib/reports"
+import { formatDayMonth, formatFullDate } from "@/lib/reports"
+import { RELATIVE_LOAD_ALERT_PCT } from "@/lib/strength"
 
 const int = (value: number) => Math.round(value).toLocaleString("pt-BR")
 const one = (value: number) => value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })
@@ -66,7 +68,7 @@ function valueOrDash(value: number | null, suffix = "", decimals = 1) {
  * automática nem promover estimativas de calorias a achados físicos.
  */
 export function CoachReportSheet({ report }: { report: CoachReport }) {
-  const { training, body, conditioning, recovery } = report
+  const { training, body, conditioning, recovery, consistency } = report
   const composition = body.mass.filter((point) => point.fatKg !== null && point.leanKg !== null)
 
   return (
@@ -113,8 +115,17 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
         <Kpis
           items={[
             { label: "Sessões", value: int(training.sessions), unit: `· ${one(training.sessionsPerWeek)}/sem` },
-            { label: "Dias ativos", value: int(training.activeDays), unit: `de ${report.days}` },
-            { label: "Tempo registrado", value: hours(training.totalDurationMin) },
+            {
+              label: "Dias ativos",
+              value: int(training.activeDays),
+              unit: `de ${report.days} · ${consistency.adherencePct}%`,
+            },
+            {
+              label: "Maior lacuna",
+              value: int(consistency.longestGapDays),
+              unit: "dias sem treino",
+            },
+            { label: "Tempo registrado", value: hours(training.durationMin) },
             { label: "Musculação", value: int(training.strengthSessions), unit: "sessões" },
             { label: "Com cardio", value: int(training.conditioningSessions), unit: "sessões" },
             {
@@ -122,10 +133,60 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
               value: training.avgSrpe !== null ? fixed(training.avgSrpe) : "—",
               unit: `${training.srpeCoveragePct}% coberto`,
             },
-            { label: "Carga interna", value: int(training.totalLoad), unit: "AU" },
             { label: "Carga média", value: int(training.loadPerWeek), unit: "AU/sem" },
           ]}
         />
+
+        <div className="report-side" style={{ marginTop: 10 }}>
+          <ReportCalendarStrip weeks={report.calendar} />
+          <div>
+            <ReportLegend
+              items={[
+                { label: "musculação", color: PRINT.lift },
+                { label: "cardio", color: PRINT.cardio },
+                { label: "os dois", color: PRINT.ink },
+                { label: "sem treino", color: "#ececea" },
+              ]}
+            />
+            <table className="report-table" style={{ marginTop: 6 }}>
+              <tbody>
+                <tr>
+                  <td>Dias com treino</td>
+                  <td>
+                    {consistency.daysTrained} de {consistency.daysInPeriod} ·{" "}
+                    {one(consistency.avgDaysPerWeek)} dias/semana
+                  </td>
+                </tr>
+                <tr>
+                  <td>Semanas no alvo do programa</td>
+                  <td>
+                    {consistency.weeksOnTarget} de {consistency.weeks}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Maior lacuna</td>
+                  <td>
+                    {consistency.longestGapDays > 0 && consistency.longestGapFrom
+                      ? `${consistency.longestGapDays} dias · ${formatDayMonth(
+                          consistency.longestGapFrom
+                        )} a ${formatDayMonth(consistency.longestGapTo!)}`
+                      : "sem lacuna"}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Lacunas de 7 dias ou mais</td>
+                  <td>{consistency.gaps.length}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p className="report-note">
+          Sessões contam todo registro do período, inclusive avulso e importado;{" "}
+          {training.plannedSessions} delas casam com o plano do programa ativo. A fita
+          mostra onde os dias ficaram vazios — a média semanal sozinha esconde uma
+          parada de duas semanas seguida de uma semana cheia.
+        </p>
 
         <table className="report-table" style={{ marginTop: 10 }}>
           <thead>
@@ -168,7 +229,7 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
 
       <div className="report-page-break">
       <Continuation label="desempenho" />
-      <Section title="Desempenho de força" aside="exercícios mais repetidos">
+      <Section title="Desempenho de força" aside="carga do top set">
         {report.lifts.length > 0 ? (
           <>
             <table className="report-table report-lifts-table">
@@ -176,10 +237,11 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
                 <tr>
                   <th>Exercício</th>
                   <th>Sessões</th>
-                  <th>Base</th>
-                  <th>Recente</th>
+                  <th>Primeira</th>
+                  <th>Última</th>
                   <th>Δ</th>
-                  <th>Melhor</th>
+                  <th>Recorde</th>
+                  <th>% dele</th>
                   <th>Conf.</th>
                 </tr>
               </thead>
@@ -191,30 +253,95 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
                       <small>
                         {formatFullDate(lift.firstDate)} - {formatFullDate(lift.lastDate)}
                         {lift.variantChanged ? " · variante mudou" : ""}
+                        {lift.e1rmLast !== null
+                          ? ` · 1RM est. ${fixed(lift.e1rmFirst!)} → ${fixed(lift.e1rmLast)} kg`
+                          : ""}
                       </small>
                     </td>
                     <td>{lift.sessions}</td>
-                    <td>{fixed(lift.baseE1rm)} kg</td>
-                    <td>{fixed(lift.recentE1rm)} kg</td>
-                    <td className={deltaClass(lift.deltaPct, "up")}>
-                      {lift.deltaPct !== null ? `${formatDelta(lift.deltaPct)}%` : "—"}
+                    <td>
+                      {fixed(lift.firstWeight)} × {lift.firstReps}
                     </td>
-                    <td>{fixed(lift.bestE1rm)} kg</td>
+                    <td>
+                      {fixed(lift.lastWeight)} × {lift.lastReps}
+                    </td>
+                    <td
+                      className={
+                        lift.variantChanged ? "flat" : deltaClass(lift.deltaKg, "up")
+                      }
+                    >
+                      {lift.variantChanged ? "—" : `${formatDelta(lift.deltaKg)} kg`}
+                    </td>
+                    <td>{fixed(lift.bestWeight)} kg</td>
+                    <td className={lift.relativePct < RELATIVE_LOAD_ALERT_PCT ? "down" : "flat"}>
+                      {lift.relativePct}%
+                    </td>
                     <td><Confidence value={lift.confidence} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <p className="report-note">
-              1RM estimada por Epley com RIR, apenas em séries de 1 a 12 repetições.
-              Base e recente usam a média das duas primeiras e duas últimas exposições
-              quando há quatro ou mais sessões. Mudança de variante invalida o delta.
+              A comparação é entre a carga do top set da primeira e da última sessão do
+              período, com as repetições ao lado — dado bruto, sem extrapolação. A 1RM
+              estimada aparece na linha de baixo apenas onde é defensável: dois ou mais
+              pontos com até 8 repetições efetivas (reps + RIR). Em séries de 12 a 15
+              repetições, o erro de Epley supera o efeito que se quer medir. Mudança de
+              nome do exercício invalida o delta e derruba a confiança: pode ser troca
+              de aparelho.
             </p>
           </>
         ) : (
           <p className="report-note">Sem exercício repetido o suficiente para comparação.</p>
         )}
       </Section>
+
+      {report.relativeLoad.length > 0 && (
+        <Section title="Estado atual de carga" aside="última sessão contra o próprio recorde">
+          <ReportHBars
+            rows={report.relativeLoad.map((row) => ({
+              label: row.name,
+              value: row.relativePct,
+            }))}
+            color={(row) => (row.value < RELATIVE_LOAD_ALERT_PCT ? PRINT.fat : PRINT.lift)}
+            labelWidth={168}
+            max={100}
+            reference={RELATIVE_LOAD_ALERT_PCT}
+            referenceLabel={`${RELATIVE_LOAD_ALERT_PCT}%`}
+            format={(value) => `${Math.round(value)}%`}
+          />
+          <table className="report-table" style={{ marginTop: 8 }}>
+            <thead>
+              <tr>
+                <th>Exercício</th>
+                <th>Última carga</th>
+                <th>Recorde</th>
+                <th>% dele</th>
+                <th>Dias desde o recorde</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.relativeLoad.slice(0, 8).map((row) => (
+                <tr key={row.exerciseId}>
+                  <td>{row.name}</td>
+                  <td>{fixed(row.lastWeight)} kg</td>
+                  <td>{fixed(row.bestWeight)} kg</td>
+                  <td className={row.relativePct < RELATIVE_LOAD_ALERT_PCT ? "down" : "flat"}>
+                    {row.relativePct}%
+                  </td>
+                  <td>{row.daysSinceBest}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="report-note">
+            É o quadro para prescrever a reentrada: quanto de carga cada exercício perdeu
+            em relação ao que já foi levantado no próprio período. Não distingue perda de
+            capacidade de escolha deliberada de carga leve — o registro não guarda essa
+            intenção; a leitura precisa da anamnese.
+          </p>
+        </Section>
+      )}
 
       {report.muscles.length > 0 && (
         <Section title="Distribuição do treino de força" aside="séries diretas por semana">
@@ -240,6 +367,7 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
           <thead>
             <tr>
               <th>Semana</th>
+              <th>Dias</th>
               <th>Sessões</th>
               <th>Força</th>
               <th>Tempo</th>
@@ -253,6 +381,7 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
             {report.weekly.map((week) => (
               <tr key={week.key}>
                 <td>{week.label}</td>
+                <td>{week.days}</td>
                 <td>{week.sessions}</td>
                 <td>{week.strengthSessions}</td>
                 <td>{week.durationMin} min</td>
@@ -264,6 +393,10 @@ export function CoachReportSheet({ report }: { report: CoachReport }) {
             ))}
           </tbody>
         </table>
+        <p className="report-note">
+          Semana de zero em tudo é semana sem registro nenhum, não semana de descanso
+          programado: o app não guarda a intenção, só o que aconteceu.
+        </p>
       </Section>
       </div>
 

@@ -2,13 +2,27 @@
 
 import { useEffect, useRef, useState } from "react"
 
+/** Altura útil de uma folha A4 com as margens da @page (297 − 2×14 mm). */
+const A4_CONTENT_PX = (269 / 25.4) * 96
+
 /**
  * Preview de documento: a folha tem largura fixa de A4 útil e é REDUZIDA por
  * transform quando a tela é menor, em vez de reflowar. O que aparece no
  * celular é então o próprio PDF em miniatura — nada muda de lugar entre o que
  * se vê e o que sai impresso. Em impressão a escala é desligada pelo CSS.
+ *
+ * A miniatura tem um custo: a 390 px a folha cabe a ~52%, e o corpo de 10,5 px
+ * vira 5,5 px. Por isso o preview informa quantas páginas o PDF terá — é o que
+ * dá para saber sem conseguir ler.
  */
-export function SheetPreview({ children }: { children: React.ReactNode }) {
+export function SheetPreview({
+  children,
+  onPages,
+}: {
+  children: React.ReactNode
+  /** páginas estimadas da folha — o preview é uma tira só, o PDF não */
+  onPages?: (pages: number) => void
+}) {
   const frame = useRef<HTMLDivElement>(null)
   const sheet = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
@@ -23,13 +37,14 @@ export function SheetPreview({ children }: { children: React.ReactNode }) {
       const next = Math.min(1, available / natural)
       setScale(next)
       setHeight(sheet.current.offsetHeight * next)
+      onPages?.(Math.max(1, Math.ceil(sheet.current.offsetHeight / A4_CONTENT_PX)))
     }
     fit()
     const observer = new ResizeObserver(fit)
     if (frame.current) observer.observe(frame.current)
     if (sheet.current) observer.observe(sheet.current)
     return () => observer.disconnect()
-  }, [children])
+  }, [children, onPages])
 
   return (
     <div ref={frame} className="report-preview-frame" style={{ height }}>

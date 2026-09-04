@@ -52,7 +52,14 @@ export function NutritionReportSheet({ report }: { report: NutritionReport }) {
       </p>
 
       {profile ? (
-        <Section title="Perfil atual" aside={`medido em ${formatFullDate(profile.measuredAt)}`}>
+        <Section
+          title="Perfil atual"
+          aside={
+            profile.oldestAt === profile.measuredAt
+              ? `medido em ${formatFullDate(profile.measuredAt)}`
+              : `medições de ${formatFullDate(profile.oldestAt)} a ${formatFullDate(profile.measuredAt)}`
+          }
+        >
           <table className="report-table">
             <tbody>
               <tr>
@@ -87,8 +94,26 @@ export function NutritionReportSheet({ report }: { report: NutritionReport }) {
                 <td>Metabolismo basal (balança)</td>
                 <td>{profile.bmrKcal !== null ? `${int(profile.bmrKcal)} kcal` : "—"}</td>
               </tr>
+              <tr>
+                <td>Circunferência de cintura</td>
+                <td>
+                  {profile.waistCm !== null ? `${fixed(profile.waistCm)} cm` : "—"}
+                  {profile.waistAt !== null && profile.waistAt !== profile.measuredAt
+                    ? ` · ${formatFullDate(profile.waistAt)}`
+                    : ""}
+                </td>
+                <td>Peso da pesagem mais recente</td>
+                <td>{formatFullDate(profile.weighedAt)}</td>
+              </tr>
             </tbody>
           </table>
+          <p className="report-note">
+            Cada campo traz a medição mais recente em que ele existe: a balança nem
+            sempre grava IMC e músculo esquelético junto do percentual de gordura, e
+            fixar o perfil inteiro numa única data imprimia &ldquo;—&rdquo; em valores
+            medidos três dias antes. A cintura é fita métrica, não bioimpedância — é a
+            medida antropométrica mais estável deste conjunto.
+          </p>
         </Section>
       ) : (
         <Section title="Perfil atual">
@@ -255,7 +280,16 @@ export function NutritionReportSheet({ report }: { report: NutritionReport }) {
         <Kpis
           items={[
             { label: "Sessões", value: int(training.sessions), unit: `· ${one(training.sessionsPerWeek)}/sem` },
+            { label: "Dias treinados", value: int(training.activeDays), unit: `de ${report.days}` },
             { label: "Gasto médio", value: int(training.kcalPerWeek), unit: "kcal/sem" },
+            {
+              label: "Por sessão",
+              value:
+                training.sessions > 0
+                  ? int((training.liftKcal + training.cardioKcal) / training.sessions)
+                  : "—",
+              unit: "kcal",
+            },
             { label: "Musculação", value: int(training.liftKcal), unit: "kcal" },
             { label: "Cardio", value: int(training.cardioKcal), unit: "kcal" },
           ]}
@@ -305,14 +339,20 @@ export function NutritionReportSheet({ report }: { report: NutritionReport }) {
         </Section>
       )}
 
-      <Section title="Hidratação e sono">
+      <Section title="Hidratação e sono" aside="cobertura antes da média">
         <table className="report-table">
           <tbody>
             <tr>
-              <td>Ingestão de água (média dos dias registrados)</td>
+              <td>Dias com água registrada</td>
               <td>
-                {hydration.avgMl !== null
-                  ? `${(hydration.avgMl / 1000).toFixed(1).replace(".", ",")} L`
+                {hydration.daysLogged} de {report.days} · {hydration.coveragePct}% do período
+              </td>
+            </tr>
+            <tr>
+              <td>Água mediana dos dias registrados</td>
+              <td>
+                {hydration.medianMl !== null
+                  ? `${(hydration.medianMl / 1000).toFixed(1).replace(".", ",")} L`
                   : "—"}
               </td>
             </tr>
@@ -321,21 +361,33 @@ export function NutritionReportSheet({ report }: { report: NutritionReport }) {
               <td>{(hydration.goalMl / 1000).toFixed(1).replace(".", ",")} L</td>
             </tr>
             <tr>
-              <td>Aderência</td>
+              <td>Dias que alcançaram a meta</td>
               <td>
-                {hydration.adherencePct !== null ? `${hydration.adherencePct}%` : "—"}
-                {` · ${hydration.daysLogged} de ${report.days} dias registrados`}
+                {hydration.daysAtGoal} de {hydration.daysLogged} registrados
               </td>
             </tr>
             <tr>
-              <td>Sono (média das noites registradas)</td>
+              <td>Noites com sono registrado</td>
               <td>
-                {sleep.avgMinutes !== null ? hours(sleep.avgMinutes) : "—"}
-                {` · ${sleep.nights} noites`}
+                {sleep.nights} de {report.days} · {sleep.coveragePct}% do período
+              </td>
+            </tr>
+            <tr>
+              <td>Sono mediano das noites registradas</td>
+              <td>{sleep.medianMinutes !== null ? hours(sleep.medianMinutes) : "—"}</td>
+            </tr>
+            <tr>
+              <td>Noites abaixo de 7 horas</td>
+              <td>
+                {sleep.nightsUnder7h} de {sleep.nights}
               </td>
             </tr>
           </tbody>
         </table>
+        <p className="report-note">
+          A cobertura vem antes do valor de propósito: a média dos dias registrados não
+          é aderência do período. Dia sem registro é dado desconhecido, nunca zero.
+        </p>
       </Section>
 
       <Section title="Metodologia e limitações">
