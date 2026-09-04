@@ -1547,166 +1547,125 @@ export function StagnationChart({
 }
 
 /* ------------------------------------------------------------------ */
-/* Trajetória cintura × peso                                           */
+/* Peso × cintura indexados no tempo                                   */
 /* ------------------------------------------------------------------ */
 
-export interface WaistWeightDatum {
+const WAIST = "#818cf8"
+
+interface IndexedBodyDatum {
+  day: number
   label: string
   weightKg: number
   waistCm: number
+  weightIndex: number
+  waistIndex: number
+  divergence: number
+}
+
+function IndexedBodyTip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: { payload: IndexedBodyDatum }[]
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-1 text-steel">{d.label}</p>
+      <p className="flex items-center gap-1.5 text-bone">
+        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: GOLD }} />
+        {d.weightKg.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} kg
+        <span className="text-steel-dim">· {d.weightIndex.toFixed(1).replace(".", ",")}</span>
+      </p>
+      <p className="flex items-center gap-1.5 text-bone">
+        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: WAIST }} />
+        {d.waistCm.toLocaleString("pt-BR", { minimumFractionDigits: 1 })} cm
+        <span className="text-steel-dim">· {d.waistIndex.toFixed(1).replace(".", ",")}</span>
+      </p>
+      <p className="mt-1 border-t border-seam pt-1 text-steel-dim">
+        {d.divergence < 0
+          ? `cintura ${Math.abs(d.divergence).toFixed(1).replace(".", ",")} pp à frente`
+          : d.divergence > 0
+            ? `peso ${d.divergence.toFixed(1).replace(".", ",")} pp à frente`
+            : "andando juntos"}
+      </p>
+    </div>
+  )
 }
 
 /**
- * O caminho que peso e cintura fizeram juntos.
+ * Peso e cintura indexados à primeira medida (= 100), num eixo de tempo real.
  *
- * Duas linhas separadas escondem a única relação que interessa na
- * recomposição: descer a cintura sem descer o peso. Aqui os pontos são ligados
- * em ordem cronológica, então o desenho tem direção — e é a direção que se lê,
- * não a posição.
+ * Duas medidas de escalas diferentes nunca vão para dois eixos Y — isso
+ * permite esticar qualquer conclusão só mudando a escala. Indexar à base
+ * comum põe as duas na mesma régua honestamente, e o que se lê é a DISTÂNCIA
+ * entre as linhas: cintura abaixo do peso é medida saindo mais rápido que
+ * massa.
+ *
+ * O eixo X é numérico (dias desde a base), não categórico: com pesagens
+ * irregulares — 1 dia entre duas e 34 entre outras — um eixo de categorias
+ * desenharia os dois intervalos do mesmo tamanho e mentiria sobre o ritmo.
  */
-export function WaistWeightChart({ data }: { data: WaistWeightDatum[] }) {
-  const width = 320
-  const height = 220
-  const L = 34
-  const R = width - 12
-  const T = 14
-  const B = height - 30
+export function IndexedBodyChart({ data }: { data: IndexedBodyDatum[] }) {
+  const maxDay = Math.max(1, ...data.map((d) => d.day))
+  const values = data.flatMap((d) => [d.weightIndex, d.waistIndex])
+  const lo = Math.floor(Math.min(...values) - 1)
+  const hi = Math.ceil(Math.max(...values) + 1)
 
-  const weights = data.map((d) => d.weightKg)
-  const waists = data.map((d) => d.waistCm)
-  const padX = Math.max(0.6, (Math.max(...weights) - Math.min(...weights)) * 0.15)
-  const padY = Math.max(0.8, (Math.max(...waists) - Math.min(...waists)) * 0.15)
-  const x0 = Math.min(...weights) - padX
-  const x1 = Math.max(...weights) + padX
-  const y0 = Math.min(...waists) - padY
-  const y1 = Math.max(...waists) + padY
-
-  const X = (v: number) => L + ((v - x0) / (x1 - x0)) * (R - L)
-  const Y = (v: number) => B - ((v - y0) / (y1 - y0)) * (B - T)
-
-  // A trajetória se cruza — peso sobe e desce. Sem indicar direção, o desenho
-  // vira um nó: cada segmento é desenhado à parte, do mais apagado (antigo) ao
-  // mais forte (recente), então dá para seguir o caminho sem ler data nenhuma.
-  const segments = data.slice(1).map((d, i) => ({
-    from: data[i],
-    to: d,
-    opacity: 0.18 + (0.62 * (i + 1)) / Math.max(1, data.length - 1),
-  }))
-
-  const xTicks = [x0 + (x1 - x0) * 0.15, (x0 + x1) / 2, x1 - (x1 - x0) * 0.15]
-  const yTicks = [y0 + (y1 - y0) * 0.15, (y0 + y1) / 2, y1 - (y1 - y0) * 0.15]
-  const last = data[data.length - 1]
-  const first = data[0]
+  // marcas só em dias que EXISTEM na série, senão o rótulo aponta para um dia
+  // sem pesagem — no máximo quatro, para caber em 390 px
+  const step = Math.max(1, Math.ceil(data.length / 4))
+  const tickPoints = data.filter((_, i) => i % step === 0 || i === data.length - 1)
+  const labelByDay = new Map(data.map((d) => [d.day, d.label]))
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      width="100%"
-      height={height}
-      role="img"
-      aria-label="Trajetória de cintura contra peso ao longo do tempo"
-      style={{ display: "block" }}
-    >
-      {yTicks.map((t) => (
-        <g key={`y${t}`}>
-          <line x1={L} y1={Y(t)} x2={R} y2={Y(t)} stroke={GRID} strokeWidth={1} />
-          <text
-            x={L - 5}
-            y={Y(t) + 3.5}
-            fill="#5f5a66"
-            fontSize={9}
-            fontFamily="'JetBrains Mono Variable', monospace"
-            textAnchor="end"
-          >
-            {Math.round(t)}
-          </text>
-        </g>
-      ))}
-      {xTicks.map((t) => (
-        <text
-          key={`x${t}`}
-          x={X(t)}
-          y={height - 14}
-          fill="#5f5a66"
-          fontSize={9}
-          fontFamily="'JetBrains Mono Variable', monospace"
-          textAnchor="middle"
-        >
-          {t.toFixed(1).replace(".", ",")}
-        </text>
-      ))}
-
-      {segments.map((seg, i) => (
-        <line
-          key={`seg-${i}`}
-          x1={X(seg.from.weightKg)}
-          y1={Y(seg.from.waistCm)}
-          x2={X(seg.to.weightKg)}
-          y2={Y(seg.to.waistCm)}
-          stroke={GOLD}
-          strokeWidth={1.8}
-          strokeOpacity={seg.opacity}
-          strokeLinecap="round"
+    <ResponsiveContainer width="100%" height={200}>
+      <LineChart data={data} margin={{ top: 8, right: 22, left: -20, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis
+          type="number"
+          dataKey="day"
+          domain={[0, maxDay]}
+          ticks={tickPoints.map((d) => d.day)}
+          tickFormatter={(v: number) => labelByDay.get(v) ?? ""}
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
         />
-      ))}
-
-      {data.map((d, i) => {
-        const isLast = i === data.length - 1
-        const isFirst = i === 0
-        return (
-          <circle
-            key={`${d.label}-${i}`}
-            cx={X(d.weightKg)}
-            cy={Y(d.waistCm)}
-            r={isLast ? 6 : isFirst ? 4.5 : 3}
-            fill={isLast ? GOLD : isFirst ? "#141216" : GOLD}
-            fillOpacity={isLast || isFirst ? 1 : 0.45}
-            stroke={isFirst ? GOLD : "#141216"}
-            strokeWidth={isFirst ? 2 : isLast ? 2 : 0}
-          />
-        )
-      })}
-
-      <text
-        x={X(first.weightKg)}
-        y={Y(first.waistCm) + 15}
-        fill="#5f5a66"
-        fontSize={9}
-        fontFamily="'JetBrains Mono Variable', monospace"
-        textAnchor="middle"
-      >
-        {first.label}
-      </text>
-      <text
-        x={X(last.weightKg)}
-        y={Y(last.waistCm) - 12}
-        fill={GOLD}
-        fontSize={9.5}
-        fontWeight={700}
-        fontFamily="'JetBrains Mono Variable', monospace"
-        textAnchor="middle"
-      >
-        {last.label}
-      </text>
-
-      <text
-        x={L}
-        y={height - 2}
-        fill="#5f5a66"
-        fontSize={8.5}
-        fontFamily="'JetBrains Mono Variable', monospace"
-      >
-        peso (kg) →
-      </text>
-      <text
-        x={2}
-        y={T + 2}
-        fill="#5f5a66"
-        fontSize={8.5}
-        fontFamily="'JetBrains Mono Variable', monospace"
-      >
-        cm
-      </text>
-    </svg>
+        <YAxis
+          domain={[lo, hi]}
+          tick={TICK}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => String(Math.round(v))}
+        />
+        <Tooltip content={<IndexedBodyTip />} cursor={{ stroke: GRID }} />
+        {/* a base: acima dela subiu desde a primeira medida, abaixo desceu */}
+        <ReferenceLine y={100} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4" />
+        {/* linear, nao monotone: entre 02/07 e 05/08 ha 34 dias sem pesagem, e a
+            curva suave desenhava um arco como se algo tivesse acontecido no meio.
+            Reta entre medidas nao afirma nada sobre o que nao foi medido. */}
+        <Line
+          type="linear"
+          dataKey="weightIndex"
+          name="Peso"
+          stroke={GOLD}
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: GOLD, strokeWidth: 0 }}
+          activeDot={{ r: 5.5, fill: GOLD, stroke: "#141216", strokeWidth: 2 }}
+        />
+        <Line
+          type="linear"
+          dataKey="waistIndex"
+          name="Cintura"
+          stroke={WAIST}
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: WAIST, strokeWidth: 0 }}
+          activeDot={{ r: 5.5, fill: WAIST, stroke: "#141216", strokeWidth: 2 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
   )
 }
