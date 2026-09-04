@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
+  consistencyInRange,
   consistencySummary,
   consistencyWeeks,
   trainingCalendar,
+  trainingDayKinds,
   weeklySessionTarget,
 } from "../lib/consistency"
 import { SessionId, WorkoutLog } from "../lib/types"
@@ -217,5 +219,60 @@ describe("consistencySummary", () => {
     expect(s.daysInPeriod).toBe(11)
     expect(s.daysTrained).toBe(3)
     expect(s.adherencePct).toBe(27)
+  })
+})
+
+describe("consistencyInRange", () => {
+  it("mede aderência e lacunas de um intervalo arbitrário, sem depender de hoje", () => {
+    const range = consistencyInRange(
+      [lift("2026-09-01"), lift("2026-09-02"), lift("2026-09-20")],
+      "2026-09-01",
+      "2026-09-30"
+    )
+    expect(range.daysTrained).toBe(3)
+    expect(range.daysInPeriod).toBe(30)
+    expect(range.adherencePct).toBe(10)
+    // 17 dias vazios entre 03/09 e 19/09
+    expect(range.longestGapDays).toBe(17)
+    expect(range.longestGapFrom).toBe("2026-09-03")
+    expect(range.longestGapTo).toBe("2026-09-19")
+    // a lacuna aberta até o fim do intervalo também entra
+    expect(range.gaps).toHaveLength(2)
+    expect(range.gaps[1].days).toBe(10)
+  })
+
+  it("borda do intervalo conta como lacuna", () => {
+    const range = consistencyInRange([lift("2026-09-30")], "2026-09-01", "2026-09-30")
+    expect(range.longestGapDays).toBe(29)
+    expect(range.longestGapFrom).toBe("2026-09-01")
+  })
+
+  it("intervalo sem treino nenhum é uma lacuna inteira", () => {
+    const range = consistencyInRange([], "2026-09-01", "2026-09-07")
+    expect(range.daysTrained).toBe(0)
+    expect(range.adherencePct).toBe(0)
+    expect(range.longestGapDays).toBe(7)
+  })
+})
+
+describe("trainingDayKinds", () => {
+  it("classifica cada dia do intervalo e ignora o que está fora", () => {
+    const kinds = trainingDayKinds(
+      [lift("2026-09-01"), cardio("2026-09-02"), lift("2026-08-20")],
+      "2026-09-01",
+      "2026-09-30"
+    )
+    expect(kinds.get("2026-09-01")).toBe("lift")
+    expect(kinds.get("2026-09-02")).toBe("cardio")
+    expect(kinds.has("2026-08-20")).toBe(false)
+  })
+
+  it("dia com sala e cardio vira os dois", () => {
+    const kinds = trainingDayKinds(
+      [lift("2026-09-01"), cardio("2026-09-01")],
+      "2026-09-01",
+      "2026-09-01"
+    )
+    expect(kinds.get("2026-09-01")).toBe("both")
   })
 })

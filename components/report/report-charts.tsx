@@ -263,25 +263,37 @@ export function ReportHBars({
   referenceLabel,
   width = 688,
   rowHeight = 17,
+  labelWidth = 118,
+  max: fixedMax,
   format = (v: number) => v.toLocaleString("pt-BR"),
 }: {
   rows: { label: string; value: number }[]
-  color: string
+  /** cor única ou uma cor por linha (faixa de alerta, por exemplo) */
+  color: string | ((row: { label: string; value: number }) => string)
   reference?: number
   referenceLabel?: string
   width?: number
   rowHeight?: number
+  /** faixa reservada ao nome — nomes longos invadiam a primeira barra */
+  labelWidth?: number
+  /** teto do eixo quando a escala é conhecida (0–100%, por exemplo) */
+  max?: number
   format?: (value: number) => string
 }) {
-  const labelW = 118
+  const labelW = labelWidth
   const valueW = 42
-  const padTop = reference !== undefined ? 12 : 2
+  const padTop = reference !== undefined ? 16 : 2
+  // 0,58 em de largura média por caractere no mono: corta antes de encostar
+  const maxChars = Math.floor(labelW / (8.5 * 0.58)) - 1
+  const trim = (label: string) =>
+    label.length > maxChars ? `${label.slice(0, maxChars - 1)}…` : label
   const plotW = width - labelW - valueW
   // 15% de folga acima do maior valor: sem isso, quando a referência É o topo
   // do dado, o tracejado cai exatamente na borda e some como se fosse moldura
-  const { max } = niceScale(
+  const { max: scaled } = niceScale(
     Math.max(1, ...rows.map((r) => r.value), reference ?? 0) * 1.15
   )
+  const max = fixedMax ?? scaled
   const height = padTop + rows.length * rowHeight + 2
   const refX = reference !== undefined ? labelW + (reference / max) * plotW : null
 
@@ -298,7 +310,7 @@ export function ReportHBars({
             strokeWidth={1}
             strokeDasharray="3 3"
           />
-          <text x={refX + 3} y={padTop - 10} fontFamily={MONO} fontSize={8} fill={PRINT.label}>
+          <text x={refX + 3} y={padTop - 7} fontFamily={MONO} fontSize={8} fill={PRINT.label}>
             {referenceLabel}
           </text>
         </>
@@ -315,14 +327,14 @@ export function ReportHBars({
               fontSize={8.5}
               fill={PRINT.muted}
             >
-              {row.label}
+              {trim(row.label)}
             </text>
             <rect
               x={labelW}
               y={y}
-              width={Math.max(1, (row.value / max) * plotW)}
+              width={Math.max(1, (Math.min(row.value, max) / max) * plotW)}
               height={barH}
-              fill={color}
+              fill={typeof color === "function" ? color(row) : color}
               rx={1}
             />
             <text
@@ -442,5 +454,127 @@ export function ReportLegend({
         </span>
       ))}
     </div>
+  )
+}
+
+/**
+ * Fita de calendário do período: uma coluna por semana, sete quadrados por
+ * coluna.
+ *
+ * As barras semanais dizem quanto foi feito em cada semana; só a fita diz
+ * ONDE ficou o buraco. Duas semanas apagadas no meio de agosto se leem antes
+ * de qualquer número da tabela, e é isso que muda a leitura de quem recebe o
+ * documento.
+ */
+export function ReportCalendarStrip({
+  weeks,
+  cell = 13,
+  gap = 3,
+}: {
+  weeks: { key: string; kind: "none" | "lift" | "cardio" | "both"; outside: boolean }[][]
+  cell?: number
+  gap?: number
+}) {
+  const labelW = 16
+  const width = labelW + weeks.length * (cell + gap)
+  const height = 7 * (cell + gap) + 2
+  const fill = (kind: string, outside: boolean) => {
+    if (outside) return "#fff"
+    if (kind === "both") return PRINT.ink
+    if (kind === "lift") return PRINT.lift
+    if (kind === "cardio") return PRINT.cardio
+    return "#ececea"
+  }
+
+  return (
+    <svg width={width} height={height} role="img" aria-hidden>
+      {["S", "T", "Q", "Q", "S", "S", "D"].map((label, row) => (
+        <text
+          key={`${label}-${row}`}
+          x={0}
+          y={row * (cell + gap) + cell - 2}
+          fontFamily={MONO}
+          fontSize={7}
+          fill={PRINT.label}
+        >
+          {label}
+        </text>
+      ))}
+      {weeks.map((days, column) =>
+        days.map((day, row) => (
+          <rect
+            key={day.key}
+            x={labelW + column * (cell + gap)}
+            y={row * (cell + gap)}
+            width={cell}
+            height={cell}
+            rx={1.5}
+            fill={fill(day.kind, day.outside)}
+            stroke={day.outside ? "#f4f3f1" : "none"}
+            strokeWidth={day.outside ? 1 : 0}
+          />
+        ))
+      )}
+    </svg>
+  )
+}
+
+/**
+ * Barra de uma faixa de referência: onde o valor cai entre "desejável" e
+ * "muito acima". Num documento de saúde o número sozinho não informa —
+ * "cintura 102 cm" só vira leitura ao lado do corte de 94 e de 102.
+ */
+export function ReportRangeBar({
+  value,
+  min,
+  max,
+  elevated,
+  high,
+  width = 150,
+  height = 26,
+  format = (v: number) => v.toLocaleString("pt-BR"),
+}: {
+  value: number | null
+  min: number
+  max: number
+  elevated: number
+  high: number
+  width?: number
+  height?: number
+  format?: (value: number) => string
+}) {
+  const trackY = 8
+  const trackH = 6
+  const span = Math.max(1, max - min)
+  const x = (v: number) => ((Math.min(max, Math.max(min, v)) - min) / span) * width
+  const marker = value === null ? null : x(value)
+
+  return (
+    <svg width={width} height={height} role="img" aria-hidden>
+      <rect x={0} y={trackY} width={x(elevated)} height={trackH} fill="#dcfce7" />
+      <rect
+        x={x(elevated)}
+        y={trackY}
+        width={x(high) - x(elevated)}
+        height={trackH}
+        fill="#fef3c7"
+      />
+      <rect x={x(high)} y={trackY} width={width - x(high)} height={trackH} fill="#fee2e2" />
+      {marker !== null && (
+        <>
+          <rect x={Math.max(0, marker - 1)} y={trackY - 4} width={2} height={trackH + 8} fill={PRINT.ink} />
+          <text
+            x={Math.min(width - 10, Math.max(12, marker))}
+            y={height - 2}
+            textAnchor="middle"
+            fontFamily={MONO}
+            fontSize={7.5}
+            fill={PRINT.ink}
+          >
+            {format(value!)}
+          </text>
+        </>
+      )}
+    </svg>
   )
 }
