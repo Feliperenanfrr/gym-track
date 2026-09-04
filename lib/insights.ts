@@ -6,7 +6,7 @@ import {
   zone2Minutes,
 } from "./cardio"
 import { CardioLog, GymData, SessionId, TrainingProgram, WorkoutLog } from "./types"
-import { bestE1RM, fromDateKey, toDateKey, workoutVolume } from "./utils"
+import { bestE1RMAdjusted, fromDateKey, toDateKey, workoutVolume } from "./utils"
 
 /* ------------------------------------------------------------------ */
 /* Hidratação                                                           */
@@ -34,9 +34,14 @@ export interface PrEvent {
 }
 
 /**
- * Eventos de PR em ordem cronológica: a 1RM estimada (Epley) do exercício
- * supera todo o histórico anterior. O primeiro registro de um exercício
- * estabelece a base e não conta como PR.
+ * Eventos de PR em ordem cronológica: a 1RM estimada do exercício supera todo
+ * o histórico anterior. O primeiro registro de um exercício estabelece a base
+ * e não conta como PR.
+ *
+ * Usa a MESMA fórmula do gráfico de força e dos relatórios (Epley com reps
+ * ajustadas por RIR). Antes daqui rodava o Epley cru enquanto o resto do app
+ * usava o ajustado: com 97% das séries trazendo RIR, um PR podia aparecer no
+ * gráfico e não na conquista, ou no PDF e não no painel.
  */
 export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
   const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date))
@@ -44,7 +49,7 @@ export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
   const events: PrEvent[] = []
   for (const w of sorted) {
     for (const e of w.entries) {
-      const e1rm = bestE1RM(e)
+      const e1rm = bestE1RMAdjusted(e)
       if (e1rm <= 0) continue
       const prev = best[e.exerciseId] ?? 0
       if (prev > 0 && e1rm > prev) {

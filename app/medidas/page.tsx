@@ -9,6 +9,7 @@ import {
   HydrationChart,
   LeanFatStackChart,
   SleepChart,
+  SleepScheduleChart,
   VisceralChart,
   WeightChart,
   WaistChart,
@@ -18,6 +19,7 @@ import { parseBioimpedanceCsv, toBodyLog } from "@/lib/bioimpedance"
 import { waterGoalMl, weightTrend7d } from "@/lib/insights"
 import { BodyLog } from "@/lib/types"
 import {
+  bedtimeClockMinutes,
   computeSleepMetrics,
   formatSleepDuration,
   minutesToSleepInput,
@@ -26,7 +28,14 @@ import {
 } from "@/lib/sleep"
 import { useGymData } from "@/lib/store"
 import { useOperationalDay } from "@/lib/use-operational-day"
-import { cn, fromDateKey, toDateKey, toOperationalDateKey } from "@/lib/utils"
+import {
+  cn,
+  fromDateKey,
+  isoWeekday,
+  toDateKey,
+  toOperationalDateKey,
+  WEEKDAY_SHORT,
+} from "@/lib/utils"
 
 function shortDate(key: string): string {
   const d = fromDateKey(key)
@@ -84,6 +93,7 @@ export default function MedidasPage() {
   const [bioSaved, setBioSaved] = useState(false)
   const [bioError, setBioError] = useState<string | null>(null)
   /** seção destacada ao chegar por deep-link (#registrar-sono, #hidratacao) */
+  const [sleepView, setSleepView] = useState<"duracao" | "horario">("duracao")
   const [flashId, setFlashId] = useState<string | null>(null)
   const flashTimerRef = useRef<number | null>(null)
   /** correção de água em dia passado */
@@ -215,9 +225,24 @@ export default function MedidasPage() {
         hours: log ? Math.round((log.durationMin / 60) * 10) / 10 : null,
       }
     })
+    // Faixas de horário: sleptAt/wokeAt já estavam no banco e o gráfico de
+    // barras só mostrava a duração. A regularidade some quando duas noites de
+    // 7 h aparecem idênticas — uma começando às 22h e a outra às 4h.
+    const sleepBands7 = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i))
+      const key = toDateKey(d)
+      const log = data.sleep.find((entry) => entry.date === key)
+      return {
+        label: WEEKDAY_SHORT[isoWeekday(d) - 1],
+        dateLabel: shortDate(key),
+        startMin: log ? bedtimeClockMinutes(log.sleptAt) : null,
+        durationMin: log ? log.durationMin : null,
+      }
+    })
     return {
       hydration7,
       sleep7,
+      sleepBands7,
       sleepMetrics,
       waterGoal: waterGoalMl(body),
       current,
@@ -803,12 +828,42 @@ export default function MedidasPage() {
       </div>
 
       <Card className="rise rise-3 mt-3 border-l-4 border-l-[#a78bfa]">
-        <SleepChart data={view.sleep7} />
-        <p className="mt-2 font-mono text-[10px] text-steel-dim">
+        <div className="mb-3 flex gap-1">
+          {([
+            ["duracao", "duração"],
+            ["horario", "horário"],
+          ] as const).map(([id, rotulo]) => (
+            <button
+              key={id}
+              onClick={() => setSleepView(id)}
+              className={cn(
+                "rounded border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors",
+                sleepView === id
+                  ? "border-[#a78bfa] text-[#a78bfa]"
+                  : "border-seam text-steel-dim"
+              )}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+        {sleepView === "duracao" ? (
+          <SleepChart data={view.sleep7} />
+        ) : (
+          <SleepScheduleChart data={view.sleepBands7} />
+        )}
+        <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
           média: {formatSleepDuration(view.sleepMetrics.avg7Min)}
           {view.sleepMetrics.avgBedtime &&
             view.sleepMetrics.avgWake &&
             ` · janela média ${view.sleepMetrics.avgBedtime} → ${view.sleepMetrics.avgWake}`}
+          {sleepView === "horario" && (
+            <>
+              <br />
+              cada faixa vai de deitar a acordar &mdash; faixas desalinhadas são
+              irregularidade, e ela pesa tanto quanto a duração.
+            </>
+          )}
         </p>
       </Card>
 

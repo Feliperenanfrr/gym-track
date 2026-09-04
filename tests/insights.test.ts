@@ -59,6 +59,36 @@ describe("waterGoalMl", () => {
 /* ---------------------------------------------------------------- */
 
 describe("prEvents", () => {
+  it("usa a mesma fórmula do gráfico e dos relatórios (Epley ajustado por RIR)", () => {
+    // 60 kg × 8 @RIR 2 e 60 kg × 10 @RIR 0 são a MESMA série: 10 reps até a
+    // falha com a mesma carga. Pelo Epley cru a segunda "batia recorde"
+    // (76 → 80) e o painel, que já usava o ajustado, discordava da conquista.
+    const base = workout({
+      date: dayKey(-6),
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8, rir: 2 }] }],
+    })
+    const mesmoEsforco = workout({
+      date: dayKey(-3),
+      sessionId: "upperB",
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 10, rir: 0 }] }],
+    })
+    expect(prEvents([base, mesmoEsforco])).toHaveLength(0)
+  })
+
+  it("progresso real com RIR informado continua contando como PR", () => {
+    const base = workout({
+      date: dayKey(-6),
+      entries: [{ exerciseId: "bench", sets: [{ weight: 60, reps: 8, rir: 2 }] }],
+    })
+    const melhor = workout({
+      date: dayKey(-3),
+      sessionId: "upperB",
+      entries: [{ exerciseId: "bench", sets: [{ weight: 65, reps: 8, rir: 2 }] }],
+    })
+    expect(prEvents([base, melhor]).map((p) => p.date)).toEqual([dayKey(-3)])
+  })
+
+
   it("primeiro registro estabelece base (não é PR); superação posterior é PR", () => {
     const w1 = workout({
       date: dayKey(-10),
