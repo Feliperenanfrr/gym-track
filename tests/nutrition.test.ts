@@ -3,10 +3,12 @@ import {
   dayTotals,
   formatMacro,
   formatQty,
+  loggingCoverage,
   macroCoverageNote,
   MAX_BATCH_MEALS,
   mealTotals,
   normalizeSlot,
+  normalizeSource,
   normalizeUnit,
   parseMealsJson,
   proteinPerKg,
@@ -14,6 +16,7 @@ import {
   scaleItem,
   slotFromTime,
   slugify,
+  sourceLabel,
   snapshotItems,
   templateToMeal,
   validEntries,
@@ -151,6 +154,16 @@ describe("parseMealsJson — refeição única", () => {
     expect(result.warnings.join(" ")).not.toContain("sem carboidrato")
   })
 
+  /** Sem `gramas` a checagem de densidade fica desligada em silêncio. */
+  it("avisa quando falta a massa em gramas", () => {
+    const result = first(
+      '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Arroz","qtd":1,"unidade":"concha","kcal":128,"proteinaG":2.5,"carboG":28,"gorduraG":0.2}]}'
+    )
+    expect(result.meal).not.toBeNull()
+    expect(result.warnings.join(" ")).toContain("sem massa em gramas")
+    expect(result.warnings.join(" ")).toContain("densidade")
+  })
+
   it("avisa proteína maior que a massa do alimento", () => {
     const result = first(
       '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Whey","qtd":1,"unidade":"scoop","gramas":30,"kcal":120,"proteinaG":300}]}'
@@ -228,6 +241,7 @@ describe("aritmética das refeições", () => {
       proteinaG: 42,
       carboG: 56.2,
       gorduraG: 0.4,
+      alcoolG: 0,
       itens: 2,
       // FRANGO não traz carbo nem gordura: os dois totais são piso
       itensSemCarbo: 1,
@@ -300,6 +314,106 @@ describe("aritmética das refeições", () => {
     expect(formatQty(ARROZ)).toBe("2 conchas")
     expect(formatQty(FRANGO)).toBe("1 filé")
     expect(formatQty({ ...ARROZ, qtd: 150, unidade: "g" })).toBe("150 g")
+  })
+})
+
+describe("álcool", () => {
+  /** Cerveja: 146 kcal quase todas de etanol, que não cabe em 4/4/9. */
+  const CERVEJA =
+    '{"nome":"Cerveja","refeicao":"jantar","itens":[{"nome":"Cerveja pilsen","qtd":1,"unidade":"unidade","gramas":350,"kcal":146,"proteinaG":1.1,"carboG":11.7,"gorduraG":0.0,"alcoolG":13.0}]}'
+
+  it("lê alcoolG e o soma no total", () => {
+    const result = first(CERVEJA)
+    expect(result.errors).toEqual([])
+    expect(result.meal?.itens[0].alcoolG).toBe(13)
+    expect(mealTotals(result.meal!.itens).alcoolG).toBe(13)
+  })
+
+  it("não acusa incoerência numa bebida alcoólica correta", () => {
+    // 4×1.1 + 4×11.7 + 9×0 + 7×13 = 142 kcal contra 146 declaradas
+    expect(first(CERVEJA).warnings.join(" ")).not.toContain("4/4/9")
+  })
+
+  it("continua acusando quando o álcool não explica o desvio", () => {
+    const result = first(
+      '{"nome":"X","refeicao":"jantar","itens":[{"nome":"Cerveja","qtd":1,"unidade":"unidade","gramas":350,"kcal":600,"proteinaG":1.1,"carboG":11.7,"gorduraG":0.0,"alcoolG":13.0}]}'
+    )
+    expect(result.warnings.join(" ")).toContain("4/4/9")
+  })
+
+  it("reescala o álcool junto do resto", () => {
+    const item: MealItem = {
+      nome: "Cerveja",
+      qtd: 1,
+      unidade: "unidade",
+      kcal: 146,
+      proteinaG: 1.1,
+      alcoolG: 13,
+    }
+    expect(scaleItem(item, 2).alcoolG).toBe(26)
+  })
+})
+
+describe("fonte da estimativa", () => {
+  it("lê e normaliza a origem", () => {
+    expect(
+      first(
+        '{"nome":"X","refeicao":"almoco","fonte":"Imagem","itens":[{"nome":"Arroz","qtd":1,"unidade":"concha","gramas":100,"kcal":128,"proteinaG":2.5,"carboG":28,"gorduraG":0.2}]}'
+      ).meal?.fonte
+    ).toBe("foto")
+    expect(normalizeSource("rótulo")).toBe("rotulo")
+    expect(normalizeSource("chute")).toBeNull()
+    expect(sourceLabel("rotulo")).toBe("rótulo")
+  })
+
+  it("avisa quando a fonte veio fora da lista", () => {
+    const result = first(
+      '{"nome":"X","refeicao":"almoco","fonte":"chute","itens":[{"nome":"Arroz","qtd":1,"unidade":"concha","gramas":100,"kcal":128,"proteinaG":2.5,"carboG":28,"gorduraG":0.2}]}'
+    )
+    expect(result.meal?.fonte).toBeUndefined()
+    expect(result.warnings.join(" ")).toContain("não reconhecida")
+  })
+})
+
+describe("cobertura do registro", () => {
+  const day = (date: string, refeicoes: number, completo: boolean): MealLog => ({
+    date,
+    completo,
+    refeicoes: Array.from({ length: refeicoes }, (_, i) => ({
+      id: `m${i}`,
+      nome: "Refeição",
+      slot: "almoco" as const,
+      itens: [ARROZ],
+    })),
+  })
+
+  it("conta dias com registro e dias completos na janela", () => {
+    const meals = [
+      day("2026-09-07", 2, true),
+      day("2026-09-06", 1, false),
+      day("2026-09-05", 3, true),
+      day("2026-09-04", 0, true), // marcado mas sem refeição: não conta
+    ]
+    const coverage = loggingCoverage(meals, "2026-09-07")
+    expect(coverage.windowDays).toBe(28)
+    expect(coverage.comRegistro).toBe(3)
+    expect(coverage.completos).toBe(2)
+  })
+
+  it("ignora dias fora da janela", () => {
+    const coverage = loggingCoverage(
+      [day("2026-09-07", 1, true), day("2026-07-01", 1, true)],
+      "2026-09-07"
+    )
+    expect(coverage.comRegistro).toBe(1)
+  })
+
+  it("devolve zeros sem nenhum registro", () => {
+    expect(loggingCoverage([], "2026-09-07")).toEqual({
+      windowDays: 28,
+      comRegistro: 0,
+      completos: 0,
+    })
   })
 })
 

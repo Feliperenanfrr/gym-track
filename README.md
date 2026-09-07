@@ -159,7 +159,10 @@ na base, o alvo sai de 2,0–2,4 g/kg de **massa magra** — sobre o peso total,
 30% de gordura, o número inflaria. Sem composição, cai para 1,6–1,8 g/kg de peso.
 
 A marca **"registrei tudo neste dia"** existe para as análises: um dia com café
-salvo e jantar esquecido não pode entrar na média como "comeu 900 kcal".
+salvo e jantar esquecido não pode entrar na média como "comeu 900 kcal". Ao lado
+dela, a tela mostra quantos dos últimos 28 dias estão completos — é o indicador
+antecedente da reconciliação entre ingestão registrada e derivada: marcar 4 de 28
+significa que aquela análise não vai ter o que comparar.
 
 ### O JSON da refeição
 
@@ -199,19 +202,32 @@ Três formatos aceitos — lista, lista com data comum ao lote, e uma refeição
 { "data": "07/09/2026", "refeicoes": [ /* … */ ] }
 ```
 
-Obrigatórios por item: `nome`, `qtd`, `unidade`, `kcal`, `proteinaG`, `carboG` e
-`gorduraG`. Só `gramas` é omitido quando não se sabe — nunca `null` ou `"N/A"`.
-Unidades aceitas: g, ml, unidade, fatia, concha, colher, copo, filé, scoop,
-pote, pão. `refeicao` ausente é deduzida pela hora; `data` ausente cai no dia
-selecionado na tela; cercas de código e texto solto em volta do JSON são
+Obrigatórios por item: `nome`, `qtd`, `unidade`, `gramas`, `kcal`, `proteinaG`,
+`carboG` e `gorduraG` — nunca `null` ou `"N/A"`. `alcoolG` só em bebida
+alcoólica. Unidades aceitas: g, ml, unidade, fatia, concha, colher, copo, filé,
+scoop, pote, pão. `refeicao` ausente é deduzida pela hora; `data` ausente cai no
+dia selecionado na tela; cercas de código e texto solto em volta do JSON são
 tolerados. Limite de 60 refeições por lote.
 
-`carboG` e `gorduraG` continuam **opcionais no parser** — registros antigos e
-falhas pontuais da gem seguem entrando. Mas `0.0` é um valor (óleo não tem
-carboidrato) e a chave ausente significa "não sei": o app conta os itens sem o
-macro, avisa na importação e mostra o total do dia como **piso** (`≥210 g`) em
-vez de fingir precisão. kcal e proteína não têm esse risco porque são
-obrigatórios de verdade.
+`fonte` (`foto` | `texto` | `rotulo`) marca de onde veio a estimativa. Rótulo
+quase não erra, foto erra na porção — guardar isso é o que permite perguntar, na
+reconciliação, se o desvio está concentrado nos dias de foto. Estimativa ruim de
+porção e refeição esquecida pedem correções opostas.
+
+`alcoolG` existe porque etanol vale **7 kcal/g** e não cabe em 4/4/9: sem o
+campo, a checagem de coerência acusava toda bebida alcoólica de estar errada — e
+alarme falso ensina a ignorar o aviso que importa, o de macro por 100 g.
+
+`gramas`, `carboG` e `gorduraG` continuam **opcionais no parser** — registros
+antigos e falhas pontuais da gem seguem entrando. Mas `0.0` é um valor (óleo não
+tem carboidrato) e a chave ausente significa "não sei":
+
+- sem `carboG`/`gorduraG` o app conta os itens, avisa na importação e mostra o
+  total do dia como **piso** (`≥210 g`) em vez de fingir precisão;
+- sem `gramas` a checagem de densidade (>9,5 kcal/g), que é o detector mais forte
+  do erro por 100 g, simplesmente não roda — daí o aviso próprio.
+
+kcal e proteína não têm esse risco porque são obrigatórios de verdade.
 
 O prompt da gem que gera esse JSON está em
 [`docs/gem-refeicoes.md`](docs/gem-refeicoes.md), versionado junto — é a outra

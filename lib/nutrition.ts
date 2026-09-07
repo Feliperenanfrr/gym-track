@@ -1,7 +1,8 @@
 import { parseBrDate, parseNumber } from "./bioimpedance"
 import { fatMassOf } from "./energy"
 import { weightKgOn } from "./insights"
-import { BodyLog, Meal, MealItem, MealLog, MealSlot, MealTemplate } from "./types"
+import { BodyLog, Meal, MealItem, MealLog, MealSlot, MealSource, MealTemplate } from "./types"
+import { fromDateKey, toDateKey } from "./utils"
 
 /**
  * Alimentação — parser determinístico + aritmética das refeições.
@@ -73,6 +74,31 @@ const SLOT_ALIASES: Record<string, MealSlot> = {
 export function normalizeSlot(raw: unknown): MealSlot | null {
   if (typeof raw !== "string") return null
   return SLOT_ALIASES[deburr(raw)] ?? null
+}
+
+const SOURCE_ALIASES: Record<string, MealSource> = {
+  foto: "foto",
+  imagem: "foto",
+  photo: "foto",
+  image: "foto",
+  texto: "texto",
+  descricao: "texto",
+  frase: "texto",
+  text: "texto",
+  rotulo: "rotulo",
+  embalagem: "rotulo",
+  label: "rotulo",
+}
+
+export function normalizeSource(raw: unknown): MealSource | null {
+  if (typeof raw !== "string") return null
+  return SOURCE_ALIASES[deburr(raw)] ?? null
+}
+
+export function sourceLabel(fonte: MealSource): string {
+  if (fonte === "foto") return "foto"
+  if (fonte === "rotulo") return "rótulo"
+  return "texto"
 }
 
 /** Fallback quando o JSON não traz `refeicao` mas traz a hora. */
@@ -150,6 +176,8 @@ export interface MealTotals {
   proteinaG: number
   carboG: number
   gorduraG: number
+  /** só aparece na tela quando maior que zero */
+  alcoolG: number
   /** itens somados */
   itens: number
   /**
@@ -166,6 +194,7 @@ const EMPTY_TOTALS: MealTotals = {
   proteinaG: 0,
   carboG: 0,
   gorduraG: 0,
+  alcoolG: 0,
   itens: 0,
   itensSemCarbo: 0,
   itensSemGordura: 0,
@@ -181,11 +210,14 @@ export function mealTotals(itens: MealItem[]): MealTotals {
   let proteinaG = 0
   let carboG = 0
   let gorduraG = 0
+  let alcoolG = 0
   let itensSemCarbo = 0
   let itensSemGordura = 0
   for (const item of itens) {
     kcal += item.kcal
     proteinaG += item.proteinaG
+    // álcool ausente é zero de verdade, então não entra na contagem de faltas
+    alcoolG += item.alcoolG ?? 0
     if (item.carboG === undefined) itensSemCarbo++
     else carboG += item.carboG
     if (item.gorduraG === undefined) itensSemGordura++
@@ -196,6 +228,7 @@ export function mealTotals(itens: MealItem[]): MealTotals {
     proteinaG: round1(proteinaG),
     carboG: round1(carboG),
     gorduraG: round1(gorduraG),
+    alcoolG: round1(alcoolG),
     itens: itens.length,
     itensSemCarbo,
     itensSemGordura,
@@ -206,6 +239,46 @@ export function mealTotals(itens: MealItem[]): MealTotals {
 export function formatMacro(grams: number, missing: number): string {
   const value = grams.toLocaleString("pt-BR", { maximumFractionDigits: 1 })
   return missing > 0 ? `≥${value} g` : `${value} g`
+}
+
+/* ------------------------------------------------------------------ */
+/* Cobertura do registro                                                */
+/* ------------------------------------------------------------------ */
+
+export interface LoggingCoverage {
+  windowDays: number
+  /** dias com pelo menos uma refeição registrada */
+  comRegistro: number
+  /** dias marcados como "registrei tudo" */
+  completos: number
+}
+
+/**
+ * Quantos dias da janela têm registro, e quantos estão marcados como completos.
+ *
+ * É o indicador antecedente da reconciliação entre ingestão registrada e
+ * derivada: só dia completo pode entrar naquela média, então marcar 4 de 28
+ * significa que a análise não terá o que comparar. Sem esse número na tela,
+ * você só descobre isso depois de construir a análise.
+ */
+export function loggingCoverage(
+  meals: MealLog[],
+  to: string,
+  windowDays = 28
+): LoggingCoverage {
+  const end = fromDateKey(to)
+  const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - (windowDays - 1))
+  const from = toDateKey(start)
+
+  let comRegistro = 0
+  let completos = 0
+  for (const day of meals) {
+    if (day.date < from || day.date > to) continue
+    if (day.refeicoes.length === 0) continue
+    comRegistro++
+    if (day.completo) completos++
+  }
+  return { windowDays, comRegistro, completos }
 }
 
 /** Frase única sobre a cobertura dos macros, ou null quando está completa. */
@@ -239,6 +312,7 @@ export function scaleItem(item: MealItem, qtd: number): MealItem {
   if (item.gramas !== undefined) scaled.gramas = round1(item.gramas * factor)
   if (item.carboG !== undefined) scaled.carboG = round1(item.carboG * factor)
   if (item.gorduraG !== undefined) scaled.gorduraG = round1(item.gorduraG * factor)
+  if (item.alcoolG !== undefined) scaled.alcoolG = round1(item.alcoolG * factor)
   return scaled
 }
 
@@ -330,6 +404,7 @@ export interface ParsedMeal {
   /** HH:mm */
   hora?: string
   premissas?: string[]
+  fonte?: MealSource
 }
 
 /** Tolera cercas de código e texto solto antes/depois do objeto. */
@@ -359,10 +434,18 @@ function str(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
-/** Energia teórica dos macros — 4/4/9 kcal por grama (Atwater). */
+/**
+ * Energia teórica dos macros — 4/4/9 kcal por grama (Atwater), mais 7 kcal/g de
+ * álcool. Sem a parcela do álcool, uma lata de cerveja (146 kcal, quase tudo
+ * etanol) fechava em 51 kcal pela conta e a checagem acusava erro numa
+ * informação correta. Alarme falso é pior que nenhum alarme: ensina a ignorar o
+ * aviso que importa, que é o de macro por 100 g.
+ */
 function atwater(item: MealItem): number | null {
   if (item.carboG === undefined || item.gorduraG === undefined) return null
-  return item.proteinaG * 4 + item.carboG * 4 + item.gorduraG * 9
+  return (
+    item.proteinaG * 4 + item.carboG * 4 + item.gorduraG * 9 + (item.alcoolG ?? 0) * 7
+  )
 }
 
 /**
@@ -394,6 +477,12 @@ function sanityWarnings(item: MealItem): string[] {
     }
   }
   return out
+}
+
+/** "Arroz, Feijão, Bisteca e mais 2" — lista curta para caber num aviso. */
+function listNames(itens: MealItem[]): string {
+  const nomes = itens.slice(0, 3).map((item) => item.nome).join(", ")
+  return itens.length > 3 ? `${nomes} e mais ${itens.length - 3}` : nomes
 }
 
 function parseItem(
@@ -459,6 +548,8 @@ function parseItem(
   if (carboG !== null && carboG >= 0) item.carboG = round1(carboG)
   const gorduraG = num(source.gorduraG ?? source.gordura ?? source.fat)
   if (gorduraG !== null && gorduraG >= 0) item.gorduraG = round1(gorduraG)
+  const alcoolG = num(source.alcoolG ?? source.alcool ?? source.alcohol)
+  if (alcoolG !== null && alcoolG > 0) item.alcoolG = round1(alcoolG)
 
   warnings.push(...sanityWarnings(item))
   return item
@@ -516,10 +607,18 @@ function parseSingleMeal(
     (item) => item.carboG === undefined || item.gorduraG === undefined
   )
   if (semMacro.length > 0) {
-    const nomes = semMacro.slice(0, 3).map((item) => item.nome).join(", ")
-    const resto = semMacro.length > 3 ? ` e mais ${semMacro.length - 3}` : ""
     warnings.push(
-      `${semMacro.length} item(ns) sem carboidrato ou gordura (${nomes}${resto}) — esses macros vão subestimar no total do dia.`
+      `${semMacro.length} item(ns) sem carboidrato ou gordura (${listNames(semMacro)}) — esses macros vão subestimar no total do dia.`
+    )
+  }
+
+  // A checagem de densidade (>9,5 kcal/g) é o detector mais forte do erro de
+  // macro por 100 g, e ela SÓ roda quando o item traz a massa. Sem `gramas` o
+  // melhor validador fica desligado em silêncio — daí o aviso.
+  const semGramas = itens.filter((item) => item.gramas === undefined)
+  if (semGramas.length > 0) {
+    warnings.push(
+      `${semGramas.length} item(ns) sem massa em gramas (${listNames(semGramas)}) — a checagem de densidade não roda neles.`
     )
   }
 
@@ -569,12 +668,21 @@ function parseSingleMeal(
       )
     : undefined
 
+  const fonteInformada = str(source.fonte) ?? str(source.origem)
+  const fonte = normalizeSource(fonteInformada) ?? undefined
+  if (fonteInformada && !fonte) {
+    warnings.push(`Fonte "${fonteInformada}" não reconhecida (foto, texto ou rotulo).`)
+  }
+
   if (itens.length === 0 && errors.length === 0) {
     errors.push("Nenhum item pôde ser lido.")
   }
 
   return {
-    meal: errors.length > 0 ? null : { nome, slot, itens, date, hora, premissas },
+    meal:
+      errors.length > 0
+        ? null
+        : { nome, slot, itens, date, hora, premissas, fonte },
     warnings,
     errors,
   }
