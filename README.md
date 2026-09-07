@@ -139,9 +139,14 @@ Registro alimentar sem contar caloria a caloria. Três entradas:
 - **Fixa com variação** — a refeição abre com todos os itens marcados em 1×.
   Desmarque o arroz, troque porco por frango (deixe os dois no molde e
   desmarque um), dobre a quantidade do feijão. Só o que mudou é ajustado.
-- **Refeição diferente** — gere o JSON numa gem do Gemini e cole na tela. O app
-  só valida e soma; nenhuma interpretação de texto livre roda aqui, no mesmo
-  espírito do CSV da balança.
+- **Refeição diferente** — gere o JSON numa gem do Gemini (foto do prato, frase
+  solta, ou várias refeições de uma vez) e cole na tela. O app só valida e soma;
+  nenhuma interpretação de texto livre roda aqui, no mesmo espírito do CSV da
+  balança.
+- **Lote** — um JSON pode trazer várias refeições, inclusive de dias diferentes.
+  A tela lista todas, deixa desmarcar as que não quer, abrir qualquer uma no
+  compositor para conferir, e grava o resto de uma vez. Refeição ilegível não
+  derruba as outras: o erro fica na linha dela.
 
 **A regra do snapshot**: `meal_logs.refeicoes` guarda uma cópia completa dos
 itens comidos. Corrigir uma refeição fixa depois — reimportando pela gem ou
@@ -163,25 +168,43 @@ erro mais provável e o mais silencioso. O parser confere o que é fisicamente
 impossível (densidade acima de óleo puro, proteína maior que a massa do
 alimento, kcal que não fecha com 4/4/9) e avisa antes de salvar.
 
+Três formatos aceitos — lista, lista com data comum ao lote, e uma refeição só:
+
 ```json
-{
-  "nome": "Almoço no restaurante",
-  "refeicao": "almoco",
-  "data": "07/09/2026",
-  "hora": "12:40",
-  "itens": [
-    { "nome": "Arroz branco cozido", "qtd": 2, "unidade": "concha",
-      "gramas": 200, "kcal": 257, "proteinaG": 5.0, "carboG": 56.2, "gorduraG": 0.4 }
-  ],
-  "premissas": ["Concha de arroz estimada em 100 g"]
-}
+[
+  {
+    "nome": "Almoço no restaurante",
+    "refeicao": "almoco",
+    "data": "07/09/2026",
+    "hora": "12:40",
+    "itens": [
+      { "nome": "Arroz branco cozido", "qtd": 2, "unidade": "concha",
+        "gramas": 200, "kcal": 257, "proteinaG": 5.0, "carboG": 56.2, "gorduraG": 0.4 }
+    ],
+    "premissas": ["Concha de arroz estimada em 100 g"]
+  },
+  {
+    "nome": "Banana",
+    "refeicao": "lanche",
+    "hora": "15:10",
+    "itens": [
+      { "nome": "Banana prata", "qtd": 1, "unidade": "unidade",
+        "gramas": 86, "kcal": 80, "proteinaG": 1.1, "carboG": 20.5, "gorduraG": 0.1 }
+    ]
+  }
+]
+```
+
+```json
+{ "data": "07/09/2026", "refeicoes": [ /* … */ ] }
 ```
 
 Obrigatórios por item: `nome`, `qtd`, `unidade`, `kcal`, `proteinaG` — o resto é
 omitido quando não se sabe, nunca preenchido com `null` ou zero. Unidades
 aceitas: g, ml, unidade, fatia, concha, colher, copo, filé, scoop, pote, pão.
-`refeicao` ausente é deduzida pela hora; cercas de código e texto solto em volta
-do objeto são tolerados.
+`refeicao` ausente é deduzida pela hora; `data` ausente cai no dia selecionado
+na tela; cercas de código e texto solto em volta do JSON são tolerados. Limite
+de 60 refeições por lote.
 
 ## Progressão de carga (o app sugere, você decide)
 

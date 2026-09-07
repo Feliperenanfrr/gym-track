@@ -295,14 +295,6 @@ export interface ParsedMeal {
   premissas?: string[]
 }
 
-export interface MealParseResult {
-  meal: ParsedMeal | null
-  /** não impedem salvar, mas merecem um olhar */
-  warnings: string[]
-  /** impedem salvar */
-  errors: string[]
-}
-
 /** Tolera cercas de código e texto solto antes/depois do objeto. */
 function extractJson(raw: string): string | null {
   const text = (raw ?? "").trim()
@@ -435,48 +427,34 @@ function parseItem(
   return item
 }
 
-export function parseMealJson(input: string): MealParseResult {
+/** Guarda contra colar o histórico inteiro por engano. */
+export const MAX_BATCH_MEALS = 60
+
+/** Uma refeição dentro do lote — inválida não derruba as outras. */
+export interface ParsedMealEntry {
+  /** posição no lote, usada como chave na tela */
+  index: number
+  meal: ParsedMeal | null
+  warnings: string[]
+  errors: string[]
+}
+
+export interface MealsParseResult {
+  entries: ParsedMealEntry[]
+  /** erros que derrubam o lote inteiro (JSON inválido, lista vazia) */
+  errors: string[]
+}
+
+/** Uma refeição do lote: tudo depois de desembrulhar a lista. */
+function parseSingleMeal(
+  parsed: unknown,
+  fallbackDate: string | undefined
+): { meal: ParsedMeal | null; warnings: string[]; errors: string[] } {
   const warnings: string[] = []
   const errors: string[] = []
 
-  const json = extractJson(input)
-  if (!json) {
-    return { meal: null, warnings, errors: ["Nada para ler — cole o JSON da refeição."] }
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(json)
-  } catch {
-    return {
-      meal: null,
-      warnings,
-      errors: [
-        "JSON inválido. Cole a saída da gem sem editar (ela sai sem cercas de código).",
-      ],
-    }
-  }
-
-  if (Array.isArray(parsed)) {
-    if (parsed.length === 0) {
-      return { meal: null, warnings, errors: ["A lista veio vazia."] }
-    }
-    if (parsed.length > 1) {
-      return {
-        meal: null,
-        warnings,
-        errors: [`O JSON tem ${parsed.length} refeições — registre uma por vez.`],
-      }
-    }
-    parsed = parsed[0]
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    return {
-      meal: null,
-      warnings,
-      errors: ["Esperado um objeto com nome, refeicao e itens."],
-    }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { meal: null, warnings, errors: ["Esperado um objeto com nome, refeicao e itens."] }
   }
   const source = parsed as Record<string, unknown>
 
@@ -516,7 +494,7 @@ export function parseMealJson(input: string): MealParseResult {
       )
     } else {
       slot = "almoco"
-      warnings.push('"refeicao" ausente ou não reconhecida — assumido Almoço. Ajuste abaixo.')
+      warnings.push('"refeicao" ausente ou não reconhecida — assumido Almoço. Ajuste antes de salvar.')
     }
   }
 
@@ -526,11 +504,11 @@ export function parseMealJson(input: string): MealParseResult {
 
   const date = (() => {
     const raw = str(source.data) ?? str(source.date)
-    if (!raw) return undefined
+    if (!raw) return fallbackDate
     const parsedDate = parseBrDate(raw)
     if (!parsedDate) {
-      warnings.push(`Data "${raw}" não reconhecida — será salva no dia selecionado.`)
-      return undefined
+      warnings.push(`Data "${raw}" não reconhecida — vai para o dia selecionado.`)
+      return fallbackDate
     }
     return parsedDate
   })()
@@ -550,6 +528,91 @@ export function parseMealJson(input: string): MealParseResult {
     warnings,
     errors,
   }
+}
+
+/**
+ * Lê um LOTE de refeições. Três formatos, todos aceitos:
+ *
+ *   [{...}, {...}]                          lista direta
+ *   { "data": "07/09/2026", refeicoes: [] } lista com data comum ao lote
+ *   {...}                                   uma refeição só
+ *
+ * Cada refeição carrega a própria `data` e `hora`, então um lote pode cobrir
+ * vários dias — mandar o fim de semana inteiro de uma vez é o caso normal.
+ * Uma refeição ilegível não derruba as outras: o erro fica na linha dela.
+ */
+export function parseMealsJson(input: string): MealsParseResult {
+  const json = extractJson(input)
+  if (!json) {
+    return { entries: [], errors: ["Nada para ler — cole o JSON das refeições."] }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch {
+    return {
+      entries: [],
+      errors: [
+        "JSON inválido. Cole a saída da gem sem editar (ela sai sem cercas de código).",
+      ],
+    }
+  }
+
+  let list: unknown[]
+  let fallbackDate: string | undefined
+  const wrapperWarnings: string[] = []
+
+  if (Array.isArray(parsed)) {
+    list = parsed
+  } else if (parsed && typeof parsed === "object") {
+    const source = parsed as Record<string, unknown>
+    const nested = source.refeicoes ?? source.meals
+    if (Array.isArray(nested)) {
+      list = nested
+      // data no envelope vale para as refeições que não trouxerem a própria
+      const raw = str(source.data) ?? str(source.date)
+      if (raw) {
+        const parsedDate = parseBrDate(raw)
+        if (parsedDate) fallbackDate = parsedDate
+        else wrapperWarnings.push(`Data do lote "${raw}" não reconhecida.`)
+      }
+    } else {
+      list = [parsed]
+    }
+  } else {
+    return { entries: [], errors: ["Esperado um objeto ou uma lista de refeições."] }
+  }
+
+  if (list.length === 0) {
+    return { entries: [], errors: ["A lista veio vazia."] }
+  }
+  if (list.length > MAX_BATCH_MEALS) {
+    return {
+      entries: [],
+      errors: [
+        `O lote tem ${list.length} refeições — o limite é ${MAX_BATCH_MEALS} por vez.`,
+      ],
+    }
+  }
+
+  const entries = list.map((raw, index) => {
+    const parsedMeal = parseSingleMeal(raw, fallbackDate)
+    return {
+      index,
+      meal: parsedMeal.meal,
+      warnings: index === 0 ? [...wrapperWarnings, ...parsedMeal.warnings] : parsedMeal.warnings,
+      errors: parsedMeal.errors,
+    }
+  })
+
+  return { entries, errors: [] }
+}
+
+/** As refeições que passaram na validação, na ordem do lote. */
+export function validEntries(result: MealsParseResult | null): ParsedMealEntry[] {
+  if (!result) return []
+  return result.entries.filter((entry) => entry.meal !== null)
 }
 
 /* ------------------------------------------------------------------ */

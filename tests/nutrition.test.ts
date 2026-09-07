@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest"
 import {
   dayTotals,
   formatQty,
+  MAX_BATCH_MEALS,
   mealTotals,
   normalizeSlot,
   normalizeUnit,
-  parseMealJson,
+  parseMealsJson,
   proteinPerKg,
   proteinTarget,
   scaleItem,
@@ -13,8 +14,23 @@ import {
   slugify,
   snapshotItems,
   templateToMeal,
+  validEntries,
 } from "../lib/nutrition"
 import { BodyLog, MealItem, MealLog, MealTemplate } from "../lib/types"
+
+/**
+ * Atalho de leitura para os casos de uma refeição só: achata o lote na
+ * primeira linha, com os erros do envelope quando nem chegou a haver linha.
+ */
+function first(input: string) {
+  const result = parseMealsJson(input)
+  const entry = result.entries[0]
+  return {
+    meal: entry?.meal ?? null,
+    warnings: entry?.warnings ?? [],
+    errors: entry ? entry.errors : result.errors,
+  }
+}
 
 const ARROZ: MealItem = {
   nome: "Arroz branco cozido",
@@ -46,9 +62,9 @@ const ALMOCO_JSON = JSON.stringify({
   premissas: ["Concha de arroz estimada em 100 g"],
 })
 
-describe("parseMealJson", () => {
+describe("parseMealsJson — refeição única", () => {
   it("lê o JSON limpo da gem", () => {
-    const result = parseMealJson(ALMOCO_JSON)
+    const result = first(ALMOCO_JSON)
     expect(result.errors).toEqual([])
     expect(result.meal?.nome).toBe("Almoço de casa")
     expect(result.meal?.slot).toBe("almoco")
@@ -60,13 +76,13 @@ describe("parseMealJson", () => {
 
   it("tolera cercas de código e texto solto em volta", () => {
     const sujo = "Claro! Aqui está:\n```json\n" + ALMOCO_JSON + "\n```\nQualquer dúvida, avise."
-    const result = parseMealJson(sujo)
+    const result = first(sujo)
     expect(result.errors).toEqual([])
     expect(result.meal?.itens).toHaveLength(2)
   })
 
   it("aceita número em formato BR dentro de string", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"Suco","refeicao":"almoco","itens":[{"nome":"Suco de laranja","qtd":"1","unidade":"copo","kcal":"180","proteinaG":"2,4"}]}'
     )
     expect(result.errors).toEqual([])
@@ -75,7 +91,7 @@ describe("parseMealJson", () => {
   })
 
   it("deduz a refeição pela hora quando o campo falta", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"Cuscuz com ovo","hora":"07:10","itens":[{"nome":"Cuscuz","qtd":1,"unidade":"unidade","kcal":180,"proteinaG":4}]}'
     )
     expect(result.meal?.slot).toBe("cafe")
@@ -83,28 +99,22 @@ describe("parseMealJson", () => {
   })
 
   it("bloqueia item sem campo obrigatório", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"X","refeicao":"jantar","itens":[{"nome":"Pão","qtd":1,"unidade":"fatia"}]}'
     )
     expect(result.meal).toBeNull()
     expect(result.errors.join(" ")).toContain("kcal")
   })
 
-  it("recusa mais de uma refeição por vez", () => {
-    const result = parseMealJson(`[${ALMOCO_JSON},${ALMOCO_JSON}]`)
-    expect(result.meal).toBeNull()
-    expect(result.errors[0]).toContain("2 refeições")
-  })
-
   it("recusa JSON inválido sem explodir", () => {
-    const result = parseMealJson("{isso não é json")
+    const result = first("{isso não é json")
     expect(result.meal).toBeNull()
     expect(result.errors).toHaveLength(1)
   })
 
   /* O erro mais provável da gem: devolver macros por 100 g em vez da porção. */
   it("avisa quando a densidade é impossível", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Feijão","qtd":1,"unidade":"concha","gramas":90,"kcal":900,"proteinaG":5}]}'
     )
     expect(result.meal).not.toBeNull()
@@ -112,7 +122,7 @@ describe("parseMealJson", () => {
   })
 
   it("avisa quando as kcal não fecham com 4/4/9", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Macarrão","qtd":1,"unidade":"concha","kcal":100,"proteinaG":10,"carboG":50,"gorduraG":5}]}'
     )
     expect(result.meal).not.toBeNull()
@@ -120,10 +130,72 @@ describe("parseMealJson", () => {
   })
 
   it("avisa proteína maior que a massa do alimento", () => {
-    const result = parseMealJson(
+    const result = first(
       '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Whey","qtd":1,"unidade":"scoop","gramas":30,"kcal":120,"proteinaG":300}]}'
     )
     expect(result.warnings.join(" ")).toContain("impossível")
+  })
+})
+
+describe("parseMealsJson — lote", () => {
+  const BANANA =
+    '{"nome":"Banana","refeicao":"lanche","hora":"15:10","itens":[{"nome":"Banana prata","qtd":1,"unidade":"unidade","gramas":86,"kcal":80,"proteinaG":1.1}]}'
+  const CUSCUZ =
+    '{"nome":"Café","refeicao":"cafe","hora":"07:00","itens":[{"nome":"Cuscuz de milho","qtd":1,"unidade":"unidade","gramas":150,"kcal":170,"proteinaG":3.5}]}'
+
+  it("lê uma lista direta", () => {
+    const result = parseMealsJson(`[${CUSCUZ},${ALMOCO_JSON},${BANANA}]`)
+    expect(result.errors).toEqual([])
+    expect(result.entries).toHaveLength(3)
+    expect(validEntries(result)).toHaveLength(3)
+    expect(result.entries.map((e) => e.meal?.slot)).toEqual(["cafe", "almoco", "lanche"])
+  })
+
+  it("aceita o envelope com data comum ao lote", () => {
+    const result = parseMealsJson(`{"data":"06/09/2026","refeicoes":[${CUSCUZ},${BANANA}]}`)
+    expect(result.errors).toEqual([])
+    expect(result.entries.map((e) => e.meal?.date)).toEqual(["2026-09-06", "2026-09-06"])
+  })
+
+  it("a data da refeição vence a data do envelope", () => {
+    const result = parseMealsJson(
+      `{"data":"06/09/2026","refeicoes":[${CUSCUZ},${ALMOCO_JSON}]}`
+    )
+    expect(result.entries[0].meal?.date).toBe("2026-09-06")
+    expect(result.entries[1].meal?.date).toBe("2026-09-07")
+  })
+
+  /** Mandar o fim de semana inteiro de uma vez é o caso normal. */
+  it("cobre vários dias no mesmo lote", () => {
+    const result = parseMealsJson(`[${CUSCUZ},${ALMOCO_JSON}]`)
+    expect(result.entries[0].meal?.date).toBeUndefined()
+    expect(result.entries[1].meal?.date).toBe("2026-09-07")
+  })
+
+  it("uma refeição ilegível não derruba as outras", () => {
+    const quebrada = '{"nome":"Ruim","refeicao":"jantar","itens":[{"nome":"X","qtd":1}]}'
+    const result = parseMealsJson(`[${CUSCUZ},${quebrada},${BANANA}]`)
+    expect(result.errors).toEqual([])
+    expect(result.entries).toHaveLength(3)
+    expect(result.entries[1].meal).toBeNull()
+    expect(result.entries[1].errors.length).toBeGreaterThan(0)
+    expect(validEntries(result).map((e) => e.index)).toEqual([0, 2])
+  })
+
+  it("recusa lote acima do limite", () => {
+    const grande = `[${Array.from({ length: MAX_BATCH_MEALS + 1 }, () => BANANA).join(",")}]`
+    const result = parseMealsJson(grande)
+    expect(result.entries).toEqual([])
+    expect(result.errors[0]).toContain(String(MAX_BATCH_MEALS))
+  })
+
+  it("recusa lista vazia", () => {
+    expect(parseMealsJson("[]").errors[0]).toContain("vazia")
+    expect(parseMealsJson('{"refeicoes":[]}').errors[0]).toContain("vazia")
+  })
+
+  it("validEntries devolve vazio sem resultado", () => {
+    expect(validEntries(null)).toEqual([])
   })
 })
 
