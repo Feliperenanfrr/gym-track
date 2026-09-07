@@ -199,12 +199,23 @@ Três formatos aceitos — lista, lista com data comum ao lote, e uma refeição
 { "data": "07/09/2026", "refeicoes": [ /* … */ ] }
 ```
 
-Obrigatórios por item: `nome`, `qtd`, `unidade`, `kcal`, `proteinaG` — o resto é
-omitido quando não se sabe, nunca preenchido com `null` ou zero. Unidades
-aceitas: g, ml, unidade, fatia, concha, colher, copo, filé, scoop, pote, pão.
-`refeicao` ausente é deduzida pela hora; `data` ausente cai no dia selecionado
-na tela; cercas de código e texto solto em volta do JSON são tolerados. Limite
-de 60 refeições por lote.
+Obrigatórios por item: `nome`, `qtd`, `unidade`, `kcal`, `proteinaG`, `carboG` e
+`gorduraG`. Só `gramas` é omitido quando não se sabe — nunca `null` ou `"N/A"`.
+Unidades aceitas: g, ml, unidade, fatia, concha, colher, copo, filé, scoop,
+pote, pão. `refeicao` ausente é deduzida pela hora; `data` ausente cai no dia
+selecionado na tela; cercas de código e texto solto em volta do JSON são
+tolerados. Limite de 60 refeições por lote.
+
+`carboG` e `gorduraG` continuam **opcionais no parser** — registros antigos e
+falhas pontuais da gem seguem entrando. Mas `0.0` é um valor (óleo não tem
+carboidrato) e a chave ausente significa "não sei": o app conta os itens sem o
+macro, avisa na importação e mostra o total do dia como **piso** (`≥210 g`) em
+vez de fingir precisão. kcal e proteína não têm esse risco porque são
+obrigatórios de verdade.
+
+O prompt da gem que gera esse JSON está em
+[`docs/gem-refeicoes.md`](docs/gem-refeicoes.md), versionado junto — é a outra
+metade do contrato de `lib/nutrition.ts`.
 
 ## Progressão de carga (o app sugere, você decide)
 

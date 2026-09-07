@@ -22,6 +22,8 @@ import {
 } from "@/components/ui"
 import {
   dayTotals,
+  formatMacro,
+  macroCoverageNote,
   MEAL_SLOTS,
   mealTotals,
   newId,
@@ -127,6 +129,7 @@ export default function ComidaPage() {
     [data, dateKey]
   )
   const perKg = proteinPerKg(totals.proteinaG, target)
+  const coverageNote = macroCoverageNote(totals)
   const proteinPct = target && target.mid > 0 ? Math.min(1, totals.proteinaG / target.mid) : 0
 
   const parse = useMemo(() => (jsonText.trim() ? parseMealsJson(jsonText) : null), [jsonText])
@@ -413,9 +416,17 @@ export default function ComidaPage() {
           label="Calorias"
           value={totals.kcal.toLocaleString("pt-BR")}
           accent="gold"
-          detail={`carbo ${totals.carboG} g · gordura ${totals.gorduraG} g`}
+          detail={`carbo ${formatMacro(totals.carboG, totals.itensSemCarbo)} · gordura ${formatMacro(
+            totals.gorduraG,
+            totals.itensSemGordura
+          )}`}
         />
       </div>
+
+      {/* a soma de carbo/gordura só é exata se todo item trouxe os dois */}
+      {coverageNote && (
+        <p className="rise rise-1 mt-2 text-[11px] leading-relaxed text-gold">{coverageNote}</p>
+      )}
 
       {target && (
         <Card className="rise rise-1 mt-3">
