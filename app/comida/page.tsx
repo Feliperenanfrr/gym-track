@@ -24,12 +24,17 @@ import {
   dayTotals,
   MEAL_SLOTS,
   mealTotals,
-  parseMealJson,
+  newId,
+  ParsedMeal,
+  ParsedMealEntry,
+  parseMealsJson,
   proteinPerKg,
   proteinTarget,
   slotLabel,
   slotOrder,
   slugify,
+  snapshotItems,
+  validEntries,
 } from "@/lib/nutrition"
 import { useGymData } from "@/lib/store"
 import { useMealTemplates } from "@/lib/use-meal-templates"
@@ -37,9 +42,12 @@ import { useOperationalDay } from "@/lib/use-operational-day"
 import { Meal, MealItem, MealLog, MealSlot, MealTemplate } from "@/lib/types"
 import { cn, fromDateKey, toDateKey, toOperationalDateKey } from "@/lib/utils"
 
-const JSON_PLACEHOLDER = `{"nome":"Almoço no restaurante","refeicao":"almoco","itens":[
-{"nome":"Arroz branco cozido","qtd":2,"unidade":"concha","gramas":200,"kcal":257,"proteinaG":5.0,"carboG":56.2,"gorduraG":0.4},
-{"nome":"Contrafilé grelhado","qtd":1,"unidade":"filé","gramas":150,"kcal":289,"proteinaG":47.3,"carboG":0,"gorduraG":10.4}]}`
+const JSON_PLACEHOLDER = `[
+{"nome":"Banana","refeicao":"lanche","hora":"15:10","itens":[
+  {"nome":"Banana prata","qtd":1,"unidade":"unidade","gramas":86,"kcal":80,"proteinaG":1.1}]},
+{"nome":"Jantar","refeicao":"jantar","hora":"20:00","itens":[
+  {"nome":"Contrafilé grelhado","qtd":1,"unidade":"filé","gramas":150,"kcal":289,"proteinaG":47.3}]}
+]`
 
 function shortDate(key: string): string {
   const d = fromDateKey(key)
@@ -54,6 +62,18 @@ function dayLabel(key: string, todayKey: string): string {
   const d = fromDateKey(key)
   const weekday = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")
   return `${weekday} ${shortDate(key)}`
+}
+
+/** Refeição do lote → registro, com id novo e snapshot dos itens. */
+function toMeal(parsed: ParsedMeal): Meal {
+  return {
+    id: newId("meal"),
+    nome: parsed.nome,
+    slot: parsed.slot,
+    itens: snapshotItems(parsed.itens),
+    hora: parsed.hora,
+    premissas: parsed.premissas,
+  }
 }
 
 function sortMeals(meals: Meal[]): Meal[] {
@@ -89,6 +109,9 @@ export default function ComidaPage() {
 
   const [jsonText, setJsonText] = useState("")
   const [fileError, setFileError] = useState<string | null>(null)
+  /** linhas do lote desmarcadas à mão e as que já foram registradas */
+  const [excludedIdx, setExcludedIdx] = useState<Set<number>>(new Set())
+  const [registeredIdx, setRegisteredIdx] = useState<Set<number>>(new Set())
 
   const [undoMeal, setUndoMeal] = useState<{ meal: Meal; date: string } | null>(null)
   const [templateToDelete, setTemplateToDelete] = useState<MealTemplate | null>(null)
@@ -106,7 +129,17 @@ export default function ComidaPage() {
   const perKg = proteinPerKg(totals.proteinaG, target)
   const proteinPct = target && target.mid > 0 ? Math.min(1, totals.proteinaG / target.mid) : 0
 
-  const parse = useMemo(() => (jsonText.trim() ? parseMealJson(jsonText) : null), [jsonText])
+  const parse = useMemo(() => (jsonText.trim() ? parseMealsJson(jsonText) : null), [jsonText])
+  const parsedMeals = useMemo(() => validEntries(parse), [parse])
+  const failedCount = (parse?.entries.length ?? 0) - parsedMeals.length
+  /** o que o botão de lote vai gravar: válidas, marcadas e ainda não gravadas */
+  const pendingBatch = useMemo(
+    () =>
+      parsedMeals.filter(
+        (entry) => !excludedIdx.has(entry.index) && !registeredIdx.has(entry.index)
+      ),
+    [parsedMeals, excludedIdx, registeredIdx]
+  )
 
   const templatesBySlot = useMemo(() => {
     const map = new Map<MealSlot, MealTemplate[]>()
@@ -132,14 +165,31 @@ export default function ComidaPage() {
     window.setTimeout(() => setFlash(null), 3000)
   }
 
+  /** Texto novo = lote novo: marcações e registros anteriores não valem mais. */
+  const replaceJsonText = (text: string) => {
+    setJsonText(text)
+    setFileError(null)
+    setExcludedIdx(new Set())
+    setRegisteredIdx(new Set())
+  }
+
   const loadJsonFile = async (file: File | undefined) => {
     if (!file) return
     setFileError(null)
     try {
-      setJsonText(await file.text())
+      replaceJsonText(await file.text())
     } catch {
       setFileError("Não foi possível ler o arquivo.")
     }
+  }
+
+  const toggleBatchRow = (index: number) => {
+    setExcludedIdx((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
   }
 
   const openTemplate = (template: MealTemplate) => {
@@ -153,18 +203,59 @@ export default function ComidaPage() {
     })
   }
 
-  const openParsedJson = () => {
-    if (!parse?.meal) return
+  /** Abre uma linha do lote no compositor para conferir antes de gravar. */
+  const openBatchEntry = (entry: ParsedMealEntry) => {
+    if (!entry.meal) return
     setPageError(null)
-    if (parse.meal.date) setSelectedDate(parse.meal.date)
     setSeed({
-      nome: parse.meal.nome,
-      slot: parse.meal.slot,
-      itens: parse.meal.itens,
-      premissas: parse.meal.premissas,
-      hora: parse.meal.hora,
+      nome: entry.meal.nome,
+      slot: entry.meal.slot,
+      itens: entry.meal.itens,
+      premissas: entry.meal.premissas,
+      hora: entry.meal.hora,
+      targetDate: entry.meal.date,
+      batchIndex: entry.index,
       origem: "json",
     })
+  }
+
+  /**
+   * Grava o lote inteiro. Sequencial de propósito: refeições do mesmo dia
+   * gravam a mesma linha de `meal_logs`, e em paralelo o servidor veria duas
+   * escritas competindo pelo mesmo upsert.
+   */
+  const handleRegisterBatch = async () => {
+    if (pendingBatch.length === 0) return
+    setPageError(null)
+    setSaving(true)
+    const gravadas: string[] = []
+    try {
+      for (const entry of pendingBatch) {
+        if (!entry.meal) continue
+        await addMeal(toMeal(entry.meal), entry.meal.date ?? dateKey)
+        setRegisteredIdx((current) => new Set(current).add(entry.index))
+        gravadas.push(entry.meal.date ?? dateKey)
+      }
+      setJsonText("")
+      setExcludedIdx(new Set())
+      setRegisteredIdx(new Set())
+      const dias = new Set(gravadas)
+      showFlash(
+        dias.size > 1
+          ? `${gravadas.length} refeições registradas em ${dias.size} dias.`
+          : `${gravadas.length} refeição(ões) registrada(s) em ${dayLabel(gravadas[0], todayKey)}.`
+      )
+    } catch (e) {
+      // o texto continua na tela e as já gravadas ficam marcadas: reenviar
+      // o lote não duplica nada
+      setPageError(
+        `${gravadas.length} de ${pendingBatch.length} registradas. ${
+          e instanceof Error ? e.message : "Erro ao registrar o lote"
+        }`
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   const openRegistered = (meal: Meal) => {
@@ -183,14 +274,22 @@ export default function ComidaPage() {
 
   const handleRegister = async (meal: Meal) => {
     const editing = seed?.origem === "registro"
-    const fromJson = seed?.origem === "json"
+    const batchIndex = seed?.batchIndex
+    const targetDate = seed?.targetDate ?? dateKey
     setSaving(true)
     try {
-      if (editing) await replaceMeal(meal, dateKey)
-      else await addMeal(meal, dateKey)
+      if (editing) await replaceMeal(meal, targetDate)
+      else await addMeal(meal, targetDate)
+      // linha do lote sai da fila em vez de limpar o textarea inteiro
+      if (batchIndex !== undefined) {
+        setRegisteredIdx((current) => new Set(current).add(batchIndex))
+      }
       setSeed(null)
-      if (fromJson) setJsonText("")
-      showFlash(editing ? "Refeição atualizada." : `${meal.nome} registrada.`)
+      showFlash(
+        editing
+          ? "Refeição atualizada."
+          : `${meal.nome} registrada em ${dayLabel(targetDate, todayKey)}.`
+      )
     } finally {
       setSaving(false)
     }
@@ -510,64 +609,140 @@ export default function ComidaPage() {
           <span className="font-mono text-[10px] uppercase text-steel-dim">Ou cole o JSON</span>
           <textarea
             value={jsonText}
-            onChange={(event) => {
-              setJsonText(event.target.value)
-              setFileError(null)
-            }}
+            onChange={(event) => replaceJsonText(event.target.value)}
             rows={7}
             placeholder={JSON_PLACEHOLDER}
             className="w-full resize-y rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none focus:border-zone"
           />
         </label>
 
-        {parse && (
-          <div className="mt-3 space-y-2">
-            {parse.meal && (
-              <div className="rounded border border-seam bg-coal/70 px-3 py-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="truncate text-xs font-semibold text-bone">{parse.meal.nome}</p>
-                  <span className="shrink-0 font-mono text-[10px] uppercase text-steel-dim">
-                    {slotLabel(parse.meal.slot)}
-                    {parse.meal.date ? ` · ${shortDate(parse.meal.date)}` : ""}
-                  </span>
-                </div>
-                <p className="mt-1 font-mono text-[11px] text-steel">
-                  <span className="text-zone">{mealTotals(parse.meal.itens).proteinaG} g prot</span>
-                  {" · "}
-                  <span className="text-gold">{mealTotals(parse.meal.itens).kcal} kcal</span>
-                  {" · "}
-                  {parse.meal.itens.length} item(ns)
-                </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-steel-dim">
-                  {parse.meal.itens.map((item) => item.nome).join(", ")}
-                </p>
-              </div>
-            )}
-
-            {parse.warnings.map((warning, index) => (
-              <p key={index} className="text-xs leading-relaxed text-gold">
-                {warning}
-              </p>
+        {parse && parse.errors.length > 0 && (
+          <div className="mt-3 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-400">
+            {parse.errors.map((message, index) => (
+              <p key={index}>{message}</p>
             ))}
+          </div>
+        )}
 
-            {parse.errors.length > 0 && (
-              <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-400">
-                {parse.errors.map((message, index) => (
-                  <p key={index}>{message}</p>
-                ))}
-              </div>
+        {parse && parse.entries.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {parse.entries.map((entry) => {
+              const registrada = registeredIdx.has(entry.index)
+              const marcada = !excludedIdx.has(entry.index) && !registrada
+              const sum = entry.meal ? mealTotals(entry.meal.itens) : null
+              return (
+                <div
+                  key={entry.index}
+                  className={cn(
+                    "rounded border px-3 py-2.5 transition-colors",
+                    !entry.meal
+                      ? "border-amber-500/30 bg-amber-500/5"
+                      : registrada
+                        ? "border-zone/30 bg-zone/5"
+                        : marcada
+                          ? "border-seam bg-coal/70"
+                          : "border-seam/50 bg-coal/30 opacity-50"
+                  )}
+                >
+                  <div className="flex items-start gap-2.5">
+                    {entry.meal && (
+                      <button
+                        type="button"
+                        onClick={() => !registrada && toggleBatchRow(entry.index)}
+                        disabled={registrada}
+                        aria-pressed={marcada}
+                        aria-label={`${marcada ? "Desmarcar" : "Marcar"} ${entry.meal.nome}`}
+                        className={cn(
+                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors",
+                          registrada
+                            ? "border-zone bg-zone text-coal"
+                            : marcada
+                              ? "border-ember bg-ember text-coal"
+                              : "border-steel-dim text-transparent"
+                        )}
+                      >
+                        <Check size={13} strokeWidth={3} />
+                      </button>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="truncate text-xs font-semibold text-bone">
+                          {entry.meal?.nome ?? `Refeição ${entry.index + 1}`}
+                        </p>
+                        <span className="shrink-0 font-mono text-[10px] uppercase text-steel-dim">
+                          {entry.meal ? slotLabel(entry.meal.slot) : "ilegível"}
+                          {entry.meal?.hora ? ` · ${entry.meal.hora}` : ""}
+                        </span>
+                      </div>
+
+                      {entry.meal && sum && (
+                        <>
+                          <p className="mt-1 font-mono text-[11px] text-steel">
+                            <span className="text-zone">{sum.proteinaG} g prot</span>
+                            {" · "}
+                            <span className="text-gold">{sum.kcal} kcal</span>
+                            {" · "}
+                            {entry.meal.itens.length} item(ns)
+                            {" · "}
+                            <span className={entry.meal.date ? "text-bone" : undefined}>
+                              {dayLabel(entry.meal.date ?? dateKey, todayKey)}
+                            </span>
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-steel-dim">
+                            {entry.meal.itens.map((item) => item.nome).join(", ")}
+                          </p>
+                        </>
+                      )}
+
+                      {entry.errors.map((message, index) => (
+                        <p key={index} className="mt-1 text-[11px] leading-relaxed text-amber-400">
+                          {message}
+                        </p>
+                      ))}
+                      {entry.warnings.map((warning, index) => (
+                        <p key={index} className="mt-1 text-[11px] leading-relaxed text-gold">
+                          {warning}
+                        </p>
+                      ))}
+                    </div>
+
+                    {entry.meal && !registrada && (
+                      <button
+                        onClick={() => openBatchEntry(entry)}
+                        className="shrink-0 rounded p-1.5 text-steel-dim transition-colors hover:text-bone"
+                        aria-label={`Conferir ${entry.meal.nome}`}
+                        title="Conferir e ajustar antes de registrar"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+
+            {failedCount > 0 && (
+              <p className="text-[11px] leading-relaxed text-amber-400">
+                {failedCount} de {parse.entries.length} não puderam ser lidas e ficam de fora
+                do lote.
+              </p>
             )}
           </div>
         )}
 
         <button
-          onClick={openParsedJson}
-          disabled={!parse?.meal}
+          onClick={handleRegisterBatch}
+          disabled={saving || pendingBatch.length === 0}
           className="mt-3 flex items-center gap-1.5 rounded bg-ember px-4 py-2 text-sm font-bold uppercase tracking-wider text-coal transition-colors hover:bg-ember-hot disabled:opacity-40"
           style={{ fontFamily: "var(--font-condensed)" }}
         >
           <Plus size={15} />
-          Conferir e registrar
+          {saving
+            ? "Registrando…"
+            : pendingBatch.length <= 1
+              ? "Registrar refeição"
+              : `Registrar ${pendingBatch.length} refeições`}
         </button>
 
         {fileError && (
@@ -577,9 +752,12 @@ export default function ComidaPage() {
         )}
 
         <p className="mt-2.5 text-[11px] leading-relaxed text-steel-dim">
-          Os macros vêm da gem e valem para a porção informada, nunca por 100 g. O app confere
-          o que é fisicamente impossível (densidade acima de óleo puro, proteína maior que a
-          massa do alimento, kcal que não fecha com 4/4/9) e avisa antes de você salvar.
+          Um lote pode cobrir vários dias: cada refeição vai para a própria data quando o JSON
+          traz uma, e para o dia selecionado quando não traz. O lápis abre a refeição para
+          conferir antes de gravar. Os macros vêm da gem e valem para a porção informada, nunca
+          por 100 g — o app confere o que é fisicamente impossível (densidade acima de óleo
+          puro, proteína maior que a massa do alimento, kcal que não fecha com 4/4/9) e avisa
+          antes de você salvar.
         </p>
       </Card>
 
