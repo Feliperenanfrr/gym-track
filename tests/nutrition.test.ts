@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   dayTotals,
+  formatMacro,
   formatQty,
+  macroCoverageNote,
   MAX_BATCH_MEALS,
   mealTotals,
   normalizeSlot,
@@ -129,6 +131,26 @@ describe("parseMealsJson — refeição única", () => {
     expect(result.warnings.join(" ")).toContain("4/4/9")
   })
 
+  it("avisa quando falta carboidrato ou gordura no item", () => {
+    const result = first(
+      '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Cuscuz","qtd":1,"unidade":"unidade","kcal":170,"proteinaG":3.5}]}'
+    )
+    expect(result.meal).not.toBeNull()
+    expect(result.warnings.join(" ")).toContain("sem carboidrato ou gordura")
+    expect(result.warnings.join(" ")).toContain("Cuscuz")
+  })
+
+  it("não avisa quando todo item traz os quatro macros", () => {
+    const result = first(
+      JSON.stringify({
+        nome: "Almoço",
+        refeicao: "almoco",
+        itens: [ARROZ, { ...FRANGO, carboG: 0, gorduraG: 4.3 }],
+      })
+    )
+    expect(result.warnings.join(" ")).not.toContain("sem carboidrato")
+  })
+
   it("avisa proteína maior que a massa do alimento", () => {
     const result = first(
       '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Whey","qtd":1,"unidade":"scoop","gramas":30,"kcal":120,"proteinaG":300}]}'
@@ -206,7 +228,47 @@ describe("aritmética das refeições", () => {
       proteinaG: 42,
       carboG: 56.2,
       gorduraG: 0.4,
+      itens: 2,
+      // FRANGO não traz carbo nem gordura: os dois totais são piso
+      itensSemCarbo: 1,
+      itensSemGordura: 1,
     })
+  })
+
+  /**
+   * Sem contar quem faltou, "carbo 56,2 g" pareceria exato quando na verdade
+   * ignora o frango inteiro. kcal e proteína não têm o risco: são obrigatórios.
+   */
+  it("conta os itens sem cada macro em vez de somar zero calado", () => {
+    const completo = mealTotals([ARROZ, { ...FRANGO, carboG: 0, gorduraG: 4.3 }])
+    expect(completo.itensSemCarbo).toBe(0)
+    expect(completo.itensSemGordura).toBe(0)
+    expect(completo.gorduraG).toBe(4.7)
+    expect(macroCoverageNote(completo)).toBeNull()
+
+    const parcial = mealTotals([ARROZ, FRANGO])
+    expect(macroCoverageNote(parcial)).toContain("1 de 2")
+    expect(macroCoverageNote(parcial)).toContain("piso")
+  })
+
+  it("marca o total como piso na formatação", () => {
+    expect(formatMacro(56.2, 0)).toBe("56,2 g")
+    expect(formatMacro(56.2, 1)).toBe("≥56,2 g")
+  })
+
+  it("propaga a cobertura para o dia inteiro", () => {
+    const log: MealLog = {
+      date: "2026-09-07",
+      completo: true,
+      refeicoes: [
+        { id: "m1", nome: "Almoço", slot: "almoco", itens: [ARROZ] },
+        { id: "m2", nome: "Jantar", slot: "jantar", itens: [FRANGO] },
+      ],
+    }
+    const totals = dayTotals(log)
+    expect(totals.itens).toBe(2)
+    expect(totals.itensSemCarbo).toBe(1)
+    expect(macroCoverageNote(totals)).not.toBeNull()
   })
 
   it("soma o dia inteiro", () => {

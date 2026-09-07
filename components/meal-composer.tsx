@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { Check, Minus, Plus, Save, Trash2, X } from "lucide-react"
 import {
+  formatMacro,
   formatQty,
+  macroCoverageNote,
   MEAL_SLOTS,
   mealTotals,
   newId,
@@ -102,6 +104,7 @@ export function MealComposer({
     [rows]
   )
   const totals = useMemo(() => mealTotals(selecionados), [selecionados])
+  const coverageNote = macroCoverageNote(totals)
 
   if (!seed) return null
 
@@ -330,8 +333,13 @@ export function MealComposer({
             </span>
           </div>
           <p className="mt-1 font-mono text-[10px] text-steel-dim">
-            {selecionados.length} item(ns) · carbo {totals.carboG} g · gordura {totals.gorduraG} g
+            {selecionados.length} item(ns) · carbo{" "}
+            {formatMacro(totals.carboG, totals.itensSemCarbo)} · gordura{" "}
+            {formatMacro(totals.gorduraG, totals.itensSemGordura)}
           </p>
+          {coverageNote && (
+            <p className="mt-1 text-[11px] leading-relaxed text-gold">{coverageNote}</p>
+          )}
 
           {error && (
             <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">

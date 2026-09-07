@@ -150,9 +150,26 @@ export interface MealTotals {
   proteinaG: number
   carboG: number
   gorduraG: number
+  /** itens somados */
+  itens: number
+  /**
+   * Itens que não trouxeram o macro. Acima de zero, o total correspondente é
+   * um PISO, não o valor — sem isso a soma parece exata e engana. kcal e
+   * proteína não têm o problema: são obrigatórios no item.
+   */
+  itensSemCarbo: number
+  itensSemGordura: number
 }
 
-const EMPTY_TOTALS: MealTotals = { kcal: 0, proteinaG: 0, carboG: 0, gorduraG: 0 }
+const EMPTY_TOTALS: MealTotals = {
+  kcal: 0,
+  proteinaG: 0,
+  carboG: 0,
+  gorduraG: 0,
+  itens: 0,
+  itensSemCarbo: 0,
+  itensSemGordura: 0,
+}
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10
@@ -164,18 +181,38 @@ export function mealTotals(itens: MealItem[]): MealTotals {
   let proteinaG = 0
   let carboG = 0
   let gorduraG = 0
+  let itensSemCarbo = 0
+  let itensSemGordura = 0
   for (const item of itens) {
     kcal += item.kcal
     proteinaG += item.proteinaG
-    carboG += item.carboG ?? 0
-    gorduraG += item.gorduraG ?? 0
+    if (item.carboG === undefined) itensSemCarbo++
+    else carboG += item.carboG
+    if (item.gorduraG === undefined) itensSemGordura++
+    else gorduraG += item.gorduraG
   }
   return {
     kcal: Math.round(kcal),
     proteinaG: round1(proteinaG),
     carboG: round1(carboG),
     gorduraG: round1(gorduraG),
+    itens: itens.length,
+    itensSemCarbo,
+    itensSemGordura,
   }
+}
+
+/** "210 g" quando a soma é completa; "≥210 g" quando algum item não trouxe. */
+export function formatMacro(grams: number, missing: number): string {
+  const value = grams.toLocaleString("pt-BR", { maximumFractionDigits: 1 })
+  return missing > 0 ? `≥${value} g` : `${value} g`
+}
+
+/** Frase única sobre a cobertura dos macros, ou null quando está completa. */
+export function macroCoverageNote(totals: MealTotals): string | null {
+  const missing = Math.max(totals.itensSemCarbo, totals.itensSemGordura)
+  if (missing === 0) return null
+  return `${missing} de ${totals.itens} item(ns) sem carboidrato ou gordura — esses dois totais são piso, não valor.`
 }
 
 export function dayTotals(log: MealLog | undefined): MealTotals {
@@ -471,6 +508,19 @@ function parseSingleMeal(
   for (let i = 0; i < rawItems.length; i++) {
     const item = parseItem(rawItems[i], i, errors, warnings)
     if (item) itens.push(item)
+  }
+
+  // Aviso agregado, não um por item: numa refeição de sete itens a lista
+  // individual viraria ruído e ninguém leria nenhuma linha.
+  const semMacro = itens.filter(
+    (item) => item.carboG === undefined || item.gorduraG === undefined
+  )
+  if (semMacro.length > 0) {
+    const nomes = semMacro.slice(0, 3).map((item) => item.nome).join(", ")
+    const resto = semMacro.length > 3 ? ` e mais ${semMacro.length - 3}` : ""
+    warnings.push(
+      `${semMacro.length} item(ns) sem carboidrato ou gordura (${nomes}${resto}) — esses macros vão subestimar no total do dia.`
+    )
   }
 
   const hora = (() => {
