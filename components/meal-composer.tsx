@@ -12,7 +12,7 @@ import {
   scaleItem,
   snapshotItems,
 } from "@/lib/nutrition"
-import { Meal, MealItem, MealSlot } from "@/lib/types"
+import { Meal, MealItem, MealSlot, MealSource } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /**
@@ -34,6 +34,8 @@ export interface MealSeed {
   targetDate?: string
   /** posição no lote importado, para a linha sair da lista ao registrar */
   batchIndex?: number
+  /** origem da estimativa, preservada no registro */
+  fonte?: MealSource
   origem: "fixa" | "json" | "registro"
 }
 
@@ -127,6 +129,7 @@ export function MealComposer({
     templateId,
     hora: seed.hora,
     premissas: seed.premissas,
+    fonte: seed.fonte,
   })
 
   const handleRegister = async () => {
@@ -336,6 +339,7 @@ export function MealComposer({
             {selecionados.length} item(ns) · carbo{" "}
             {formatMacro(totals.carboG, totals.itensSemCarbo)} · gordura{" "}
             {formatMacro(totals.gorduraG, totals.itensSemGordura)}
+            {totals.alcoolG > 0 ? ` · álcool ${totals.alcoolG} g` : ""}
           </p>
           {coverageNote && (
             <p className="mt-1 text-[11px] leading-relaxed text-gold">{coverageNote}</p>

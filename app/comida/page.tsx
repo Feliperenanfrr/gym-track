@@ -23,10 +23,12 @@ import {
 import {
   dayTotals,
   formatMacro,
+  loggingCoverage,
   macroCoverageNote,
   MEAL_SLOTS,
   mealTotals,
   newId,
+  sourceLabel,
   ParsedMeal,
   ParsedMealEntry,
   parseMealsJson,
@@ -75,6 +77,7 @@ function toMeal(parsed: ParsedMeal): Meal {
     itens: snapshotItems(parsed.itens),
     hora: parsed.hora,
     premissas: parsed.premissas,
+    fonte: parsed.fonte,
   }
 }
 
@@ -130,6 +133,10 @@ export default function ComidaPage() {
   )
   const perKg = proteinPerKg(totals.proteinaG, target)
   const coverageNote = macroCoverageNote(totals)
+  const logCoverage = useMemo(
+    () => loggingCoverage(data?.meals ?? [], dateKey),
+    [data, dateKey]
+  )
   const proteinPct = target && target.mid > 0 ? Math.min(1, totals.proteinaG / target.mid) : 0
 
   const parse = useMemo(() => (jsonText.trim() ? parseMealsJson(jsonText) : null), [jsonText])
@@ -216,6 +223,7 @@ export default function ComidaPage() {
       itens: entry.meal.itens,
       premissas: entry.meal.premissas,
       hora: entry.meal.hora,
+      fonte: entry.meal.fonte,
       targetDate: entry.meal.date,
       batchIndex: entry.index,
       origem: "json",
@@ -271,6 +279,7 @@ export default function ComidaPage() {
       premissas: meal.premissas,
       templateId: meal.templateId,
       hora: meal.hora,
+      fonte: meal.fonte,
       origem: "registro",
     })
   }
@@ -419,7 +428,7 @@ export default function ComidaPage() {
           detail={`carbo ${formatMacro(totals.carboG, totals.itensSemCarbo)} · gordura ${formatMacro(
             totals.gorduraG,
             totals.itensSemGordura
-          )}`}
+          )}${totals.alcoolG > 0 ? ` · álcool ${totals.alcoolG} g` : ""}`}
         />
       </div>
 
@@ -491,10 +500,36 @@ export default function ComidaPage() {
                       <span className="text-gold">{mealSum.kcal} kcal</span>
                       {" · "}
                       {meal.itens.length} item(ns)
+                      {mealSum.alcoolG > 0 ? ` · ${mealSum.alcoolG} g álcool` : ""}
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-steel-dim">
                       {meal.itens.map((item) => item.nome).join(", ")}
                     </p>
+                    {/* procedência: onde mora a incerteza de uma estimativa */}
+                    {(meal.fonte || meal.premissas?.length) && (
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {meal.fonte && (
+                          <span
+                            className={cn(
+                              "rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase",
+                              meal.fonte === "foto"
+                                ? "border-gold/30 bg-gold/5 text-gold"
+                                : "border-seam text-steel-dim"
+                            )}
+                          >
+                            {sourceLabel(meal.fonte)}
+                          </span>
+                        )}
+                        {meal.premissas && meal.premissas.length > 0 && (
+                          <span
+                            className="rounded-full border border-seam px-1.5 py-0.5 font-mono text-[9px] uppercase text-steel-dim"
+                            title={meal.premissas.join(" · ")}
+                          >
+                            {meal.premissas.length} suposição(ões)
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => openRegistered(meal)}
@@ -541,6 +576,29 @@ export default function ComidaPage() {
             </span>
           </span>
         </button>
+
+        {/* Indicador antecedente: sem dias completos, não há o que reconciliar
+            contra a ingestão derivada da balança. */}
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-coal">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all",
+                logCoverage.completos >= logCoverage.windowDays / 2 ? "bg-zone" : "bg-gold"
+              )}
+              style={{
+                width: `${Math.round((logCoverage.completos / logCoverage.windowDays) * 100)}%`,
+              }}
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[10px] text-steel-dim">
+            <span className="text-bone">{logCoverage.completos}</span> de{" "}
+            {logCoverage.windowDays} dias completos
+            {logCoverage.comRegistro > logCoverage.completos
+              ? ` · ${logCoverage.comRegistro} com registro`
+              : ""}
+          </span>
+        </div>
       </Card>
 
       {/* refeições fixas: o caminho de dois toques */}
@@ -684,6 +742,12 @@ export default function ComidaPage() {
                         <span className="shrink-0 font-mono text-[10px] uppercase text-steel-dim">
                           {entry.meal ? slotLabel(entry.meal.slot) : "ilegível"}
                           {entry.meal?.hora ? ` · ${entry.meal.hora}` : ""}
+                          {entry.meal?.fonte ? (
+                            <span className={entry.meal.fonte === "foto" ? "text-gold" : undefined}>
+                              {" · "}
+                              {sourceLabel(entry.meal.fonte)}
+                            </span>
+                          ) : null}
                         </span>
                       </div>
 

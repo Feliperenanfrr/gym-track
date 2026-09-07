@@ -217,6 +217,14 @@ export interface SleepLog {
 export type MealSlot = "cafe" | "almoco" | "lanche" | "jantar" | "ceia"
 
 /**
+ * De onde veio a estimativa. Barras de erro muito diferentes: rótulo erra
+ * pouco, foto erra na porção. Guardar isso é o que permite perguntar, na
+ * reconciliação, se o desvio está concentrado nos dias de foto — estimativa
+ * ruim de porção e refeição esquecida pedem correções opostas.
+ */
+export type MealSource = "foto" | "texto" | "rotulo"
+
+/**
  * Um alimento dentro de uma refeição. kcal e macros são SEMPRE do total de
  * `qtd × unidade` — nunca por 100 g. É a regra que a gem do Gemini precisa
  * respeitar e o erro mais silencioso possível se ela escorregar.
@@ -232,6 +240,13 @@ export interface MealItem {
   proteinaG: number
   carboG?: number
   gorduraG?: number
+  /**
+   * Álcool em gramas. Vale 7 kcal/g e não cabe em 4/4/9 — sem este campo a
+   * checagem de coerência acusava toda bebida alcoólica de estar errada.
+   * Ausente significa zero de verdade, não "não sei": quase nenhum alimento
+   * tem álcool, ao contrário de carbo e gordura.
+   */
+  alcoolG?: number
 }
 
 /**
@@ -265,6 +280,8 @@ export interface Meal {
   hora?: string
   /** suposições que a gem assumiu ao estimar (auditoria do número) */
   premissas?: string[]
+  /** origem da estimativa; ausente em refeição vinda de molde curado */
+  fonte?: MealSource
 }
 
 export interface MealLog {
