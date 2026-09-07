@@ -32,7 +32,7 @@ function workout(opts: Partial<WorkoutLog> & { date: string }): WorkoutLog {
   }
 }
 
-const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
+const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [], meals: [] }
 
 /* ---------------------------------------------------------------- */
 /* Hidratação                                                         */

@@ -210,9 +210,78 @@ export interface SleepLog {
   durationMin: number
 }
 
+/* ------------------------------------------------------------------ */
+/* Alimentação                                                          */
+/* ------------------------------------------------------------------ */
+
+export type MealSlot = "cafe" | "almoco" | "lanche" | "jantar" | "ceia"
+
+/**
+ * Um alimento dentro de uma refeição. kcal e macros são SEMPRE do total de
+ * `qtd × unidade` — nunca por 100 g. É a regra que a gem do Gemini precisa
+ * respeitar e o erro mais silencioso possível se ela escorregar.
+ */
+export interface MealItem {
+  nome: string
+  qtd: number
+  /** concha, colher, fatia, filé, unidade, copo, scoop, pote, pão, g, ml */
+  unidade: string
+  /** massa total estimada dessa quantidade; opcional */
+  gramas?: number
+  kcal: number
+  proteinaG: number
+  carboG?: number
+  gorduraG?: number
+}
+
+/**
+ * Refeição fixa — o molde do que você come quase todo dia. Mesma separação
+ * de `workout_templates`: editar aqui só afeta os PRÓXIMOS registros.
+ */
+export interface MealTemplate {
+  /** slug estável: "cafe-cuscuz-ovo" */
+  id: string
+  nome: string
+  slot: MealSlot
+  itens: MealItem[]
+  /** ordem dos chips na tela */
+  ordem: number
+}
+
+/**
+ * Refeição REGISTRADA num dia. `itens` é um snapshot completo, copiado no
+ * momento do salvamento: se a refeição fixa mudar depois (gem reimportada,
+ * correção de macro), este registro continua exatamente como foi comido.
+ * `templateId` é rastreio de origem — nunca é usado para recalcular nada.
+ */
+export interface Meal {
+  /** id único dentro do dia */
+  id: string
+  nome: string
+  slot: MealSlot
+  itens: MealItem[]
+  templateId?: string
+  /** HH:mm */
+  hora?: string
+  /** suposições que a gem assumiu ao estimar (auditoria do número) */
+  premissas?: string[]
+}
+
+export interface MealLog {
+  /** yyyy-MM-dd */
+  date: string
+  refeicoes: Meal[]
+  /**
+   * "Registrei tudo hoje". Só dias completos entram em média de ingestão —
+   * um dia com café salvo e jantar esquecido não pode virar "comeu pouco".
+   */
+  completo: boolean
+}
+
 export interface GymData {
   workouts: WorkoutLog[]
   body: BodyLog[]
   hydration: HydrationLog[]
   sleep: SleepLog[]
+  meals: MealLog[]
 }

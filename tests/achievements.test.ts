@@ -3,7 +3,7 @@ import { computeAchievements } from "../lib/achievements"
 import { ENGINE_WEEKLY_VOLUME } from "../lib/engine-plan"
 import { GymData, SessionId, WorkoutLog } from "../lib/types"
 
-const EMPTY_DATA: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
+const EMPTY_DATA: GymData = { workouts: [], body: [], hydration: [], sleep: [], meals: [] }
 const CYCLE_END = new Date(2026, 10, 22)
 
 function cycleDate(week: number, day: number): string {

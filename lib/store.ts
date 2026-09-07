@@ -17,6 +17,8 @@ import {
   ExerciseLog,
   GymData,
   HydrationLog,
+  Meal,
+  MealLog,
   SessionId,
   SleepLog,
   WorkoutLog,
@@ -62,6 +64,28 @@ interface SleepRow {
   slept_at: string
   woke_at: string
   duration_min: number
+}
+
+interface MealRow {
+  date: string
+  refeicoes: Meal[] | null
+  completo: boolean | null
+}
+
+function rowToMeal(r: MealRow): MealLog {
+  return {
+    date: r.date,
+    refeicoes: Array.isArray(r.refeicoes) ? r.refeicoes : [],
+    completo: r.completo === true,
+  }
+}
+
+const EMPTY_DATA: GymData = {
+  workouts: [],
+  body: [],
+  hydration: [],
+  sleep: [],
+  meals: [],
 }
 
 function rowToWorkout(r: WorkoutRow): WorkoutLog {
@@ -123,6 +147,10 @@ function rowToSleep(r: SleepRow): SleepLog {
   }
 }
 
+function emptyMealDay(date: string): MealLog {
+  return { date, refeicoes: [], completo: false }
+}
+
 function isOffline() {
   return typeof navigator !== "undefined" && navigator.onLine === false
 }
@@ -147,6 +175,8 @@ export function useGymData() {
   const dataRef = useRef<GymData | null>(null)
   /** total de água por dia, espelho síncrono do estado (ver addWater) */
   const waterRef = useRef<Record<string, number>>({})
+  /** dia de alimentação, espelho síncrono do estado (ver writeMealDay) */
+  const mealsRef = useRef<Record<string, MealLog>>({})
 
   useEffect(() => {
     dataRef.current = data
@@ -154,6 +184,9 @@ export function useGymData() {
     const map: Record<string, number> = {}
     for (const h of data.hydration) map[h.date] = h.ml
     waterRef.current = map
+    const meals: Record<string, MealLog> = {}
+    for (const day of data.meals) meals[day.date] = day
+    mealsRef.current = meals
   }, [data])
 
   const refreshPending = useCallback(() => {
@@ -171,11 +204,12 @@ export function useGymData() {
     let cancelled = false
     async function load(recovered = false) {
       const supabase = getSupabaseBrowserClient()
-      const [w, b, h, s] = await Promise.all([
+      const [w, b, h, s, m] = await Promise.all([
         supabase.from("workouts").select("*").order("date", { ascending: true }),
         supabase.from("body_logs").select("*").order("date", { ascending: true }),
         supabase.from("hydration_logs").select("*").order("date", { ascending: true }),
         supabase.from("sleep_logs").select("*").order("date", { ascending: true }),
+        supabase.from("meal_logs").select("*").order("date", { ascending: true }),
       ])
       if (cancelled) return
       if (w.error || b.error) {
@@ -194,6 +228,8 @@ export function useGymData() {
       if (h.error) console.warn("hydration_logs indisponível:", h.error.message)
       // sono também é não-fatal até a migration 0003 rodar no Supabase
       if (s.error) console.warn("sleep_logs indisponível:", s.error.message)
+      // alimentação idem, até a migration 0008 rodar
+      if (m.error) console.warn("meal_logs indisponível:", m.error.message)
       setData({
         workouts: ((w.data ?? []) as WorkoutRow[]).map(rowToWorkout),
         body: ((b.data ?? []) as BodyRow[]).map(rowToBody),
@@ -202,6 +238,7 @@ export function useGymData() {
           ml: Number(r.ml),
         })),
         sleep: ((s.data ?? []) as SleepRow[]).map(rowToSleep),
+        meals: ((m.data ?? []) as MealRow[]).map(rowToMeal),
       })
     }
     load()
@@ -222,7 +259,7 @@ export function useGymData() {
 
     // 1) atualização otimista na tela
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
+      const base = prev ?? EMPTY_DATA
       const workouts = [
         ...base.workouts.filter((w) => !sameWorkoutSlot(w, log)),
         log,
@@ -302,7 +339,7 @@ export function useGymData() {
 
   const addBodyLog = useCallback(async (log: BodyLog) => {
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
+      const base = prev ?? EMPTY_DATA
       // merge: um salvamento só de peso não apaga a bioimpedância do mesmo dia
       const existing = base.body.find((b) => b.date === log.date)
       const merged = { ...existing, ...log }
@@ -381,7 +418,7 @@ export function useGymData() {
     const total = Math.max(0, current + deltaMl)
     waterRef.current[day] = total
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
+      const base = prev ?? EMPTY_DATA
       const hydration = [
         ...base.hydration.filter((x) => x.date !== day),
         { date: day, ml: total },
@@ -423,7 +460,7 @@ export function useGymData() {
 
   const addSleepLog = useCallback(async (log: SleepLog) => {
     setData((prev) => {
-      const base = prev ?? { workouts: [], body: [], hydration: [], sleep: [] }
+      const base = prev ?? EMPTY_DATA
       const sleep = [...base.sleep.filter((s) => s.date !== log.date), log].sort((a, b) =>
         a.date.localeCompare(b.date)
       )
@@ -572,6 +609,122 @@ export function useGymData() {
     }
   }, [])
 
+  /**
+   * Grava o DIA INTEIRO de alimentação. O array completo vai no payload —
+   * nunca um delta — porque a fila offline colapsa por chave lógica (a data):
+   * a última gravação do dia precisa bastar sozinha.
+   *
+   * O dia corrente sai de `mealsRef`, espelho síncrono do estado. Sem ele,
+   * registrar o almoço e o suco em sequência rápida leria o mesmo estado React
+   * ainda não re-renderizado e o segundo salvamento apagaria o primeiro —
+   * exatamente o problema que a hidratação já resolveu com `waterRef`.
+   */
+  const writeMealDay = useCallback(async (next: MealLog) => {
+    const previous = mealsRef.current[next.date] ?? null
+    mealsRef.current[next.date] = next
+
+    setData((prev) => {
+      const base = prev ?? EMPTY_DATA
+      const meals = [...base.meals.filter((d) => d.date !== next.date), next].sort(
+        (a, b) => a.date.localeCompare(b.date)
+      )
+      return { ...base, meals }
+    })
+
+    const payload = {
+      date: next.date,
+      refeicoes: next.refeicoes,
+      completo: next.completo,
+    }
+    const enqueueIt = () => {
+      enqueue({
+        table: "meal_logs",
+        onConflict: "user_id,date",
+        logicalKey: next.date,
+        payload,
+      })
+      setPendingCount(queueCount())
+    }
+
+    if (isOffline()) {
+      enqueueIt()
+      return
+    }
+    try {
+      const supabase = getSupabaseBrowserClient()
+      await runWithFreshSession(supabase, async () => {
+        const { error } = await supabase
+          .from("meal_logs")
+          .upsert(payload, { onConflict: "user_id,date" })
+        if (error) throw new Error(error.message)
+      })
+    } catch (e) {
+      if (isNetworkError(e)) {
+        enqueueIt()
+        return
+      }
+      // erro de API/RLS: desfaz o otimista para a tela não mentir
+      if (previous) mealsRef.current[next.date] = previous
+      else delete mealsRef.current[next.date]
+      setData((prev) => {
+        if (!prev) return prev
+        const rest = prev.meals.filter((d) => d.date !== next.date)
+        return {
+          ...prev,
+          meals: previous
+            ? [...rest, previous].sort((a, b) => a.date.localeCompare(b.date))
+            : rest,
+        }
+      })
+      throw e
+    }
+  }, [])
+
+  /** Registra uma refeição no dia (snapshot já montado pela tela). */
+  const addMeal = useCallback(
+    async (meal: Meal, date?: string) => {
+      const day = date ?? toOperationalDateKey(new Date())
+      const current = mealsRef.current[day] ?? emptyMealDay(day)
+      await writeMealDay({ ...current, refeicoes: [...current.refeicoes, meal] })
+    },
+    [writeMealDay]
+  )
+
+  /** Substitui uma refeição já registrada (edição), casando por id. */
+  const replaceMeal = useCallback(
+    async (meal: Meal, date: string) => {
+      const current = mealsRef.current[date] ?? emptyMealDay(date)
+      const exists = current.refeicoes.some((m) => m.id === meal.id)
+      await writeMealDay({
+        ...current,
+        refeicoes: exists
+          ? current.refeicoes.map((m) => (m.id === meal.id ? meal : m))
+          : [...current.refeicoes, meal],
+      })
+    },
+    [writeMealDay]
+  )
+
+  const removeMeal = useCallback(
+    async (mealId: string, date: string) => {
+      const current = mealsRef.current[date]
+      if (!current) return
+      await writeMealDay({
+        ...current,
+        refeicoes: current.refeicoes.filter((m) => m.id !== mealId),
+      })
+    },
+    [writeMealDay]
+  )
+
+  const setMealDayComplete = useCallback(
+    async (date: string, completo: boolean) => {
+      const current = mealsRef.current[date] ?? emptyMealDay(date)
+      await writeMealDay({ ...current, completo })
+    },
+    [writeMealDay]
+  )
+
   const signOut = useCallback(async () => {
     const supabase = getSupabaseBrowserClient()
     await supabase.auth.signOut()
@@ -633,6 +786,10 @@ export function useGymData() {
     addBodyLog,
     addWater,
     addSleepLog,
+    addMeal,
+    replaceMeal,
+    removeMeal,
+    setMealDayComplete,
     deleteWorkout,
     deleteBodyLog,
     deleteSleepLog,
