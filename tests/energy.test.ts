@@ -33,7 +33,7 @@ function workout(opts: Partial<WorkoutLog> & { date: string }): WorkoutLog {
 const bike60 = (date: string) =>
   workout({ date, cardios: [{ minutes: 60, mode: "Bike", purpose: "zone2" }] })
 
-const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
+const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [], meals: [] }
 
 /**
  * Quatro pesagens semanais em queda linear, com composição:

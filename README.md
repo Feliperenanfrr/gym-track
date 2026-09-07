@@ -27,14 +27,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos e balanço energético (ingestão estimada × variação de massa) |
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, sugestão de carga no passo do aparelho, reabertura do registro do dia, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
+| **Comida** | Refeições fixas em dois toques, refeição diferente por JSON, proteína do dia contra o alvo por massa magra e a marca de "registrei tudo" |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
 | **Relatórios** | Três documentos em PDF: fechamento de bloco, dossiê para o preparador físico e acompanhamento nutricional |
 
 ## Dados & Auth
 
 - **Supabase** (Postgres + Auth). Tabelas `workouts`, `workout_templates`,
-  `body_logs`, `hydration_logs` e `sleep_logs`, todas com RLS por usuário
-  (`auth.uid() = user_id`) e upsert por dia/sessão.
+  `body_logs`, `hydration_logs`, `sleep_logs`, `meal_templates` e `meal_logs`,
+  todas com RLS por usuário (`auth.uid() = user_id`) e upsert por dia/sessão.
 - Login por e-mail/senha; **cadastro desabilitado** no projeto (acesso restrito).
 - O middleware redireciona qualquer rota para `/login` sem sessão.
 - `workouts.entries` é JSONB com as séries (`[{ exerciseId, sets: [{weight, reps}] }]`);
@@ -128,6 +129,60 @@ próprio e gráficos em SVG escrito à mão, porque em impressão o `ResponsiveC
 do recharts mede antes do navegador refazer o layout, e tooltip e animação não
 têm o que fazer num papel.
 
+## Comida
+
+Registro alimentar sem contar caloria a caloria. Três entradas:
+
+- **Refeição fixa** — o que você come quase todo dia (café de cuscuz com ovo,
+  almoço de casa, o copo de 400 ml de suco) fica permanentemente na tela.
+  Escolher e salvar são dois toques.
+- **Fixa com variação** — a refeição abre com todos os itens marcados em 1×.
+  Desmarque o arroz, troque porco por frango (deixe os dois no molde e
+  desmarque um), dobre a quantidade do feijão. Só o que mudou é ajustado.
+- **Refeição diferente** — gere o JSON numa gem do Gemini e cole na tela. O app
+  só valida e soma; nenhuma interpretação de texto livre roda aqui, no mesmo
+  espírito do CSV da balança.
+
+**A regra do snapshot**: `meal_logs.refeicoes` guarda uma cópia completa dos
+itens comidos. Corrigir uma refeição fixa depois — reimportando pela gem ou
+ajustando um macro — vale só para os próximos dias; nenhum registro anterior é
+reescrito. É a mesma separação de `workout_templates`.
+
+O alvo do dia é **proteína**, não caloria: a caloria a balança já estima pelo
+balanço energético, mas proteína o app não tem como inferir. Com bioimpedância
+na base, o alvo sai de 2,0–2,4 g/kg de **massa magra** — sobre o peso total, a
+30% de gordura, o número inflaria. Sem composição, cai para 1,6–1,8 g/kg de peso.
+
+A marca **"registrei tudo neste dia"** existe para as análises: um dia com café
+salvo e jantar esquecido não pode entrar na média como "comeu 900 kcal".
+
+### O JSON da refeição
+
+kcal e macros são **sempre do total de `qtd × unidade`**, nunca por 100 g — é o
+erro mais provável e o mais silencioso. O parser confere o que é fisicamente
+impossível (densidade acima de óleo puro, proteína maior que a massa do
+alimento, kcal que não fecha com 4/4/9) e avisa antes de salvar.
+
+```json
+{
+  "nome": "Almoço no restaurante",
+  "refeicao": "almoco",
+  "data": "07/09/2026",
+  "hora": "12:40",
+  "itens": [
+    { "nome": "Arroz branco cozido", "qtd": 2, "unidade": "concha",
+      "gramas": 200, "kcal": 257, "proteinaG": 5.0, "carboG": 56.2, "gorduraG": 0.4 }
+  ],
+  "premissas": ["Concha de arroz estimada em 100 g"]
+}
+```
+
+Obrigatórios por item: `nome`, `qtd`, `unidade`, `kcal`, `proteinaG` — o resto é
+omitido quando não se sabe, nunca preenchido com `null` ou zero. Unidades
+aceitas: g, ml, unidade, fatia, concha, colher, copo, filé, scoop, pote, pão.
+`refeicao` ausente é deduzida pela hora; cercas de código e texto solto em volta
+do objeto são tolerados.
+
 ## Progressão de carga (o app sugere, você decide)
 
 - O campo de carga vem com **o que você fez da última vez naquele exercício**, em
@@ -166,12 +221,14 @@ Barlow / JetBrains Mono via Fontsource.
 ## Estrutura
 
 ```
-app/            páginas (painel, treino, plano, medidas, login)
+app/            páginas (painel, treino, plano, comida, medidas, login)
 components/     bottom-nav, cards/ui, gráficos recharts
 lib/plan.ts     o plano do PDF como dados tipados
 lib/bjj-plan.ts o bloco de preparação física para o jiu-jitsu
 lib/legacy-plan.ts  protocolos aposentados, só para o histórico
 lib/energy.ts   balanço energético: tendência de massa, TDEE e ingestão estimada
+lib/nutrition.ts  parser do JSON da refeição, totais e alvo de proteína
+lib/use-meal-templates.ts  refeições fixas (moldes), separadas dos registros
 lib/reports.ts  montagem dos relatórios (períodos, antes × depois, séries semanais)
 components/report/  folhas A4, kit de gráficos SVG e primitivas de documento
 lib/progression.ts  sugestão de carga e passo real de cada aparelho

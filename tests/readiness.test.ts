@@ -27,7 +27,7 @@ function water(count: number, ml: number): HydrationLog[] {
 }
 
 function data(partial: Partial<GymData> = {}): GymData {
-  return { workouts: [], body: [], hydration: [], sleep: [], ...partial }
+  return { workouts: [], body: [], hydration: [], sleep: [], meals: [], ...partial }
 }
 
 const GOAL_ML = 3300 // waterGoalMl sem pesagem registrada

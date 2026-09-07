@@ -9,7 +9,7 @@ import { isAuthError } from "./supabase/session"
  */
 export interface PendingMutation {
   action?: "upsert" | "delete"
-  table: "workouts" | "body_logs" | "hydration_logs" | "sleep_logs"
+  table: "workouts" | "body_logs" | "hydration_logs" | "sleep_logs" | "meal_logs"
   onConflict: string
   /** chave lógica para deduplicar (date+session ou date) */
   logicalKey: string

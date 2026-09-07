@@ -43,7 +43,7 @@ const period: ReportPeriod = {
   to: dayKey(0),
 }
 
-const empty: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
+const empty: GymData = { workouts: [], body: [], hydration: [], sleep: [], meals: [] }
 
 function full(): GymData {
   const workouts: WorkoutLog[] = []
@@ -87,6 +87,7 @@ function full(): GymData {
       { date: dayKey(-2), sleptAt: "23:30", wokeAt: "07:00", durationMin: 450 },
       { date: dayKey(-1), sleptAt: "00:10", wokeAt: "06:20", durationMin: 370 },
     ],
+    meals: [],
   }
 }
 

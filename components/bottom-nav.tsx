@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ClipboardList, Dumbbell, Flame, Ruler } from "lucide-react"
+import { ClipboardList, Dumbbell, Flame, Ruler, UtensilsCrossed } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const ITEMS = [
   { href: "/", label: "HOJE", icon: Flame },
   { href: "/treino", label: "TREINO", icon: Dumbbell },
   { href: "/plano", label: "PLANO", icon: ClipboardList },
+  { href: "/comida", label: "COMIDA", icon: UtensilsCrossed },
   { href: "/medidas", label: "MEDIDAS", icon: Ruler },
 ]
 

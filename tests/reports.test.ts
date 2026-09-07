@@ -49,7 +49,7 @@ function lift(
   }
 }
 
-const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [] }
+const emptyData: GymData = { workouts: [], body: [], hydration: [], sleep: [], meals: [] }
 
 /* ---------------------------------------------------------------- */
 /* Período                                                            */
@@ -377,6 +377,7 @@ function fullData(): GymData {
       { date: dayKey(-1), ml: 3400 },
     ],
     sleep: [{ date: dayKey(-1), sleptAt: "23:30", wokeAt: "07:00", durationMin: 450 }],
+    meals: [],
   }
 }
 

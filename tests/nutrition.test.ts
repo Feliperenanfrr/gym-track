@@ -1,0 +1,255 @@
+import { describe, expect, it } from "vitest"
+import {
+  dayTotals,
+  formatQty,
+  mealTotals,
+  normalizeSlot,
+  normalizeUnit,
+  parseMealJson,
+  proteinPerKg,
+  proteinTarget,
+  scaleItem,
+  slotFromTime,
+  slugify,
+  snapshotItems,
+  templateToMeal,
+} from "../lib/nutrition"
+import { BodyLog, MealItem, MealLog, MealTemplate } from "../lib/types"
+
+const ARROZ: MealItem = {
+  nome: "Arroz branco cozido",
+  qtd: 2,
+  unidade: "concha",
+  gramas: 200,
+  kcal: 257,
+  proteinaG: 5,
+  carboG: 56.2,
+  gorduraG: 0.4,
+}
+
+const FRANGO: MealItem = {
+  nome: "Filé de frango grelhado",
+  qtd: 1,
+  unidade: "filé",
+  gramas: 120,
+  kcal: 198,
+  proteinaG: 37,
+}
+
+/** o almoço de casa: arroz, frango — o caso que o app registra todo dia */
+const ALMOCO_JSON = JSON.stringify({
+  nome: "Almoço de casa",
+  refeicao: "almoco",
+  data: "07/09/2026",
+  hora: "12:40",
+  itens: [ARROZ, FRANGO],
+  premissas: ["Concha de arroz estimada em 100 g"],
+})
+
+describe("parseMealJson", () => {
+  it("lê o JSON limpo da gem", () => {
+    const result = parseMealJson(ALMOCO_JSON)
+    expect(result.errors).toEqual([])
+    expect(result.meal?.nome).toBe("Almoço de casa")
+    expect(result.meal?.slot).toBe("almoco")
+    expect(result.meal?.date).toBe("2026-09-07")
+    expect(result.meal?.hora).toBe("12:40")
+    expect(result.meal?.itens).toHaveLength(2)
+    expect(result.meal?.premissas).toEqual(["Concha de arroz estimada em 100 g"])
+  })
+
+  it("tolera cercas de código e texto solto em volta", () => {
+    const sujo = "Claro! Aqui está:\n```json\n" + ALMOCO_JSON + "\n```\nQualquer dúvida, avise."
+    const result = parseMealJson(sujo)
+    expect(result.errors).toEqual([])
+    expect(result.meal?.itens).toHaveLength(2)
+  })
+
+  it("aceita número em formato BR dentro de string", () => {
+    const result = parseMealJson(
+      '{"nome":"Suco","refeicao":"almoco","itens":[{"nome":"Suco de laranja","qtd":"1","unidade":"copo","kcal":"180","proteinaG":"2,4"}]}'
+    )
+    expect(result.errors).toEqual([])
+    expect(result.meal?.itens[0].proteinaG).toBe(2.4)
+    expect(result.meal?.itens[0].kcal).toBe(180)
+  })
+
+  it("deduz a refeição pela hora quando o campo falta", () => {
+    const result = parseMealJson(
+      '{"nome":"Cuscuz com ovo","hora":"07:10","itens":[{"nome":"Cuscuz","qtd":1,"unidade":"unidade","kcal":180,"proteinaG":4}]}'
+    )
+    expect(result.meal?.slot).toBe("cafe")
+    expect(result.warnings.join(" ")).toContain("deduzida")
+  })
+
+  it("bloqueia item sem campo obrigatório", () => {
+    const result = parseMealJson(
+      '{"nome":"X","refeicao":"jantar","itens":[{"nome":"Pão","qtd":1,"unidade":"fatia"}]}'
+    )
+    expect(result.meal).toBeNull()
+    expect(result.errors.join(" ")).toContain("kcal")
+  })
+
+  it("recusa mais de uma refeição por vez", () => {
+    const result = parseMealJson(`[${ALMOCO_JSON},${ALMOCO_JSON}]`)
+    expect(result.meal).toBeNull()
+    expect(result.errors[0]).toContain("2 refeições")
+  })
+
+  it("recusa JSON inválido sem explodir", () => {
+    const result = parseMealJson("{isso não é json")
+    expect(result.meal).toBeNull()
+    expect(result.errors).toHaveLength(1)
+  })
+
+  /* O erro mais provável da gem: devolver macros por 100 g em vez da porção. */
+  it("avisa quando a densidade é impossível", () => {
+    const result = parseMealJson(
+      '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Feijão","qtd":1,"unidade":"concha","gramas":90,"kcal":900,"proteinaG":5}]}'
+    )
+    expect(result.meal).not.toBeNull()
+    expect(result.warnings.join(" ")).toContain("óleo puro")
+  })
+
+  it("avisa quando as kcal não fecham com 4/4/9", () => {
+    const result = parseMealJson(
+      '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Macarrão","qtd":1,"unidade":"concha","kcal":100,"proteinaG":10,"carboG":50,"gorduraG":5}]}'
+    )
+    expect(result.meal).not.toBeNull()
+    expect(result.warnings.join(" ")).toContain("4/4/9")
+  })
+
+  it("avisa proteína maior que a massa do alimento", () => {
+    const result = parseMealJson(
+      '{"nome":"X","refeicao":"almoco","itens":[{"nome":"Whey","qtd":1,"unidade":"scoop","gramas":30,"kcal":120,"proteinaG":300}]}'
+    )
+    expect(result.warnings.join(" ")).toContain("impossível")
+  })
+})
+
+describe("aritmética das refeições", () => {
+  it("soma os itens e arredonda", () => {
+    expect(mealTotals([ARROZ, FRANGO])).toEqual({
+      kcal: 455,
+      proteinaG: 42,
+      carboG: 56.2,
+      gorduraG: 0.4,
+    })
+  })
+
+  it("soma o dia inteiro", () => {
+    const log: MealLog = {
+      date: "2026-09-07",
+      completo: true,
+      refeicoes: [
+        { id: "m1", nome: "Almoço", slot: "almoco", itens: [ARROZ] },
+        { id: "m2", nome: "Jantar", slot: "jantar", itens: [FRANGO] },
+      ],
+    }
+    expect(dayTotals(log).kcal).toBe(455)
+    expect(dayTotals(undefined).kcal).toBe(0)
+  })
+
+  it("reescala proporcionalmente e não inventa campos ausentes", () => {
+    const tresConchas = scaleItem(ARROZ, 3)
+    expect(tresConchas.qtd).toBe(3)
+    expect(tresConchas.kcal).toBe(386)
+    expect(tresConchas.proteinaG).toBe(7.5)
+    expect(tresConchas.gramas).toBe(300)
+
+    const doisFiles = scaleItem(FRANGO, 2)
+    expect(doisFiles.kcal).toBe(396)
+    expect("carboG" in doisFiles).toBe(false)
+  })
+
+  it("formata a quantidade em português", () => {
+    expect(formatQty(ARROZ)).toBe("2 conchas")
+    expect(formatQty(FRANGO)).toBe("1 filé")
+    expect(formatQty({ ...ARROZ, qtd: 150, unidade: "g" })).toBe("150 g")
+  })
+})
+
+describe("normalização", () => {
+  it("reconhece apelidos de refeição", () => {
+    expect(normalizeSlot("Café da manhã")).toBe("cafe")
+    expect(normalizeSlot("JANTA")).toBe("jantar")
+    expect(normalizeSlot("brunch")).toBeNull()
+  })
+
+  it("reconhece unidades no plural e variações", () => {
+    expect(normalizeUnit("conchas")).toBe("concha")
+    expect(normalizeUnit("colher de sopa")).toBe("colher")
+    expect(normalizeUnit("gramas")).toBe("g")
+    expect(normalizeUnit("filés")).toBe("filé")
+    expect(normalizeUnit("punhado")).toBeNull()
+  })
+
+  it("classifica o horário", () => {
+    expect(slotFromTime("07:10")).toBe("cafe")
+    expect(slotFromTime("12:40")).toBe("almoco")
+    expect(slotFromTime("23:10")).toBe("ceia")
+    expect(slotFromTime(undefined)).toBeNull()
+  })
+
+  it("gera slug estável", () => {
+    expect(slugify("Café — cuscuz com ovo")).toBe("cafe-cuscuz-com-ovo")
+    expect(slugify("!!!")).toBe("refeicao")
+  })
+})
+
+describe("alvo de proteína", () => {
+  const comBio: BodyLog[] = [
+    { date: "2026-09-01", weightKg: 94, fatMassKg: 28.2 },
+    { date: "2026-09-05", weightKg: 93.5 },
+  ]
+
+  it("usa massa magra quando há bioimpedância", () => {
+    const target = proteinTarget(comBio, "2026-09-07")
+    expect(target?.basis).toBe("lean")
+    expect(target?.referenceKg).toBe(65.8)
+    expect(target?.min).toBe(132)
+    expect(target?.max).toBe(158)
+    expect(proteinPerKg(132, target)).toBe(2.01)
+  })
+
+  it("cai para peso corporal sem composição", () => {
+    const target = proteinTarget([{ date: "2026-09-01", weightKg: 90 }], "2026-09-07")
+    expect(target?.basis).toBe("weight")
+    expect(target?.min).toBe(144)
+    expect(target?.max).toBe(162)
+  })
+
+  it("devolve null sem nenhuma pesagem", () => {
+    expect(proteinTarget([], "2026-09-07")).toBeNull()
+  })
+})
+
+describe("snapshot da refeição registrada", () => {
+  const template: MealTemplate = {
+    id: "almoco-de-casa",
+    nome: "Almoço de casa",
+    slot: "almoco",
+    ordem: 0,
+    itens: [ARROZ, FRANGO],
+  }
+
+  it("copia os itens em vez de referenciar o molde", () => {
+    const copia = snapshotItems(template.itens)
+    copia[0].kcal = 999
+    expect(template.itens[0].kcal).toBe(257)
+  })
+
+  /**
+   * A regra que o usuário pediu: reimportar a refeição fixa pela gem não pode
+   * mexer em nada já registrado.
+   */
+  it("não muda o registro quando o molde muda depois", () => {
+    const registrado = templateToMeal(template, template.itens, "12:40")
+    template.itens = [{ ...ARROZ, kcal: 1000 }]
+    template.nome = "Almoço de casa (corrigido)"
+
+    expect(mealTotals(registrado.itens).kcal).toBe(455)
+    expect(registrado.nome).toBe("Almoço de casa")
+    expect(registrado.templateId).toBe("almoco-de-casa")
+  })
+})
