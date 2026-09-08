@@ -6,12 +6,12 @@ import { ArrowRight, Check, CloudOff, Droplets, FileText, History, LogOut, Moon,
 import {
   ConsistencyChart,
   MuscleVolumeChart,
-  RelativeLoadChart,
   TopSetChart,
   WeeklyLoadChart,
   WeeklyVolumeChart,
   ZoneChart,
 } from "@/components/charts"
+import { RelativeLoadBoard } from "@/components/relative-load-board"
 import { TrainingCalendar } from "@/components/training-calendar"
 import { CaloriePanel, DayEnergyPanel, EnergyPanel } from "@/components/energy-panels"
 import { ProgramTabs } from "@/components/program-tabs"
@@ -25,6 +25,7 @@ import {
 } from "@/lib/consistency"
 import { computeRecovery, RecoveryDriver, weeklyLoadSeries } from "@/lib/readiness"
 import {
+  E1RM_MAX_EFFECTIVE_REPS,
   exerciseStrength,
   frequentExercises,
   relativeLoadBoard,
@@ -905,6 +906,7 @@ export default function Dashboard() {
       <CollapsibleSection
         title="Carga interna — 12 semanas"
         badge={`${view.weeklyLoad[view.weeklyLoad.length - 1].load.toLocaleString("pt-BR")} AU`}
+        defaultOpen
       >
         <Card className="rise rise-3">
           <WeeklyLoadChart data={view.weeklyLoad} />
@@ -1311,7 +1313,7 @@ export default function Dashboard() {
                           disabled={disabled}
                           title={
                             disabled
-                              ? "Precisa de 2+ séries de até 8 reps efetivas (reps + RIR)"
+                              ? `Precisa de 2+ sessões com série de até ${E1RM_MAX_EFFECTIVE_REPS} reps efetivas (reps + RIR); este exercício tem ${view.strength!.reliableE1rmPoints}`
                               : undefined
                           }
                           className={cn(
@@ -1336,6 +1338,17 @@ export default function Dashboard() {
                       : "carga"
                   }
                 />
+
+                {view.strength.reliableE1rmPoints < 2 && (
+                  <p className="mt-2 rounded border border-seam bg-coal/60 px-3 py-2 text-[11px] leading-relaxed text-steel-dim">
+                    <b className="text-steel">1RM estimada indisponível aqui.</b>{" "}
+                    {view.strength.reliableE1rmPoints} de {view.strength.points.length}{" "}
+                    sessões tiveram série de até {E1RM_MAX_EFFECTIVE_REPS} repetições
+                    efetivas (reps + RIR). Numa série de 12 a fórmula de Epley extrapola
+                    demais e erra mais que a diferença que você quer enxergar — a carga do
+                    top set acima é dado bruto e não depende disso.
+                  </p>
+                )}
 
                 <div className="mt-3 grid grid-cols-2 gap-2 border-t border-seam pt-3 font-mono text-[10px]">
                   <div>
@@ -1384,19 +1397,22 @@ export default function Dashboard() {
       </CollapsibleSection>
 
       {/* Carga relativa — onde você está longe do que já levantou */}
-      <CollapsibleSection title="Carga vs. seu recorde" badge={`${view.relativeLoad.filter((r) => r.relativePct < RELATIVE_LOAD_ALERT_PCT).length} abaixo de 80%`}>
+      <CollapsibleSection
+        title="Carga vs. seu recorde"
+        badge={`${view.relativeLoad.filter((r) => r.relativePct < RELATIVE_LOAD_ALERT_PCT).length} abaixo de 80%`}
+        defaultOpen
+      >
         <Card className="rise rise-5">
           {view.relativeLoad.length > 0 ? (
             <>
-              <RelativeLoadChart
+              <RelativeLoadBoard
                 data={view.relativeLoad}
                 alertPct={RELATIVE_LOAD_ALERT_PCT}
               />
-              <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
-                Carga da última sessão sobre a melhor dos últimos 6 meses; os números à
-                direita são atual/recorde em kg, e o tracejado marca os {RELATIVE_LOAD_ALERT_PCT}%.
-                <span className="text-ember"> Abaixo de {RELATIVE_LOAD_ALERT_PCT}%</span> não
-                é platô: é distância do que você já levantou, e pede voltar
+              <p className="mt-4 border-t border-seam pt-3 text-[11px] leading-relaxed text-steel-dim">
+                Compara a carga da <b className="text-steel">última sessão</b> com a melhor
+                dos <b className="text-steel">últimos 6 meses</b> no mesmo exercício. Estar
+                abaixo não é platô — é distância do que você já levantou, e pede voltar
                 progressivamente, não trocar de exercício.
               </p>
             </>
@@ -1434,6 +1450,7 @@ export default function Dashboard() {
         title="Conquistas"
         accent="gold"
         badge={`${view.achievements.filter((a) => a.unlocked).length}/${view.achievements.length}`}
+        defaultOpen
       >
         <div className="grid grid-cols-2 gap-2">
         {view.achievements.map((a) => (

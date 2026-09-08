@@ -312,6 +312,8 @@ lib/use-meal-templates.ts  refeições fixas (moldes), separadas dos registros
 lib/reports.ts  montagem dos relatórios (períodos, antes × depois, séries semanais)
 components/report/  folhas A4, kit de gráficos SVG e primitivas de documento
 lib/progression.ts  sugestão de carga e passo real de cada aparelho
+lib/strength.ts séries do top set, 1RM só onde Epley se sustenta e carga relativa
+components/relative-load-board.tsx  carga vs. recorde agrupada por faixa
 lib/workout-form.ts reabertura de um registro já salvo no formulário
 lib/store.ts    hook useGymData (Supabase: fetch + upsert)
 lib/supabase/   browser client (@supabase/ssr)
@@ -320,3 +322,40 @@ middleware.ts   proteção de rotas via sessão
 
 > Plano educativo — não substitui avaliação médica. Antes de intensificar o aeróbico:
 > cardiologista + teste ergométrico (tontura em esforço relatada no plano).
+
+## Força: carga do top set e 1RM estimada
+
+O gráfico de força mostra a **carga da série mais pesada** de cada sessão — dado
+bruto, sem extrapolação, e exatamente o número que decide a próxima sessão.
+
+A **1RM estimada** fica disponível só onde a fórmula de Epley se sustenta:
+
+- até **8 repetições efetivas** (reps + RIR) na série do topo;
+- sem RIR informado, até **6 repetições** — a reserva desconhecida faz
+  `reps + RIR` tratar a série como levada à falha, e uma série de 8 sem RIR
+  viraria um chute para baixo com selo de confiável;
+- **2 ou mais sessões** que passem nesses critérios, senão não há linha a
+  desenhar.
+
+Treino de hipertrofia raramente passa nesses filtros, e isso é o comportamento
+correto: extrapolar 1RM de uma série de 12–15 repetições faz a mesma cadeira
+extensora "variar" de 154 a 63 kg estimados em dez semanas sem que nada disso
+tenha acontecido. Quando o botão está apagado, a tela diz quantas das sessões
+qualificaram e por quê — em vez de só desabilitar sem explicação.
+
+## Carga vs. seu recorde
+
+Compara a carga da última sessão com a melhor dos últimos 6 meses no mesmo
+exercício, agrupada em três faixas: **longe** (<80%), **perto** (80–94%) e **no
+recorde** (≥95%).
+
+Não é um gráfico: é HTML com o nome inteiro do exercício. A versão em SVG
+truncava o rótulo em 13 caracteres, e "Tríceps na po…" ao lado de "Cadeira
+exten…" obriga a decorar a ordem para saber do que a barra fala.
+
+Cada linha traz a distância em **quilos** além da porcentagem — você levanta kg,
+não razão, e "faltam 35 kg" decide a próxima sessão enquanto "46%" não — mais a
+idade do recorde, que separa destreino recente de antigo.
+
+Estar abaixo de 80% não é platô: é distância do que você já levantou, e pede
+voltar progressivamente, não trocar de exercício.
