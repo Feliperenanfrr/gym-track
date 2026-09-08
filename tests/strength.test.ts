@@ -94,6 +94,32 @@ describe("exerciseStrength", () => {
     expect(s.reliableE1rmPoints).toBe(2)
   })
 
+  /**
+   * Sem RIR, `effectiveReps` trata a série como levada à falha. Uma série de 8
+   * reps que na verdade tinha 4 na reserva virava um chute para baixo com selo
+   * de confiável — o teto sem RIR existe para isso.
+   */
+  it("sem RIR, só aceita série curta o bastante para a reserva não importar", () => {
+    const semRir = [
+      workout("2026-08-01", [{ exerciseId: "row", sets: [{ weight: 50, reps: 8 }] }]),
+      workout("2026-08-08", [{ exerciseId: "row", sets: [{ weight: 50, reps: 6 }] }]),
+    ]
+    const s = exerciseStrength(semRir, "row")
+    expect(s.points[0].e1rm).toBeNull() // 8 reps sem RIR: reserva desconhecida
+    expect(s.points[1].e1rm).toBe(60) // 6 reps sem RIR: dentro do teto
+    expect(s.reliableE1rmPoints).toBe(1)
+  })
+
+  it("com RIR informado, o teto volta a ser o de reps efetivas", () => {
+    const comRir = [
+      workout("2026-08-01", [{ exerciseId: "row", sets: [{ weight: 50, reps: 8, rir: 0 }] }]),
+      workout("2026-08-08", [{ exerciseId: "row", sets: [{ weight: 50, reps: 8, rir: 1 }] }]),
+    ]
+    const s = exerciseStrength(comRir, "row")
+    expect(s.points[0].e1rm).toBe(63.3) // eff 8 → dentro
+    expect(s.points[1].e1rm).toBeNull() // eff 9 → fora
+  })
+
   it("marca a sessão que superou a maior carga anterior", () => {
     const s = exerciseStrength(workouts, "bench")
     expect(s.points.map((p) => p.isLoadPr)).toEqual([false, true, false])

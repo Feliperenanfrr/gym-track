@@ -1,5 +1,5 @@
 import { EXERCISES_BY_ID } from "./plan"
-import { ExerciseLog, WorkoutLog } from "./types"
+import { ExerciseLog, SetLog, WorkoutLog } from "./types"
 import { fromDateKey, topSet } from "./utils"
 
 /**
@@ -17,6 +17,15 @@ import { fromDateKey, topSet } from "./utils"
 
 /** Teto de reps efetivas em que a extrapolação de Epley ainda é defensável. */
 export const E1RM_MAX_EFFECTIVE_REPS = 8
+
+/**
+ * Sem RIR informado, a reserva é desconhecida e `effectiveReps` trata a série
+ * como levada à falha. Numa série de 8 reps que na verdade tinha 4 na reserva
+ * isso vira um chute para baixo com selo de confiável. Acima deste teto, sem
+ * RIR, o ponto não conta — abaixo dele a reserva desconhecida não muda a
+ * conclusão.
+ */
+export const E1RM_MAX_REPS_WITHOUT_RIR = 6
 
 /** Janela padrão para eleger os exercícios do seletor. */
 export const FREQUENT_WINDOW_DAYS = 90
@@ -59,6 +68,14 @@ export interface ExerciseStrength {
 
 function effectiveReps(reps: number, rir?: number): number {
   return reps + (rir ?? 0)
+}
+
+/** 1RM de Epley, ou null quando a extrapolação não se sustenta na série. */
+function estimateE1rm(top: SetLog): number | null {
+  const eff = effectiveReps(top.reps, top.rir)
+  if (eff > E1RM_MAX_EFFECTIVE_REPS) return null
+  if (top.rir === undefined && top.reps > E1RM_MAX_REPS_WITHOUT_RIR) return null
+  return Math.round(top.weight * (1 + eff / 30) * 10) / 10
 }
 
 function shortLabel(dateKey: string): string {
@@ -149,7 +166,6 @@ export function exerciseStrength(
     if (!top) continue
 
     name = nameOf(exerciseId, entry)
-    const eff = effectiveReps(top.reps, top.rir)
     const isLoadPr = runningBest > 0 && top.weight > runningBest
     if (top.weight > runningBest) {
       runningBest = top.weight
@@ -166,10 +182,7 @@ export function exerciseStrength(
       carga: top.weight,
       reps: top.reps,
       rir: top.rir,
-      e1rm:
-        eff <= E1RM_MAX_EFFECTIVE_REPS
-          ? Math.round(top.weight * (1 + eff / 30) * 10) / 10
-          : null,
+      e1rm: estimateE1rm(top),
       isLoadPr,
     })
   }
