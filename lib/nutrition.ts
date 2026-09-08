@@ -2,7 +2,7 @@ import { parseBrDate, parseNumber } from "./bioimpedance"
 import { fatMassOf } from "./energy"
 import { weightKgOn } from "./insights"
 import { BodyLog, Meal, MealItem, MealLog, MealSlot, MealSource, MealTemplate } from "./types"
-import { fromDateKey, toDateKey } from "./utils"
+import { fromDateKey, mondayOf, toDateKey } from "./utils"
 
 /**
  * Alimentação — parser determinístico + aritmética das refeições.
@@ -279,6 +279,175 @@ export function loggingCoverage(
     if (day.completo) completos++
   }
   return { windowDays, comRegistro, completos }
+}
+
+/* ------------------------------------------------------------------ */
+/* Séries para os gráficos                                              */
+/* ------------------------------------------------------------------ */
+
+function shortDate(key: string): string {
+  const d = fromDateKey(key)
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+export interface ProteinDay {
+  /** yyyy-MM-dd */
+  date: string
+  /** dd/MM para o eixo */
+  label: string
+  proteinaG: number
+  kcal: number
+  refeicoes: number
+  logged: boolean
+  /** dia registrado mas não marcado como completo: a barra pode estar curta */
+  partial: boolean
+}
+
+/**
+ * Proteína por dia na janela que termina em `to`. Dias sem registro entram
+ * como zero de propósito — o buraco na série é a informação, some se for
+ * omitido. `partial` separa "comeu pouco" de "registrou pouco".
+ */
+export function proteinSeries(meals: MealLog[], to: string, days = 14): ProteinDay[] {
+  const byDate = new Map(meals.map((day) => [day.date, day]))
+  const end = fromDateKey(to)
+  const out: ProteinDay[] = []
+
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i)
+    const key = toDateKey(date)
+    const log = byDate.get(key)
+    const totals = dayTotals(log)
+    const logged = (log?.refeicoes.length ?? 0) > 0
+    out.push({
+      date: key,
+      label: shortDate(key),
+      proteinaG: totals.proteinaG,
+      kcal: totals.kcal,
+      refeicoes: log?.refeicoes.length ?? 0,
+      logged,
+      partial: logged && log?.completo !== true,
+    })
+  }
+  return out
+}
+
+export type MealDayKind = "none" | "partial" | "complete"
+
+export interface MealCalendarDay {
+  key: string
+  kind: MealDayKind
+  refeicoes: number
+  kcal: number
+  proteinaG: number
+  isToday: boolean
+  isFuture: boolean
+}
+
+export interface MealCalendarWeek {
+  /** yyyy-MM-dd da segunda-feira */
+  start: string
+  /** "set" quando a semana abre um mês novo na fita — senão null */
+  monthLabel: string | null
+  days: MealCalendarDay[]
+}
+
+const MONTH_SHORT = [
+  "jan", "fev", "mar", "abr", "mai", "jun",
+  "jul", "ago", "set", "out", "nov", "dez",
+] as const
+
+/**
+ * Fita de cobertura do diário, no mesmo formato do calendário de treino.
+ *
+ * O valor aqui é menos analítico que comportamental: ver os buracos é o que
+ * faz marcar o dia como completo, e sem dia completo a reconciliação entre
+ * ingestão registrada e derivada não tem o que comparar.
+ */
+export function mealCalendar(
+  meals: MealLog[],
+  today: Date,
+  weeks = 12
+): MealCalendarWeek[] {
+  const todayKey = toDateKey(today)
+  const byDate = new Map(meals.map((day) => [day.date, day]))
+  const monday = mondayOf(today)
+  const out: MealCalendarWeek[] = []
+  let previousMonth = -1
+
+  for (let i = weeks - 1; i >= 0; i--) {
+    const start = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - i * 7)
+    const days: MealCalendarDay[] = []
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + d)
+      const key = toDateKey(date)
+      const log = byDate.get(key)
+      const totals = dayTotals(log)
+      const registered = (log?.refeicoes.length ?? 0) > 0
+      days.push({
+        key,
+        kind: !registered ? "none" : log?.completo ? "complete" : "partial",
+        refeicoes: log?.refeicoes.length ?? 0,
+        kcal: totals.kcal,
+        proteinaG: totals.proteinaG,
+        isToday: key === todayKey,
+        isFuture: key > todayKey,
+      })
+    }
+    const month = start.getMonth()
+    const monthLabel = month !== previousMonth ? MONTH_SHORT[month] : null
+    previousMonth = month
+    out.push({ start: toDateKey(start), monthLabel, days })
+  }
+  return out
+}
+
+export interface SlotShare {
+  slot: MealSlot
+  label: string
+  refeicoes: number
+  kcal: number
+  proteinaG: number
+  /** participação nas calorias do dia (0–1) */
+  kcalShare: number
+  /** participação na proteína do dia (0–1) */
+  proteinaShare: number
+}
+
+/**
+ * Onde a alimentação se concentra no dia. Funciona com um dia só — não
+ * precisa acumular semanas para dizer algo, e já expõe o slot desperdiçado
+ * (o lanche que entrega 1 g de proteína).
+ */
+export function slotDistribution(log: MealLog | undefined): SlotShare[] {
+  if (!log || log.refeicoes.length === 0) return []
+  const total = dayTotals(log)
+
+  const bySlot = new Map<MealSlot, SlotShare>()
+  for (const meal of log.refeicoes) {
+    const totals = mealTotals(meal.itens)
+    const current = bySlot.get(meal.slot) ?? {
+      slot: meal.slot,
+      label: slotLabel(meal.slot),
+      refeicoes: 0,
+      kcal: 0,
+      proteinaG: 0,
+      kcalShare: 0,
+      proteinaShare: 0,
+    }
+    current.refeicoes += 1
+    current.kcal += totals.kcal
+    current.proteinaG = round1(current.proteinaG + totals.proteinaG)
+    bySlot.set(meal.slot, current)
+  }
+
+  return [...bySlot.values()]
+    .map((share) => ({
+      ...share,
+      kcalShare: total.kcal > 0 ? share.kcal / total.kcal : 0,
+      proteinaShare: total.proteinaG > 0 ? share.proteinaG / total.proteinaG : 0,
+    }))
+    .sort((a, b) => slotOrder(a.slot) - slotOrder(b.slot))
 }
 
 /** Frase única sobre a cobertura dos macros, ou null quando está completa. */

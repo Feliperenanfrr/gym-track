@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { CalorieChart, EnergyBalanceChart } from "@/components/charts"
+import type { DayEnergy, WeekBalance } from "@/lib/daily-energy"
 import { PAL_BASE } from "@/lib/energy"
 import type { EnergyBalanceSeries, EnergyReport, SignalTone } from "@/lib/energy"
 import type { CalorieTrend, CalorieTrendRange } from "@/lib/insights"
@@ -440,6 +441,119 @@ export function EnergyPanel({
           . Estimativa, não calorimetria.
         </p>
       </div>
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Gasto e saldo do DIA                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * O número que faltava no painel: quanto você gastou HOJE.
+ *
+ * O CaloriePanel mostra taxa semanal e o EnergyPanel média de 28 dias —
+ * nenhum dos dois responde isso, e a diferença entre um dia de dois treinos
+ * e um de descanso passa de 500 kcal.
+ *
+ * O saldo de sete dias fica em destaque de propósito. Um dia isolado oscila
+ * mais que 300 kcal só por água e digestão, e um déficit diário visível
+ * convida à troca "treinei, logo posso comer mais hoje" — que é exatamente
+ * como se anula um déficit semanal.
+ */
+export function DayEnergyPanel({
+  day,
+  week,
+}: {
+  day: DayEnergy
+  week: WeekBalance | null
+}) {
+  const parts = [
+    { id: "bmr", label: "Basal", color: BUDGET_STEPS[0].color, value: day.bmr },
+    { id: "routine", label: "Rotina", color: BUDGET_STEPS[1].color, value: day.routine },
+    { id: "training", label: "Treino", color: BUDGET_STEPS[2].color, value: day.training },
+  ]
+  const width = (value: number) => `${(value / day.expenditure) * 100}%`
+
+  return (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Kicker>Gasto de hoje</Kicker>
+          <p className="mt-0.5 font-mono text-3xl font-semibold leading-none text-ember-hot">
+            {fmt(day.expenditure)}
+            <span className="ml-1.5 text-xs font-normal text-steel-dim">kcal</span>
+          </p>
+        </div>
+        {day.intake !== null && (
+          <div className="shrink-0 text-right">
+            <Kicker>Saldo do dia</Kicker>
+            <p
+              className={cn(
+                "mt-0.5 font-mono text-xl font-semibold leading-none",
+                day.balance! > 0 ? "text-ember" : "text-zone"
+              )}
+            >
+              {signed(day.balance!)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* mesma barra empilhada do orçamento de 28 dias, agora num dia só */}
+      <div className="mt-3 flex h-2.5 w-full gap-[2px] overflow-hidden rounded-sm bg-iron-2">
+        {parts
+          .filter((part) => part.value > 0)
+          .map((part) => (
+            <div key={part.id} style={{ width: width(part.value), background: part.color }} />
+          ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-steel">
+        {parts.map((part) => (
+          <span key={part.id} className="inline-flex items-center gap-1.5">
+            <Swatch color={part.color} />
+            {part.label} {fmt(part.value)}
+          </span>
+        ))}
+      </div>
+
+      <p className="mt-2.5 font-mono text-[11px] text-steel">
+        {day.intake !== null ? (
+          <>
+            comido <span className="text-gold">{fmt(day.intake)}</span>
+            {day.complete ? "" : <span className="text-steel-dim"> · dia parcial</span>}
+          </>
+        ) : (
+          <span className="text-steel-dim">
+            Nada registrado hoje — registre em <b className="text-steel">Comida</b> para ver o saldo.
+          </span>
+        )}
+      </p>
+
+      {/* o número que realmente prevê a balança */}
+      {week && week.loggedDays > 0 && (
+        <div className="mt-3 border-t border-seam pt-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <Kicker>Saldo de 7 dias</Kicker>
+            <p
+              className={cn(
+                "font-mono text-lg font-semibold leading-none",
+                week.balance > 0 ? "text-ember" : "text-zone"
+              )}
+            >
+              {signed(week.balance)}
+              <span className="ml-1 text-[10px] font-normal text-steel-dim">kcal</span>
+            </p>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-steel-dim">
+            Sobre {week.loggedDays} de {week.days} dias registrados
+            {week.completeDays > 0 ? ` · ${week.completeDays} completo(s)` : ""}.{" "}
+            {week.partial
+              ? "Dia parcial subestima a ingestão, então o déficit aqui é otimista."
+              : "É este acumulado que move a balança, não o saldo de um dia."}
+          </p>
+        </div>
+      )}
     </>
   )
 }

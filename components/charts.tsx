@@ -18,6 +18,7 @@ import {
 } from "recharts"
 import type { EnergyBalancePoint } from "@/lib/energy"
 import type { CalorieTrendPoint } from "@/lib/insights"
+import type { ProteinDay } from "@/lib/nutrition"
 
 const EMBER = "#ff5a1f"
 const EMBER_HOT = "#ff7a45"
@@ -1605,5 +1606,85 @@ export function RelativeLoadChart({
         seu recorde
       </text>
     </svg>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Proteína por dia                                                     */
+/* ------------------------------------------------------------------ */
+
+function ProteinTip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { payload: ProteinDay }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  const day = payload[0].payload
+  return (
+    <div className="rounded border border-seam bg-iron-2 px-3 py-2 font-mono text-xs shadow-xl">
+      <p className="mb-0.5 text-steel">{label}</p>
+      {day.logged ? (
+        <>
+          <p className="font-semibold text-zone">{day.proteinaG} g de proteína</p>
+          <p className="text-steel-dim">
+            {day.kcal.toLocaleString("pt-BR")} kcal · {day.refeicoes} refeição(ões)
+          </p>
+          {day.partial && <p className="text-gold">dia parcial</p>}
+        </>
+      ) : (
+        <p className="text-steel-dim">sem registro</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Proteína diária contra a faixa alvo.
+ *
+ * Dia parcial sai em dourado em vez de verde: uma barra curta por jantar
+ * esquecido não significa a mesma coisa que uma barra curta por ter comido
+ * pouco, e pintar as duas igual apagaria a diferença.
+ */
+export function ProteinChart({
+  data,
+  min,
+  max,
+}: {
+  data: ProteinDay[]
+  min: number
+  max: number
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={180}>
+      <BarChart data={data} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+        <YAxis tick={TICK} axisLine={false} tickLine={false} />
+        <Tooltip content={<ProteinTip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+        <ReferenceLine y={min} stroke={ZONE} strokeDasharray="4 4" strokeOpacity={0.6} />
+        <ReferenceLine
+          y={max}
+          stroke={ZONE}
+          strokeDasharray="4 4"
+          strokeOpacity={0.6}
+          label={{
+            value: `alvo ${min}–${max} g`,
+            position: "insideTopRight",
+            fill: ZONE,
+            fontSize: 10,
+            fontFamily: "'JetBrains Mono Variable', monospace",
+          }}
+        />
+        <Bar dataKey="proteinaG" name="Proteína" radius={[3, 3, 0, 0]}>
+          {data.map((day, i) => (
+            <Cell key={i} fill={day.partial ? GOLD : ZONE} fillOpacity={day.logged ? 0.8 : 0} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
