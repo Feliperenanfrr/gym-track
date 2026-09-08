@@ -5,6 +5,7 @@ import {
   formatQty,
   loggingCoverage,
   macroCoverageNote,
+  mealCalendar,
   MAX_BATCH_MEALS,
   mealTotals,
   normalizeSlot,
@@ -12,8 +13,10 @@ import {
   normalizeUnit,
   parseMealsJson,
   proteinPerKg,
+  proteinSeries,
   proteinTarget,
   scaleItem,
+  slotDistribution,
   slotFromTime,
   slugify,
   sourceLabel,
@@ -413,6 +416,80 @@ describe("cobertura do registro", () => {
       windowDays: 28,
       comRegistro: 0,
       completos: 0,
+    })
+  })
+})
+
+describe("séries dos gráficos", () => {
+  const day = (date: string, refeicoes: number, completo: boolean): MealLog => ({
+    date,
+    completo,
+    refeicoes: Array.from({ length: refeicoes }, (_, i) => ({
+      id: `m${i}`,
+      nome: "Refeição",
+      slot: i === 0 ? "almoco" : "jantar",
+      itens: [ARROZ],
+    })),
+  })
+
+  describe("proteinSeries", () => {
+    it("preenche a janela inteira, com zero nos dias sem registro", () => {
+      const series = proteinSeries([day("2026-09-07", 1, true)], "2026-09-07", 7)
+      expect(series).toHaveLength(7)
+      expect(series[0].date).toBe("2026-09-01")
+      expect(series[0].logged).toBe(false)
+      expect(series[0].proteinaG).toBe(0)
+      expect(series[6].logged).toBe(true)
+      expect(series[6].proteinaG).toBe(5)
+      expect(series[6].label).toBe("07/09")
+    })
+
+    /** Barra curta por jantar esquecido não é barra curta por ter comido pouco. */
+    it("separa dia parcial de dia completo", () => {
+      const series = proteinSeries(
+        [day("2026-09-07", 1, false), day("2026-09-06", 1, true)],
+        "2026-09-07",
+        2
+      )
+      expect(series[0].partial).toBe(false)
+      expect(series[1].partial).toBe(true)
+    })
+  })
+
+  describe("mealCalendar", () => {
+    it("classifica os dias em completo, parcial e sem registro", () => {
+      const weeks = mealCalendar(
+        [day("2026-09-07", 2, true), day("2026-09-06", 1, false)],
+        new Date(2026, 8, 7),
+        2
+      )
+      const days = weeks.flatMap((w) => w.days)
+      expect(days.find((d) => d.key === "2026-09-07")?.kind).toBe("complete")
+      expect(days.find((d) => d.key === "2026-09-06")?.kind).toBe("partial")
+      expect(days.find((d) => d.key === "2026-09-05")?.kind).toBe("none")
+    })
+
+    it("marca hoje e nao trata dia futuro como falha", () => {
+      const weeks = mealCalendar([], new Date(2026, 8, 9), 1)
+      const days = weeks[0].days
+      expect(days.find((d) => d.key === "2026-09-09")?.isToday).toBe(true)
+      expect(days.find((d) => d.key === "2026-09-10")?.isFuture).toBe(true)
+      expect(days.find((d) => d.key === "2026-09-08")?.isFuture).toBe(false)
+    })
+  })
+
+  describe("slotDistribution", () => {
+    it("agrupa por refeição e devolve a participação de cada uma", () => {
+      const shares = slotDistribution(day("2026-09-07", 3, true))
+      expect(shares.map((s) => s.slot)).toEqual(["almoco", "jantar"])
+      expect(shares[1].refeicoes).toBe(2)
+      expect(Math.round(shares[0].kcalShare * 100)).toBe(33)
+      expect(Math.round(shares[1].proteinaShare * 100)).toBe(67)
+    })
+
+    it("devolve vazio sem registro", () => {
+      expect(slotDistribution(undefined)).toEqual([])
+      expect(slotDistribution({ date: "2026-09-07", completo: false, refeicoes: [] })).toEqual([])
     })
   })
 })

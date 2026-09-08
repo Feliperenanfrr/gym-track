@@ -13,7 +13,7 @@ import {
   ZoneChart,
 } from "@/components/charts"
 import { TrainingCalendar } from "@/components/training-calendar"
-import { CaloriePanel, EnergyPanel } from "@/components/energy-panels"
+import { CaloriePanel, DayEnergyPanel, EnergyPanel } from "@/components/energy-panels"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, CollapsibleSection, PageHeader, Skeleton, StatCard } from "@/components/ui"
 import { computeAchievements } from "@/lib/achievements"
@@ -30,6 +30,7 @@ import {
   relativeLoadBoard,
   RELATIVE_LOAD_ALERT_PCT,
 } from "@/lib/strength"
+import { dayEnergy, weekBalance } from "@/lib/daily-energy"
 import { energyBalanceSeries, energyReport } from "@/lib/energy"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
@@ -324,6 +325,9 @@ export default function Dashboard() {
     }
     const energy = energyReport(data, today)
     const energySeries = energyBalanceSeries(data, today)
+    // gasto e saldo do DIA, mais o acumulado de 7 dias que prevê a balança
+    const dayEnergyToday = dayEnergy(data, todayKey)
+    const weekBalanceNow = weekBalance(data, todayKey)
 
     // hidratação de hoje
     const waterToday = data.hydration.find((h) => h.date === todayKey)?.ml ?? 0
@@ -419,6 +423,8 @@ export default function Dashboard() {
       calories,
       energy,
       energySeries,
+      dayEnergy: dayEnergyToday,
+      weekBalance: weekBalanceNow,
       waterToday,
       waterGoal,
       sleepMetrics,
@@ -1079,6 +1085,13 @@ export default function Dashboard() {
           </Link>
         </div>
       </Card>
+
+      {/* Do dia para a semana para os 28 dias: as três escalas em ordem. */}
+      {view.dayEnergy && (
+        <Card className="rise rise-4 mt-4 border-l-4 border-l-ember">
+          <DayEnergyPanel day={view.dayEnergy} week={view.weekBalance} />
+        </Card>
+      )}
 
       {/* Gasto dos treinos: taxa semanal, composição e tendência num gráfico só. */}
       <CollapsibleSection title="Calorias dos treinos" accent="gold" defaultOpen>

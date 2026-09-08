@@ -10,6 +10,8 @@ import {
   Trash2,
   UtensilsCrossed,
 } from "lucide-react"
+import { ProteinChart } from "@/components/charts"
+import { MealCalendar, SlotDistribution } from "@/components/meal-panels"
 import { MealComposer, MealSeed } from "@/components/meal-composer"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import {
@@ -25,6 +27,7 @@ import {
   formatMacro,
   loggingCoverage,
   macroCoverageNote,
+  mealCalendar,
   MEAL_SLOTS,
   mealTotals,
   newId,
@@ -33,7 +36,9 @@ import {
   ParsedMealEntry,
   parseMealsJson,
   proteinPerKg,
+  proteinSeries,
   proteinTarget,
+  slotDistribution,
   slotLabel,
   slotOrder,
   slugify,
@@ -136,6 +141,15 @@ export default function ComidaPage() {
   const logCoverage = useMemo(
     () => loggingCoverage(data?.meals ?? [], dateKey),
     [data, dateKey]
+  )
+  const distribution = useMemo(() => slotDistribution(dayLog), [dayLog])
+  const proteinDays = useMemo(
+    () => proteinSeries(data?.meals ?? [], dateKey, 14),
+    [data, dateKey]
+  )
+  const calendar = useMemo(
+    () => mealCalendar(data?.meals ?? [], operationalDay ?? new Date(), 12),
+    [data, operationalDay]
   )
   const proteinPct = target && target.mid > 0 ? Math.min(1, totals.proteinaG / target.mid) : 0
 
@@ -600,6 +614,52 @@ export default function ComidaPage() {
           </span>
         </div>
       </Card>
+
+      {/* onde a alimentação se concentra — funciona já com um dia só */}
+      {distribution.length > 0 && (
+        <>
+          <SectionTitle accent="zone">Distribuição do dia</SectionTitle>
+          <Card className="rise rise-2">
+            <SlotDistribution shares={distribution} />
+            <p className="mt-3 text-[11px] leading-relaxed text-steel-dim">
+              As duas barras juntas mostram o que nenhuma delas mostra sozinha: a refeição
+              que pesa nas calorias sem entregar proteína aparece com a barra dourada longa
+              e a verde curta.
+            </p>
+          </Card>
+        </>
+      )}
+
+      {/* a métrica que o app elegeu, no tempo */}
+      <SectionTitle accent="zone">Proteína por dia</SectionTitle>
+      <Card className="rise rise-3">
+        {target ? (
+          <>
+            <ProteinChart data={proteinDays} min={target.min} max={target.max} />
+            <p className="mt-2 text-[11px] leading-relaxed text-steel-dim">
+              14 dias contra a faixa de {target.min}–{target.max} g. Barra dourada é dia
+              registrado mas não marcado como completo — pode estar curta por jantar
+              esquecido, não por ter comido pouco. Toque numa barra para ler o dia.
+            </p>
+          </>
+        ) : (
+          <p className="py-2 text-xs text-steel-dim">
+            Registre uma pesagem em <b className="text-steel">Medidas</b> para o alvo de
+            proteína aparecer aqui.
+          </p>
+        )}
+      </Card>
+
+      {/* cobertura do diário: os buracos são a informação */}
+      <CollapsibleSection title="Calendário alimentar" accent="zone" defaultOpen>
+        <Card className="rise rise-3">
+          <MealCalendar weeks={calendar} onPickDay={(key) => setSelectedDate(key)} />
+          <p className="mt-3 text-[11px] leading-relaxed text-steel-dim">
+            Toque num dia registrado para abri-lo acima. Verde é dia completo — só esses
+            entram na média de ingestão quando a reconciliação com a balança existir.
+          </p>
+        </Card>
+      </CollapsibleSection>
 
       {/* refeições fixas: o caminho de dois toques */}
       <SectionTitle accent="ember">Refeições fixas</SectionTitle>

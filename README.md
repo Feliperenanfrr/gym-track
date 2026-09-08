@@ -24,10 +24,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 
 | Aba | O que faz |
 | --- | --- |
-| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos e balanço energético (ingestão estimada × variação de massa) |
+| **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos, **gasto e saldo do dia** com o acumulado de 7 dias, e balanço energético (ingestão estimada × variação de massa) |
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, sugestão de carga no passo do aparelho, reabertura do registro do dia, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
-| **Comida** | Refeições fixas em dois toques, refeição diferente por JSON, proteína do dia contra o alvo por massa magra e a marca de "registrei tudo" |
+| **Comida** | Refeições fixas em dois toques, refeição diferente por JSON, proteína do dia contra o alvo por massa magra, distribuição por refeição, proteína dos últimos 14 dias, calendário de cobertura e a marca de "registrei tudo" |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
 | **Relatórios** | Três documentos em PDF: fechamento de bloco, dossiê para o preparador físico e acompanhamento nutricional |
 
@@ -164,6 +164,35 @@ dela, a tela mostra quantos dos últimos 28 dias estão completos — é o indic
 antecedente da reconciliação entre ingestão registrada e derivada: marcar 4 de 28
 significa que aquela análise não vai ter o que comparar.
 
+### As três leituras da tela
+
+- **Distribuição do dia** — duas barras por refeição, calorias e proteína, cada
+  uma na sua unidade. Juntas mostram o que nenhuma mostra sozinha: a refeição que
+  pesa nas calorias sem entregar proteína tem a barra dourada longa e a verde
+  curta. Funciona com um dia só, sem precisar acumular semanas.
+- **Proteína por dia** — 14 barras contra a faixa alvo. Dia parcial sai em
+  dourado em vez de verde, porque barra curta por jantar esquecido não significa
+  a mesma coisa que barra curta por ter comido pouco.
+- **Calendário alimentar** — fita de cobertura no formato do calendário de
+  treino, verde para dia completo e dourado para parcial. Tocar num dia abre ele
+  acima. O valor aqui é menos analítico que comportamental: ver os buracos é o
+  que faz marcar o dia.
+
+### Gasto e saldo do dia (aba Hoje)
+
+O painel de calorias trabalha em taxa semanal e o de balanço energético em média
+de 28 dias — nenhum dos dois responde "quanto gastei hoje", e a diferença entre
+um dia de dois treinos e um de descanso passa de 500 kcal. O card do dia
+decompõe basal + rotina + treino **daquele dia**, mostra o saldo contra o que foi
+registrado, e traz o **acumulado de 7 dias** em destaque.
+
+Os sete dias ficam em destaque de propósito: um dia isolado oscila mais que
+300 kcal só por água e digestão, e um déficit diário visível convida à troca
+"treinei, logo posso comer mais hoje" — que é exatamente como se anula um déficit
+semanal. O acumulado soma **apenas os dias com registro** (`loggedDays` sai
+junto, para a tela dizer sobre quantos dias está falando): comparar a ingestão de
+dois dias contra o gasto de sete inventaria um déficit de milhares de kcal.
+
 ### O JSON da refeição
 
 kcal e macros são **sempre do total de `qtd × unidade`**, nunca por 100 g — é o
@@ -277,7 +306,8 @@ lib/plan.ts     o plano do PDF como dados tipados
 lib/bjj-plan.ts o bloco de preparação física para o jiu-jitsu
 lib/legacy-plan.ts  protocolos aposentados, só para o histórico
 lib/energy.ts   balanço energético: tendência de massa, TDEE e ingestão estimada
-lib/nutrition.ts  parser do JSON da refeição, totais e alvo de proteína
+lib/nutrition.ts  parser do JSON da refeição, totais, alvo de proteína e séries dos gráficos
+lib/daily-energy.ts gasto e saldo do DIA, mais o acumulado de 7 dias
 lib/use-meal-templates.ts  refeições fixas (moldes), separadas dos registros
 lib/reports.ts  montagem dos relatórios (períodos, antes × depois, séries semanais)
 components/report/  folhas A4, kit de gráficos SVG e primitivas de documento
