@@ -30,7 +30,7 @@ export interface MealSeed {
   /** rastreio da refeição fixa de origem — nunca usado para recalcular nada */
   templateId?: string
   hora?: string
-  /** dia de destino quando o JSON traz data própria; senão, o dia selecionado */
+  /** dia de destino fixado ao abrir, mesmo se o dia operacional virar durante a edição */
   targetDate?: string
   /** posição no lote importado, para a linha sair da lista ao registrar */
   batchIndex?: number

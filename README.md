@@ -27,7 +27,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 | **Hoje** | Treino do dia, fita da semana, sessões/volume/Zona 2, séries duras por grupo muscular, prontidão por carga interna, 1RM estimada com ajuste por RIR quando informado, minutos de base aeróbica, gasto calórico dos treinos, **gasto e saldo do dia** com o acumulado de 7 dias, e balanço energético (ingestão estimada × variação de massa) |
 | **Treino** | Abas Jiu-Jitsu/Hipertrofia, próxima sessão do programa ativo, registro de séries e cardio, sugestão de carga no passo do aparelho, reabertura do registro do dia, rascunho automático e histórico compartilhado |
 | **Plano** | Os dois programas em abas separadas; o bloco de jiu-jitsu traz valências, A/B/C, Zona 2, coordenação com o tatame e progressão por blocos |
-| **Comida** | Refeições fixas em dois toques, refeição diferente por JSON, proteína do dia contra o alvo por massa magra, distribuição por refeição, proteína dos últimos 14 dias, calendário de cobertura e a marca de "registrei tudo" |
+| **Comida** | Refeições fixas em dois toques, refeição diferente por JSON, proteína do dia contra o alvo por massa magra, distribuição por refeição, proteína dos últimos 14 dias, calendário de cobertura e histórico por mês para editar refeições e marcar dias anteriores como completos |
 | **Medidas** | Peso, cintura, hidratação e sono com tendências, metas e registros diários |
 | **Relatórios** | Três documentos em PDF: fechamento de bloco, dossiê para o preparador físico e acompanhamento nutricional |
 
@@ -163,6 +163,12 @@ salvo e jantar esquecido não pode entrar na média como "comeu 900 kcal". Ao la
 dela, a tela mostra quantos dos últimos 28 dias estão completos — é o indicador
 antecedente da reconciliação entre ingestão registrada e derivada: marcar 4 de 28
 significa que aquela análise não vai ter o que comparar.
+
+Em **Comida → Histórico**, todos os dias registrados aparecem por mês, do mais
+recente ao mais antigo. O filtro **Parciais** ajuda a encontrar dias em que faltou
+marcar **Registrei tudo**, que pode ser alterado ali mesmo. **Editar dia** reabre
+as refeições na data original para corrigir quantidades, remover ou incluir
+refeições. Também é possível escolher uma data sem registro para preencher depois.
 
 ### As três leituras da tela
 

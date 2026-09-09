@@ -46,7 +46,7 @@ export function MealCalendar({
   onPickDay?: (key: string) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [selected, setSelected] = useState<MealCalendarDay | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
 
   useEffect(() => {
     const node = scrollRef.current
@@ -61,6 +61,7 @@ export function MealCalendar({
         .pop() ?? null,
     [weeks]
   )
+  const selected = weeks.flatMap((week) => week.days).find((day) => day.key === selectedKey)
   const reading = selected ?? lastLogged
 
   return (
@@ -107,7 +108,7 @@ export function MealCalendar({
                       key={day.key}
                       type="button"
                       onClick={() => {
-                        setSelected(day)
+                        setSelectedKey(day.key)
                         if (day.kind !== "none" && !day.isFuture) onPickDay?.(day.key)
                       }}
                       aria-label={describeDay(day)}

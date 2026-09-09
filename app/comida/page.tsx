@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   FileUp,
+  History,
   Pencil,
   Plus,
   Trash2,
@@ -13,6 +14,7 @@ import {
 import { ProteinChart } from "@/components/charts"
 import { MealCalendar, SlotDistribution } from "@/components/meal-panels"
 import { MealComposer, MealSeed } from "@/components/meal-composer"
+import { MealHistory } from "@/components/meal-history"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
 import {
   Card,
@@ -111,6 +113,8 @@ export default function ComidaPage() {
   const todayKey = operationalDay ? toDateKey(operationalDay) : toOperationalDateKey(new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const dateKey = selectedDate ?? todayKey
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [completingDate, setCompletingDate] = useState<string | null>(null)
 
   const [seed, setSeed] = useState<MealSeed | null>(null)
   const [saving, setSaving] = useState(false)
@@ -175,18 +179,16 @@ export default function ComidaPage() {
     return map
   }, [templates])
 
-  const recentDays = useMemo(
-    () =>
-      [...(data?.meals ?? [])]
-        .filter((day) => day.refeicoes.length > 0)
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 14),
-    [data]
-  )
-
   const showFlash = (message: string) => {
     setFlash(message)
     window.setTimeout(() => setFlash(null), 3000)
+  }
+
+  const openDay = (date: string) => {
+    setSelectedDate(date === todayKey ? null : date)
+    setHistoryOpen(false)
+    setPageError(null)
+    window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   /** Texto novo = lote novo: marcações e registros anteriores não valem mais. */
@@ -223,6 +225,7 @@ export default function ComidaPage() {
       slot: template.slot,
       itens: template.itens,
       templateId: template.id,
+      targetDate: dateKey,
       origem: "fixa",
     })
   }
@@ -238,7 +241,7 @@ export default function ComidaPage() {
       premissas: entry.meal.premissas,
       hora: entry.meal.hora,
       fonte: entry.meal.fonte,
-      targetDate: entry.meal.date,
+      targetDate: entry.meal.date ?? dateKey,
       batchIndex: entry.index,
       origem: "json",
     })
@@ -294,6 +297,7 @@ export default function ComidaPage() {
       templateId: meal.templateId,
       hora: meal.hora,
       fonte: meal.fonte,
+      targetDate: dateKey,
       origem: "registro",
     })
   }
@@ -349,21 +353,32 @@ export default function ComidaPage() {
   }
 
   const handleRemoveMeal = async (meal: Meal) => {
+    if (saving || completingDate !== null) return
     setPageError(null)
+    setSaving(true)
     try {
       await removeMeal(meal.id, dateKey)
       setUndoMeal({ meal, date: dateKey })
     } catch (e) {
       setPageError(e instanceof Error ? e.message : "Erro ao remover a refeição")
+    } finally {
+      setSaving(false)
     }
   }
 
-  const handleToggleComplete = async () => {
+  const handleSetComplete = async (date: string, complete: boolean) => {
+    if (saving || completingDate !== null) return
     setPageError(null)
+    setCompletingDate(date)
     try {
-      await setMealDayComplete(dateKey, !(dayLog?.completo ?? false))
+      await setMealDayComplete(date, complete)
+      showFlash(
+        `${shortDate(date)}: ${complete ? "dia marcado como completo." : "dia marcado como parcial."}`
+      )
     } catch (e) {
       setPageError(e instanceof Error ? e.message : "Erro ao marcar o dia")
+    } finally {
+      setCompletingDate(null)
     }
   }
 
@@ -403,17 +418,84 @@ export default function ComidaPage() {
       <PageHeader
         kicker="INGESTÃO"
         title="Comida"
-        right={
+        right={!historyOpen && (
           <input
             type="date"
             value={dateKey}
             max={todayKey}
-            onChange={(event) => setSelectedDate(event.target.value || null)}
+            onChange={(event) => {
+              const date = event.target.value
+              if (date && date <= todayKey) openDay(date)
+            }}
+            disabled={saving || completingDate !== null}
             className="rounded border border-seam bg-coal px-2 py-1.5 font-mono text-[11px] text-steel outline-none focus:border-ember"
             aria-label="Dia do registro"
           />
-        }
+        )}
       />
+
+      <div className="mb-4 grid grid-cols-2 gap-2" role="group" aria-label="Visualização da alimentação">
+        {[
+          { history: false, label: "Dia", icon: UtensilsCrossed },
+          { history: true, label: "Histórico", icon: History },
+        ].map((view) => (
+          <button
+            key={view.label}
+            type="button"
+            onClick={() => setHistoryOpen(view.history)}
+            aria-pressed={historyOpen === view.history}
+            disabled={saving || completingDate !== null}
+            className={cn(
+              "flex items-center justify-center gap-2 rounded border px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-40",
+              historyOpen === view.history
+                ? "border-ember bg-ember/10 text-ember"
+                : "border-seam text-steel hover:text-bone"
+            )}
+          >
+            <view.icon size={15} /> {view.label}
+          </button>
+        ))}
+      </div>
+
+      {pageError && (
+        <p role="alert" className="mb-4 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+          {pageError}
+        </p>
+      )}
+
+      {historyOpen ? (
+        <MealHistory
+          days={data.meals}
+          todayKey={todayKey}
+          saving={saving || completingDate !== null}
+          completingDate={completingDate}
+          onOpenDay={openDay}
+          onSetComplete={handleSetComplete}
+        />
+      ) : (
+        <>
+      {dateKey !== todayKey && (
+        <Card className="mb-4 border-l-4 border-l-gold">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-bone">
+                Alimentação de {fromDateKey(dateKey).toLocaleDateString("pt-BR")}
+              </p>
+              <p className="mt-1 text-xs text-steel-dim">
+                As alterações e a marca de dia completo serão salvas nesta data.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => openDay(todayKey)}
+              disabled={saving || completingDate !== null}
+              className="shrink-0 rounded border border-seam px-3 py-2 text-xs text-bone hover:border-ember disabled:opacity-40"
+            >
+              Hoje
+            </button>
+          </div>
+        </Card>
+      )}
 
       {templatesError && (
         <Card className="mb-4 border-l-4 border-l-gold text-xs text-steel">
@@ -547,6 +629,7 @@ export default function ComidaPage() {
                   </div>
                   <button
                     onClick={() => openRegistered(meal)}
+                    disabled={saving || completingDate !== null}
                     className="shrink-0 rounded p-1.5 text-steel-dim transition-colors hover:text-bone"
                     aria-label={`Editar ${meal.nome}`}
                   >
@@ -554,6 +637,7 @@ export default function ComidaPage() {
                   </button>
                   <button
                     onClick={() => handleRemoveMeal(meal)}
+                    disabled={saving || completingDate !== null}
                     className="shrink-0 rounded p-1.5 text-steel-dim transition-colors hover:text-red-400"
                     aria-label={`Remover ${meal.nome}`}
                   >
@@ -566,9 +650,10 @@ export default function ComidaPage() {
         )}
 
         <button
-          onClick={handleToggleComplete}
+          onClick={() => handleSetComplete(dateKey, !(dayLog?.completo ?? false))}
+          disabled={saving || completingDate !== null}
           aria-pressed={dayLog?.completo ?? false}
-          className="mt-3 flex w-full items-center gap-2.5 rounded border border-seam bg-coal/60 px-3 py-2.5 text-left transition-colors hover:border-steel-dim"
+          className="mt-3 flex w-full items-center gap-2.5 rounded border border-seam bg-coal/60 px-3 py-2.5 text-left transition-colors hover:border-steel-dim disabled:opacity-40"
         >
           <span
             className={cn(
@@ -582,7 +667,7 @@ export default function ComidaPage() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-xs font-semibold text-bone">
-              Registrei tudo neste dia
+              {completingDate === dateKey ? "Salvando…" : "Registrei tudo neste dia"}
             </span>
             <span className="block text-[11px] leading-relaxed text-steel-dim">
               Só dias marcados entram na média de ingestão — um jantar esquecido não pode
@@ -653,7 +738,7 @@ export default function ComidaPage() {
       {/* cobertura do diário: os buracos são a informação */}
       <CollapsibleSection title="Calendário alimentar" accent="zone" defaultOpen>
         <Card className="rise rise-3">
-          <MealCalendar weeks={calendar} onPickDay={(key) => setSelectedDate(key)} />
+          <MealCalendar weeks={calendar} onPickDay={saving || completingDate !== null ? undefined : openDay} />
           <p className="mt-3 text-[11px] leading-relaxed text-steel-dim">
             Toque num dia registrado para abri-lo acima. Verde é dia completo — só esses
             entram na média de ingestão quando a reconciliação com a balança existir.
@@ -868,7 +953,7 @@ export default function ComidaPage() {
 
         <button
           onClick={handleRegisterBatch}
-          disabled={saving || pendingBatch.length === 0}
+          disabled={saving || completingDate !== null || pendingBatch.length === 0}
           className="mt-3 flex items-center gap-1.5 rounded bg-ember px-4 py-2 text-sm font-bold uppercase tracking-wider text-coal transition-colors hover:bg-ember-hot disabled:opacity-40"
           style={{ fontFamily: "var(--font-condensed)" }}
         >
@@ -949,60 +1034,12 @@ export default function ComidaPage() {
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Últimos dias" accent="steel" badge={recentDays.length}>
-        {recentDays.length === 0 ? (
-          <Card className="text-xs text-steel-dim">Nenhum dia registrado ainda.</Card>
-        ) : (
-          <Card>
-            <div className="-my-1">
-              {recentDays.map((day, index) => {
-                const sum = dayTotals(day)
-                return (
-                  <button
-                    key={day.date}
-                    onClick={() => setSelectedDate(day.date)}
-                    className={cn(
-                      "flex w-full items-center gap-2.5 py-2.5 text-left transition-colors hover:text-bone",
-                      index < recentDays.length - 1 && "border-b border-seam"
-                    )}
-                  >
-                    <span className="w-16 shrink-0 font-mono text-[11px] text-steel">
-                      {dayLabel(day.date, todayKey)}
-                    </span>
-                    <span className="min-w-0 flex-1 font-mono text-[11px] text-steel-dim">
-                      <span className="text-zone">{sum.proteinaG} g</span>
-                      {" · "}
-                      <span className="text-gold">{sum.kcal} kcal</span>
-                      {" · "}
-                      {day.refeicoes.length} refeição(ões)
-                    </span>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase",
-                        day.completo
-                          ? "border-zone/30 bg-zone/5 text-zone"
-                          : "border-seam text-steel-dim"
-                      )}
-                    >
-                      {day.completo ? "completo" : "parcial"}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </Card>
-        )}
-      </CollapsibleSection>
-
-      {pageError && (
-        <p className="mt-4 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
-          {pageError}
-        </p>
+        </>
       )}
 
       <MealComposer
         seed={seed}
-        saving={saving}
+        saving={saving || completingDate !== null}
         onClose={() => setSeed(null)}
         onRegister={handleRegister}
         onSaveTemplate={handleSaveTemplate}
