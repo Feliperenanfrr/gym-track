@@ -55,8 +55,8 @@ import { useTrainingProgram } from "@/lib/use-training-program"
 import { useWorkoutTemplates } from "@/lib/use-workout-templates"
 import { loggedLiftMinutes, openLogForEditing } from "@/lib/workout-form"
 
-const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Corrida", "Caminhada", "Pular corda", "Natação", "Remo"]
-const SPORT_MODES = ["Jiu-jitsu", "Futsal", "Flag football", "Natação", "Outro esporte"]
+const CARDIO_MODES = ["Bike ergométrica", "Esteira inclinada", "Elíptico", "Corrida", "Caminhada", "Pular corda", "Natação", "Remo"]
+const SPORT_MODES = ["Jiu-jitsu", "Basquete", "Futsal", "Flag football", "Muay Thai", "Natação", "Outro esporte"]
 /** modalidade do finisher prescrito (mantida igual nos registros antigos) */
 const FINISHER_MODE = "Cardio após musculação"
 

@@ -317,6 +317,26 @@ const MET_BY_PURPOSE = {
   sport: MET_SPORT,
 } as const
 
+/**
+ * Modalidades cujo custo energético é mais específico que a finalidade do
+ * bloco. Valores do Compendium of Physical Activities 2024: elíptico em
+ * esforço moderado (5,0), jogo de basquete (8,0) e artes marciais em ritmo
+ * moderado — categoria que inclui Muay Thai (10,3).
+ */
+const MET_BY_MODE: Record<string, number> = {
+  eliptico: 5,
+  basquete: 8,
+  "muay thai": 10.3,
+}
+
+function normalizedMode(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
 function cardioDurationMinutes(block: CardioLog): number {
   return block.durationSeconds !== undefined && block.durationSeconds > 0
     ? block.durationSeconds / 60
@@ -364,10 +384,7 @@ function levelRunningMet(speedKmh: number): number {
  */
 export function cardioMet(block: CardioLog, sessionId: SessionId): number {
   const purpose = cardioPurposeOf(block, sessionId)
-  const mode = block.mode
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
+  const mode = normalizedMode(block.mode)
   const walk = /caminh|walk|hike|trilha/.test(mode)
   const run = /corrida|running|run|jog/.test(mode)
   const duration = cardioDurationMinutes(block)
@@ -397,6 +414,9 @@ export function cardioMet(block: CardioLog, sessionId: SessionId): number {
     const verticalMet = speedMMin > 0 ? (0.9 * speedMMin * grade) / 3.5 : 0
     return Math.round(Math.min(20, Math.max(4, baseMet + verticalMet)) * 10) / 10
   }
+
+  const specificMet = MET_BY_MODE[mode]
+  if (specificMet !== undefined) return specificMet
 
   return MET_BY_PURPOSE[purpose]
 }
