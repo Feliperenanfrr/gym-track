@@ -409,6 +409,23 @@ describe("sessionKcal", () => {
     expect(est.met).toBe(6.5)
   })
 
+  it("usa METs específicos para elíptico, basquete e Muay Thai", () => {
+    expect(cardioMet({ minutes: 10, mode: "Elíptico", purpose: "zone2" }, "engineZ2")).toBe(5)
+    expect(cardioMet({ minutes: 60, mode: "Basquete", purpose: "sport" }, "sport")).toBe(8)
+    expect(cardioMet({ minutes: 60, mode: "Muay Thai", purpose: "sport" }, "sport")).toBe(10.3)
+
+    // 94,4 kg × 10 min × 5 METs × 3,5 / 200 = 82,6 kcal → 80 kcal na UI.
+    const eliptico = sessionKcal(
+      workout({
+        date: dayKey(-1),
+        sessionId: "engineZ2",
+        cardios: [{ minutes: 10, mode: "Elíptico", purpose: "zone2" }],
+      }),
+      94.4
+    )!
+    expect(eliptico).toMatchObject({ met: 5, mid: 80, cardio: 80 })
+  })
+
   it("caminhada do Strava usa cadência e segundos, não o fallback de 6,5 MET", () => {
     const block = {
       minutes: 63,
