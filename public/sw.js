@@ -1,12 +1,24 @@
 // Service worker do GYM//TRACK — cache do app shell + assets estáticos.
 // Versão no nome do cache: ao mudar, o activate limpa os antigos.
-const VERSION = "gym-track-v1"
-const CACHE = `${VERSION}-cache`
+const VERSION = "gym-track-v2"
+/**
+ * Dois caches, com tempos de vida diferentes.
+ *
+ * STATIC guarda o que tem hash no nome (`/_next/static`, ícones, fontes): a URL
+ * muda a cada build, então guardar para sempre é seguro e é o que deixa o app
+ * abrir instantâneo.
+ *
+ * SHELL guarda HTML de navegação, que NÃO tem hash — `/treino` de hoje e de um
+ * build de duas semanas atrás moram na mesma chave. Por isso ele é esvaziado a
+ * cada activate: um worker novo nunca herda a casca do worker anterior.
+ */
+const STATIC = `${VERSION}-static`
+const SHELL = `${VERSION}-shell`
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
-      const cache = await caches.open(CACHE)
+      const cache = await caches.open(SHELL)
       await cache.addAll(["/offline"]).catch(() => {})
       self.skipWaiting()
     })()
@@ -26,7 +38,7 @@ self.addEventListener("activate", (event) => {
 })
 
 async function cacheFirst(request) {
-  const cache = await caches.open(CACHE)
+  const cache = await caches.open(STATIC)
   const hit = await cache.match(request)
   if (hit) return hit
   const res = await fetch(request)
@@ -35,7 +47,7 @@ async function cacheFirst(request) {
 }
 
 async function networkFirst(request) {
-  const cache = await caches.open(CACHE)
+  const cache = await caches.open(SHELL)
   try {
     const res = await fetch(request)
     if (res && res.ok) cache.put(request, res.clone())
