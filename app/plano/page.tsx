@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { AlertTriangle, Pencil } from "lucide-react"
 import { EnginePlanView } from "@/components/engine-plan-view"
+import { PerformancePlanView } from "@/components/performance-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
 import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
@@ -36,6 +37,9 @@ export default function PlanoPage() {
   const enginePlan = planForProgram("engine", templates).filter((session) =>
     session.id.startsWith("engine")
   )
+  const performancePlan = planForProgram("performance", templates).filter((session) =>
+    session.id.startsWith("perf")
+  )
   // Avulso (weekday 0) é sob demanda — fora da grade fixa da semana.
   const weekStructure = hypertrophyPlan.filter((session) => session.weekday >= 1)
   const editingTemplate = editingId ? templateById[editingId] ?? null : null
@@ -47,6 +51,25 @@ export default function PlanoPage() {
       onSave={saveTemplate}
     />
   )
+
+  if (program === "performance") {
+    return (
+      <main>
+        <PageHeader kicker="PRÉ-TEMPORADA DE GRAPPLING · 40 SEMANAS" title="O Plano" />
+        <ProgramTabs value={program} onChange={selectProgram} className="rise" />
+        {error && (
+          <Card className="mt-3 border-l-4 border-l-ember text-xs text-steel">
+            Templates em modo local: {error}
+          </Card>
+        )}
+        <PerformancePlanView
+          sessions={performancePlan}
+          onEditTemplate={(session) => setEditingId(session.id)}
+        />
+        {editor}
+      </main>
+    )
+  }
 
   if (program === "engine") {
     return (

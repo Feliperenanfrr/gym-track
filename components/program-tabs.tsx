@@ -1,6 +1,6 @@
 "use client"
 
-import { Dumbbell, HeartPulse } from "lucide-react"
+import { Dumbbell, HeartPulse, Swords } from "lucide-react"
 import { TrainingProgram } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -9,20 +9,37 @@ const PROGRAMS: {
   label: string
   detail: string
   icon: typeof Dumbbell
+  /** cor do estado ativo — uma por objetivo */
+  accent: "gold" | "zone" | "ember"
 }[] = [
+  {
+    id: "performance",
+    label: "Performance",
+    detail: "pré-temporada",
+    icon: Swords,
+    accent: "gold",
+  },
   {
     id: "engine",
     label: "Motor",
     detail: "VO₂máx e déficit",
     icon: HeartPulse,
+    accent: "zone",
   },
   {
     id: "hypertrophy",
     label: "Hipertrofia",
     detail: "base e shape",
     icon: Dumbbell,
+    accent: "ember",
   },
 ]
+
+const ACTIVE_STYLE: Record<"gold" | "zone" | "ember", string> = {
+  gold: "border-gold/40 bg-gold/10 text-gold",
+  zone: "border-zone/40 bg-zone/10 text-zone",
+  ember: "border-ember/30 bg-ember/10 text-ember",
+}
 
 export function ProgramTabs({
   value,
@@ -40,13 +57,12 @@ export function ProgramTabs({
       role="tablist"
       aria-label="Programa de treino"
       className={cn(
-        "grid grid-cols-2 rounded-lg border border-seam bg-iron p-1",
+        "grid grid-cols-3 rounded-lg border border-seam bg-iron p-1",
         className
       )}
     >
-      {PROGRAMS.map(({ id, label, detail, icon: Icon }) => {
+      {PROGRAMS.map(({ id, label, detail, icon: Icon, accent }) => {
         const active = value === id
-        const engine = id === "engine"
         return (
           <button
             key={id}
@@ -55,18 +71,20 @@ export function ProgramTabs({
             aria-selected={active}
             onClick={() => onChange(id)}
             className={cn(
-              "flex items-center justify-center rounded-md border border-transparent font-semibold transition-colors",
-              compact ? "gap-1.5 px-2 py-2 text-xs" : "gap-2 px-3 py-2.5 text-sm",
-              active && engine && "border-zone/40 bg-zone/10 text-zone",
-              active && !engine && "border-ember/30 bg-ember/10 text-ember",
-              !active && "text-steel-dim hover:text-bone"
+              // Três abas num iPhone de 375 px: o ícone encolhe antes do texto
+              // e o texto trunca antes de a aba estourar a linha.
+              "flex min-w-0 items-center justify-center rounded-md border border-transparent font-semibold transition-colors",
+              compact
+                ? "gap-1 px-1.5 py-2 text-[11px] sm:gap-1.5 sm:px-2 sm:text-xs"
+                : "gap-1.5 px-1.5 py-2.5 text-xs sm:gap-2 sm:px-3 sm:text-sm",
+              active ? ACTIVE_STYLE[accent] : "text-steel-dim hover:text-bone"
             )}
             style={{ fontFamily: "var(--font-condensed)" }}
           >
-            <Icon size={compact ? 14 : 16} />
-            <span className="uppercase tracking-wider">{label}</span>
+            <Icon size={compact ? 14 : 16} className="shrink-0" />
+            <span className="truncate uppercase tracking-wide">{label}</span>
             {!compact && (
-              <span className="hidden font-mono text-[10px] font-normal lowercase tracking-normal opacity-70 sm:inline">
+              <span className="hidden font-mono text-[10px] font-normal lowercase tracking-normal opacity-70 lg:inline">
                 {detail}
               </span>
             )}
