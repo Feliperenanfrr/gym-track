@@ -1,8 +1,10 @@
 import { ENGINE_PLAN, ENGINE_SESSION_IDS } from "./engine-plan"
 import { LEGACY_SESSIONS } from "./legacy-plan"
+import { PERFORMANCE_PLAN, PERFORMANCE_SESSION_IDS } from "./performance-plan"
 import { SessionId, SessionPlan, TrainingProgram } from "./types"
 
 export { ENGINE_PLAN } from "./engine-plan"
+export { PERFORMANCE_PLAN } from "./performance-plan"
 
 /**
  * Plano de Treino — Felipe (Junho/2026)
@@ -143,7 +145,7 @@ export const PLAN: SessionPlan[] = [
 ]
 
 /** Sessões vivas: alimentam seleção, templates persistidos e catálogo. */
-export const ALL_PLAN_SESSIONS = [...PLAN, ...ENGINE_PLAN]
+export const ALL_PLAN_SESSIONS = [...PLAN, ...ENGINE_PLAN, ...PERFORMANCE_PLAN]
 
 /**
  * Sessão apenas de histórico. Um registro por dia contém todos os blocos
@@ -178,13 +180,23 @@ const ENGINE_PLAN_IDS: SessionId[] = [
   "free",
   "sport",
 ]
+const PERFORMANCE_PLAN_IDS: SessionId[] = [
+  ...PERFORMANCE_PLAN.map((session) => session.id),
+  "free",
+  "sport",
+]
 
 export function planForProgram(
   program: TrainingProgram,
   templates: SessionPlan[] = ALL_PLAN_SESSIONS
 ): SessionPlan[] {
   const byId = new Map(templates.map((session) => [session.id, session]))
-  const ids = program === "hypertrophy" ? HYPERTROPHY_PLAN_IDS : ENGINE_PLAN_IDS
+  const ids =
+    program === "hypertrophy"
+      ? HYPERTROPHY_PLAN_IDS
+      : program === "engine"
+        ? ENGINE_PLAN_IDS
+        : PERFORMANCE_PLAN_IDS
   return ids.map((id) => byId.get(id) ?? PLAN_BY_ID[id])
 }
 
@@ -224,6 +236,12 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "engineIntervals",
   "engineZ2",
   "engineHome",
+  // pré-temporada de grappling
+  "perfPower",
+  "perfPull",
+  "perfFull",
+  "perfZ2",
+  "perfIntervals",
   // protocolo aposentado: continua contando no histórico já registrado
   "bjjPull",
   "bjjBase",
@@ -261,17 +279,27 @@ const HYPERTROPHY_TARGET_SESSION_IDS = new Set<SessionId>([
 const ENGINE_TARGET_SESSION_IDS = new Set<SessionId>([...ENGINE_SESSION_IDS, "free"])
 
 /**
- * Frequência exibida no painel: 5 sessões na hipertrofia ou 5–6 no ciclo de
- * motor. Avulso conta nos dois — é academia registrada fora da prescrição.
- * Esporte fica fora: jogo e tatame são medidos em minutos, não em sessões.
+ * Na pré-temporada a semana também é inteira: 3 sessões de sala, 1 intervalado
+ * e a Zona 2 que sustenta as duas coisas. Mesma lógica do motor.
+ */
+const PERFORMANCE_TARGET_SESSION_IDS = new Set<SessionId>([
+  ...PERFORMANCE_SESSION_IDS,
+  "free",
+])
+
+/**
+ * Frequência exibida no painel: 5 sessões na hipertrofia, 5–6 no ciclo de
+ * motor, 5 na pré-temporada. Avulso conta nos três — é academia registrada
+ * fora da prescrição. Esporte fica fora: jogo e tatame são medidos em minutos,
+ * não em sessões.
  */
 export function countsTowardProgramTarget(
   sessionId: SessionId,
   program: TrainingProgram
 ): boolean {
-  return program === "engine"
-    ? ENGINE_TARGET_SESSION_IDS.has(sessionId)
-    : HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
+  if (program === "engine") return ENGINE_TARGET_SESSION_IDS.has(sessionId)
+  if (program === "performance") return PERFORMANCE_TARGET_SESSION_IDS.has(sessionId)
+  return HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
 }
 
 export const GOLDEN_RULES = [

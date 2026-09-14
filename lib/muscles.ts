@@ -60,6 +60,16 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   // Motor aeróbico (ago/2026) — máquinas das duas sessões de corpo inteiro
   "machine-shoulder-press": "Ombro",
   "machine-crunch": "Core",
+  // Pré-temporada de grappling (set/2026) — puxada vertical, pegada e pescoço
+  pullup: "Costas",
+  "dead-hang": "Costas",
+  "neck-iso": "Pescoço",
+  "walking-lunge": "Quadríceps",
+  "farmer-carry": "Core",
+  pallof: "Core",
+  "goblet-squat": "Quadríceps",
+  "db-row": "Costas",
+  pushup: "Peito",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */

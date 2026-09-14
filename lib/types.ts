@@ -4,6 +4,12 @@ export type SessionId =
   | "lowerA"
   | "upperB"
   | "lowerB"
+  /* pré-temporada de grappling (set/2026) */
+  | "perfPower"
+  | "perfPull"
+  | "perfFull"
+  | "perfZ2"
+  | "perfIntervals"
   /* ciclo de motor aeróbico e déficit (ago/2026) */
   | "engineForceA"
   | "engineForceB"
@@ -27,7 +33,7 @@ export type SessionId =
   | "sport"
   | "rest"
 
-export type TrainingProgram = "engine" | "hypertrophy"
+export type TrainingProgram = "performance" | "engine" | "hypertrophy"
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 

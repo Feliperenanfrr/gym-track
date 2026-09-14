@@ -1,30 +1,40 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { ENGINE_START_DATE } from "./engine-plan"
+import { PERFORMANCE_START_DATE } from "./performance-plan"
 import { TrainingProgram } from "./types"
 import { toDateKey } from "./utils"
 
+const PROGRAMS: TrainingProgram[] = ["performance", "engine", "hypertrophy"]
+
+function isProgram(value: unknown): value is TrainingProgram {
+  return typeof value === "string" && PROGRAMS.includes(value as TrainingProgram)
+}
+
 /**
- * v3: as chaves anteriores guardavam a escolha feita durante o flag football
- * e a preparação para jiu-jitsu. Versionar faz o padrão do ciclo novo valer
- * uma vez, sem carregar uma preferência que era de outro objetivo.
+ * v4: as chaves anteriores guardavam a escolha feita durante o flag football,
+ * a preparação para jiu-jitsu e o ciclo de motor. Versionar faz o padrão do
+ * ciclo novo valer uma vez, sem carregar uma preferência que era de outro
+ * objetivo.
  */
-const PROGRAM_KEY = "gym-track:training-program:v3"
+const PROGRAM_KEY = "gym-track:training-program:v4"
 const PROGRAM_EVENT = "gym-track:training-program-change"
 
 /**
- * O ciclo de motor aeróbico é o objetivo padrão desde 31/08/2026: é ele que
- * abre o app enquanto o usuário não escolher a hipertrofia explicitamente.
+ * A pré-temporada de grappling é o objetivo padrão a partir de 21/09/2026: é
+ * ela que abre o app enquanto o usuário não escolher outro programa. Antes
+ * dessa data o padrão continua sendo o ciclo de motor, que era o objetivo
+ * vigente — histórico aberto no app não pode mudar de prescrição por causa de
+ * um deploy.
  */
 function defaultProgramFor(date: Date): TrainingProgram {
-  return toDateKey(date) >= ENGINE_START_DATE ? "engine" : "hypertrophy"
+  return toDateKey(date) >= PERFORMANCE_START_DATE ? "performance" : "engine"
 }
 
 export function getTrainingProgram(date = new Date()): TrainingProgram {
   try {
     const stored = localStorage.getItem(PROGRAM_KEY)
-    if (stored === "hypertrophy" || stored === "engine") return stored
+    if (isProgram(stored)) return stored
   } catch {
     // O padrão por data também funciona quando o storage não está disponível.
   }
