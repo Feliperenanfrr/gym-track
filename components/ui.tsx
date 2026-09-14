@@ -62,10 +62,16 @@ export function SectionTitle({
   accent = "ember",
 }: {
   children: React.ReactNode
-  accent?: "ember" | "zone" | "steel"
+  accent?: "ember" | "zone" | "steel" | "gold"
 }) {
   const color =
-    accent === "zone" ? "text-zone" : accent === "steel" ? "text-steel" : "text-ember"
+    accent === "zone"
+      ? "text-zone"
+      : accent === "steel"
+        ? "text-steel"
+        : accent === "gold"
+          ? "text-gold"
+          : "text-ember"
   return (
     <h2
       className={cn(

@@ -8,6 +8,7 @@ import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { enginePlanForDate, enginePhaseFor, nextEngineSession } from "@/lib/engine-plan"
+import { PERF_CYCLE, nextPerformanceSession } from "@/lib/performance-plan"
 import { cardioBlocks, cardioRowsToBlocks } from "@/lib/cardio"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
@@ -189,6 +190,10 @@ export default function TreinoPage() {
       setSessionId("engineForceA")
       return
     }
+    if (program === "performance") {
+      setSessionId(PERF_CYCLE[0])
+      return
+    }
     const planned = planForProgram("hypertrophy", templates).find(
       (candidate) => candidate.weekday === isoWeekday(today)
     )
@@ -202,6 +207,12 @@ export default function TreinoPage() {
     cycleInitRef.current = true
     if (program === "engine") {
       setSessionId(nextEngineSession(data.workouts, today))
+      return
+    }
+    // A pré-temporada é fila pura: a próxima da vez, sempre, sem consultar o
+    // calendário nem o modo de agenda.
+    if (program === "performance") {
+      setSessionId(nextPerformanceSession(data.workouts, today))
       return
     }
     if (getScheduleMode() !== "ciclo") return
@@ -844,7 +855,9 @@ export default function TreinoPage() {
   const suggestedSessionId =
     program === "engine"
       ? nextEngineSession(data.workouts, today)
-      : cycleSug?.sessionId ?? null
+      : program === "performance"
+        ? nextPerformanceSession(data.workouts, today)
+        : cycleSug?.sessionId ?? null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
 

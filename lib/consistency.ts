@@ -23,11 +23,20 @@ const DAY_MS = 86_400_000
 const HYPERTROPHY_WEEKLY_TARGET = 5
 
 /**
+ * Alvo de sessões/semana na pré-temporada: 3 de sala + 1 intervalado + 1 de
+ * Zona 2. A Fase 1 pede cinco dias de propósito — a média histórica é 2,5, e
+ * saltar direto para seis é como se abandona um plano de 40 semanas na
+ * terceira.
+ */
+const PERFORMANCE_WEEKLY_TARGET = 5
+
+/**
  * Alvo semanal do programa ativo. No ciclo de motor o alvo vem do bloco em
  * que a semana cai ("5", "6" ou "5–6"): a faixa é lida pelo piso, porque o
  * mínimo é o que define se a semana foi cumprida.
  */
 export function weeklySessionTarget(program: TrainingProgram, monday: Date): number {
+  if (program === "performance") return PERFORMANCE_WEEKLY_TARGET
   if (program !== "engine") return HYPERTROPHY_WEEKLY_TARGET
   const parsed = Number.parseInt(enginePhaseFor(monday).weeklySessions, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : HYPERTROPHY_WEEKLY_TARGET

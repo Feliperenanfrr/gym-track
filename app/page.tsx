@@ -36,6 +36,11 @@ import { energyBalanceSeries, energyReport } from "@/lib/energy"
 import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
 import {
+  PERFORMANCE_PHASE,
+  PERFORMANCE_Z2_TARGET,
+  performanceTodayView,
+} from "@/lib/performance-plan"
+import {
   cycleTodayView,
   getScheduleMode,
   last7Days,
@@ -241,7 +246,8 @@ export default function Dashboard() {
     )
 
     // régua única: gráficos e cards usam a mesma janela em todos os modos
-    const rolling = program === "engine" || mode === "ciclo"
+    // Motor e pré-temporada são fila, não calendário: a janela móvel é a régua
+    const rolling = program !== "hypertrophy" || mode === "ciclo"
     const weeks = buildWeeks(data, today, program, rolling)
     const thisWeek = weeks[weeks.length - 1]
     const lastWeek = weeks[weeks.length - 2]
@@ -341,61 +347,93 @@ export default function Dashboard() {
     const strip = last7Days(data.workouts, today)
     const engineView = engineTodayView(data.workouts, today)
     const enginePhase = enginePhaseFor(today)
+    const performanceView = performanceTodayView(data.workouts, today)
 
-    // card principal unificado entre os dois modos
-    const headSession =
-      program === "engine"
-        ? sessionById(engineView.sessionId)
-        : mode === "ciclo"
-          ? sessionById(cycleView.sessionId)
-          : todaySession
-    const headDone =
-      program === "engine" ? engineView.done : mode === "ciclo" ? cycleView.done : todayDone
     /**
-     * Sessão que continua pendente mesmo com treino registrado hoje (avulso,
-     * tatame ou Z2 no lugar do lift). No calendário fixo, o pendente é o
-     * próprio treino do dia enquanto ele não for salvo.
+     * Card principal, um objeto por programa.
+     *
+     * Antes eram cinco ternários encadeados em paralelo, um por campo. Com um
+     * terceiro programa isso vira uma árvore ilegível — e o card é a primeira
+     * coisa que aparece no app, então errar aqui é errar em tudo. Cada
+     * programa monta o seu bloco inteiro, e quem lê vê a regra de um programa
+     * de uma vez só.
      */
-    const headPending =
-      program === "engine"
-        ? engineView.pendingSessionId
-        : mode === "ciclo"
-          ? cycleView.pendingSessionId
-          : todayDone
-            ? null
-            : todaySession.id
-    const headPendingSession =
-      headPending && headPending !== headSession.id ? sessionById(headPending) : null
-    const headKicker =
-      program === "engine"
-        ? engineView.done
-          ? "Treino registrado hoje"
-          : "Próximo do ciclo de motor"
-        : mode === "ciclo"
-          ? cycleView.done
-            ? "Hoje concluído"
-            : "Próximo do ciclo"
-          : "Treino de hoje"
-    const headNote =
-      program === "engine"
-        ? headPendingSession
-          ? `Registrado hoje, mas a semana ainda pede ${headPendingSession.title}. Cardio conta o dia; a sala é que segura a massa magra.`
-          : engineView.done
-            ? `Próxima sessão de sala: ${sessionById(engineView.nextSessionId).title}. O resto da semana é cardio.`
-            : enginePhase.guidance
-        : mode !== "ciclo"
-          ? null
-          : headPendingSession
-            ? `Treino registrado hoje. O ciclo continua pedindo ${headPendingSession.title}.`
-            : cycleView.completedLiftSessionId
-              ? `Próximo do ciclo: ${sessionById(cycle.nextLiftId).title}.`
-              : cycle.reason === "recovery"
-                ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
-                : cycle.reason === "regression"
-                  ? `${cycle.daysSinceStrength ?? cycle.daysSinceLastLift} dias sem musculação (avulso conta) — repita ${sessionById(cycle.sessionId).title} sugerindo ~90% da carga.`
-                  : cycle.reason === "start"
-                    ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
-                    : null
+    const head = (() => {
+      if (program === "performance") {
+        const pending =
+          performanceView.pendingSessionId &&
+          performanceView.pendingSessionId !== performanceView.sessionId
+            ? sessionById(performanceView.pendingSessionId)
+            : null
+        return {
+          session: sessionById(performanceView.sessionId),
+          done: performanceView.done,
+          pendingSession: pending,
+          kicker: performanceView.done ? "Treino registrado hoje" : "Próximo da fila",
+          note: pending
+            ? `Registrado hoje, mas a fila ainda pede ${pending.title}. Cardio conta o dia; a sala é o que transfere para o tatame.`
+            : performanceView.done
+              ? `Próxima da fila: ${sessionById(performanceView.nextSessionId).title}. A fila espera — faltou um dia, ela não anda sozinha.`
+              : "Explosivo primeiro, sempre. Zona 2 é o piso da semana: 180 a 240 min somando os encerramentos.",
+        }
+      }
+
+      if (program === "engine") {
+        const pending =
+          engineView.pendingSessionId && engineView.pendingSessionId !== engineView.sessionId
+            ? sessionById(engineView.pendingSessionId)
+            : null
+        return {
+          session: sessionById(engineView.sessionId),
+          done: engineView.done,
+          pendingSession: pending,
+          kicker: engineView.done ? "Treino registrado hoje" : "Próximo do ciclo de motor",
+          note: pending
+            ? `Registrado hoje, mas a semana ainda pede ${pending.title}. Cardio conta o dia; a sala é que segura a massa magra.`
+            : engineView.done
+              ? `Próxima sessão de sala: ${sessionById(engineView.nextSessionId).title}. O resto da semana é cardio.`
+              : enginePhase.guidance,
+        }
+      }
+
+      if (mode !== "ciclo") {
+        return {
+          session: todaySession,
+          done: todayDone,
+          pendingSession: todayDone ? null : null,
+          kicker: "Treino de hoje",
+          note: null as string | null,
+        }
+      }
+
+      const pending =
+        cycleView.pendingSessionId && cycleView.pendingSessionId !== cycleView.sessionId
+          ? sessionById(cycleView.pendingSessionId)
+          : null
+      return {
+        session: sessionById(cycleView.sessionId),
+        done: cycleView.done,
+        pendingSession: pending,
+        kicker: cycleView.done ? "Hoje concluído" : "Próximo do ciclo",
+        note: pending
+          ? `Treino registrado hoje. O ciclo continua pedindo ${pending.title}.`
+          : cycleView.completedLiftSessionId
+            ? `Próximo do ciclo: ${sessionById(cycle.nextLiftId).title}.`
+            : cycle.reason === "recovery"
+              ? `2 dias seguidos de musculação — hoje recupera: Z2 leve ou descanso. Depois vem ${sessionById(cycle.nextLiftId).title}.`
+              : cycle.reason === "regression"
+                ? `${cycle.daysSinceStrength ?? cycle.daysSinceLastLift} dias sem musculação (avulso conta) — repita ${sessionById(cycle.sessionId).title} sugerindo ~90% da carga.`
+                : cycle.reason === "start"
+                  ? "Começo do ciclo: Upper A → Lower A → Upper B → Lower B."
+                  : null,
+      }
+    })()
+
+    const headSession = head.session
+    const headDone = head.done
+    const headPendingSession = head.pendingSession
+    const headKicker = head.kicker
+    const headNote = head.note
 
     return {
       todaySession,
@@ -473,11 +511,15 @@ export default function Dashboard() {
     day: "2-digit",
     month: "short",
   })
-  const rollingView = program === "engine" || mode === "ciclo"
+  const rollingView = program !== "hypertrophy" || mode === "ciclo"
   // No ciclo de motor a meta de Zona 2 sobe a cada bloco; o intenso é contado
   // à parte e não entra nesta faixa.
   const z2Target =
-    program === "engine" ? view.enginePhase.z2Target : HYPERTROPHY_Z2_TARGET
+    program === "engine"
+      ? view.enginePhase.z2Target
+      : program === "performance"
+        ? PERFORMANCE_Z2_TARGET
+        : HYPERTROPHY_Z2_TARGET
   const sessionTarget = program === "engine" ? view.enginePhase.weeklySessions : "5"
 
   return (
@@ -531,7 +573,11 @@ export default function Dashboard() {
       <Card
         className={cn(
           "rise rise-1 relative overflow-hidden border-l-4",
-          program === "engine" ? "border-l-zone" : "border-l-ember"
+          program === "engine"
+            ? "border-l-zone"
+            : program === "performance"
+              ? "border-l-gold"
+              : "border-l-ember"
         )}
       >
         <div className="flex justify-between items-center">
@@ -557,6 +603,12 @@ export default function Dashboard() {
                 ? `semana ${view.enginePhase.cycleWeek}/12`
                 : view.enginePhase.dates}
             </span>
+          </p>
+        )}
+        {program === "performance" && (
+          <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
+            {PERFORMANCE_PHASE.label}
+            <span className="ml-2 text-steel-dim">{PERFORMANCE_PHASE.detail}</span>
           </p>
         )}
         <p className="mt-2 font-mono text-xs text-steel-dim">
@@ -596,7 +648,9 @@ export default function Dashboard() {
                       "text-coal",
                       program === "engine"
                         ? "bg-zone hover:bg-teal-300"
-                        : "bg-ember hover:bg-ember-hot"
+                        : program === "performance"
+                          ? "bg-gold hover:bg-amber-300"
+                          : "bg-ember hover:bg-ember-hot"
                     )
               )}
               style={{ fontFamily: "var(--font-condensed)" }}
@@ -983,7 +1037,13 @@ export default function Dashboard() {
               <span className="text-lg text-steel-dim">/{sessionTarget}</span>
             </>
           }
-          detail={`${program === "engine" ? "meta: 2 força + 1–2 intenso + 3–4 Z2" : "meta: 4 musc + 1 cardio"}${view.streak > 0 ? ` · ${view.streak} sem. no alvo 🔥` : ""}`}
+          detail={`${
+            program === "engine"
+              ? "meta: 2 força + 1–2 intenso + 3–4 Z2"
+              : program === "performance"
+                ? "meta: 3 sala + 1 intervalado + 1 Z2"
+                : "meta: 4 musc + 1 cardio"
+          }${view.streak > 0 ? ` · ${view.streak} sem. no alvo 🔥` : ""}`}
         />
         <StatCard
           label="Volume da semana"
@@ -1002,7 +1062,9 @@ export default function Dashboard() {
               ? `meta ${z2Target.min}–${z2Target.max}′ · +${view.thisWeek.intense}′ intenso à parte`
               : program === "engine"
                 ? `meta ${z2Target.min}–${z2Target.max} min · ${view.enginePhase.label.replace("Bloco ", "bloco ")}`
-                : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
+                : program === "performance"
+                  ? `meta ${z2Target.min}–${z2Target.max} min · somando os encerramentos`
+                  : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
           }
           accent="zone"
         />
@@ -1434,7 +1496,9 @@ export default function Dashboard() {
         <p className="mt-2 text-xs text-steel">
           {program === "engine"
             ? "3–4 sessões de 35–60′ a 122–138 bpm. É o volume que decide o gasto da semana e a gordura visceral — o intenso entra à parte, 1–2×."
-            : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
+            : program === "performance"
+              ? "180–240′ a 125–138 bpm somando tudo: as sessões próprias, os 10′ que fecham cada treino de sala e as caminhadas do Strava. É o piso que sustenta o resto da semana."
+              : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
           barras usam a mesma janela dos cards acima
