@@ -41,8 +41,10 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className="min-h-dvh">
-        <div className="app-shell mx-auto w-full max-w-md px-4 pb-28 pt-5 md:max-w-2xl">
-          {children}
+        <div className="safe-area">
+          <div className="app-shell mx-auto w-full max-w-md px-4 pb-28 pt-5 md:max-w-2xl">
+            {children}
+          </div>
         </div>
         <BottomNav />
         <PWARegister />
