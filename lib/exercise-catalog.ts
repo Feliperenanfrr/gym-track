@@ -43,6 +43,7 @@ const extra: CatalogExercise[] = [
   { id: "machine-crunch", name: "Abdominal crunch na máquina", nameEn: "Machine Abdominal Crunch", muscleGroup: "Core", equipment: "academia", sets: 3, repsMin: 12, repsMax: 15, unit: "reps", rest: "60 s", note: "Enrole o tronco; pausa de 1 s no topo" },
   { id: "crunch", name: "Abdominal supra no chão", nameEn: "Floor Crunch", muscleGroup: "Core", equipment: "peso corporal", sets: 3, repsMin: 15, repsMax: 20, unit: "reps", rest: "60 s", note: "Lombar colada no chão, mãos leves na cabeça" },
   { id: "leg-raise", name: "Elevação de pernas", nameEn: "Leg Raise", muscleGroup: "Core", equipment: "peso corporal", sets: 3, repsMin: 10, repsMax: 15, unit: "reps", rest: "60 s", note: "No banco ou suspenso, lombar sempre apoiada" },
+  { id: "db-plank-pull-through", name: "Prancha com halter (pull-through)", nameEn: "Dumbbell Plank Pull-Through", muscleGroup: "Core", equipment: "halteres", sets: 3, repsMin: 10, repsMax: 16, unit: "reps", rest: "60 s", note: "Em prancha alta, puxe o halter por baixo do corpo para o outro lado; quadril estável" },
 ]
 
 const planned: CatalogExercise[] = Object.values(EXERCISES_BY_ID).map((exercise) => ({
