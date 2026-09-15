@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "backup": "node scripts/backup-supabase.mjs",
-    "backup:pgdump": "bash scripts/backup-supabase.sh"
+    "backup:pgdump": "bash scripts/backup-supabase.sh",
+    "sql": "node scripts/run-sql.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
