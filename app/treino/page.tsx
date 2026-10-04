@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, Footprints, History, Minus, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, Timer, TrendingUp, Trash2, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Cog, Dumbbell, Footprints, History, Minus, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, Timer, TrendingUp, Trash2, X } from "lucide-react"
 import { HoldTimer } from "@/components/hold-timer"
 import { LoadField } from "@/components/load-field"
+import { MachineChip, MachineSheet } from "@/components/machine-sheet"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
@@ -14,7 +15,8 @@ import { PERF_CYCLE, nextPerformanceSession } from "@/lib/performance-plan"
 import { cardioBlocks, cardioRowsToBlocks } from "@/lib/cardio"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, CardioRow, ExercisePrescription, ExerciseLog, ExerciseUnit, MuscleGroup, SessionId, SessionKind, SessionPlan, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
+import { backfillCandidates, liftKey, machinesFor, newMachineId, tagEntries } from "@/lib/machines"
+import { CardioPurpose, CardioRow, ExerciseMachine, ExercisePrescription, ExerciseLog, ExerciseUnit, MuscleGroup, SessionId, SessionKind, SessionPlan, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
 import {
   bestE1RMAdjusted,
   formatPrescription,
@@ -43,6 +45,7 @@ import {
 } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
 import { inputToKg, LoadUnit, loadForInput } from "@/lib/units"
+import { useExerciseMachines } from "@/lib/use-exercise-machines"
 import { useHoldTimer } from "@/lib/use-hold-timer"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
@@ -131,6 +134,9 @@ export default function TreinoPage() {
   const router = useRouter()
   const { program, selectProgram } = useTrainingProgram()
   const { templates, templateById, exerciseCatalog } = useWorkoutTemplates()
+  const { machines, saveMachine } = useExerciseMachines()
+  /** exercício com o seletor de máquina aberto */
+  const [machineSheetFor, setMachineSheetFor] = useState<string | null>(null)
   const restTimer = useRestTimer()
   const holdTimer = useHoldTimer()
   const [today, setToday] = useState<Date | null>(null)
@@ -287,24 +293,60 @@ export default function TreinoPage() {
    * um treino de duas semanas atrás e sugerir carga errada.
    */
   const exerciseHistory = useMemo(() => {
-    const history: Record<string, { log: WorkoutLog; entry: ExerciseLog }> = {}
-    if (!data || !today) return history
+    type Last = { log: WorkoutLog; entry: ExerciseLog }
+    /** por exercício + máquina — a base de toda comparação de carga */
+    const byLift: Record<string, Last> = {}
+    /** por exercício, qualquer máquina — decide a máquina padrão do dia */
+    const byExercise: Record<string, Last> = {}
+    if (!data || !today) return { byLift, byExercise }
     const todayKey = toDateKey(today)
     for (const log of [...data.workouts].sort((a, b) => a.date.localeCompare(b.date))) {
       if (log.date >= todayKey) continue
       for (const entry of log.entries) {
-        if (entry.sets.length > 0) history[entry.exerciseId] = { log, entry }
+        if (entry.sets.length === 0) continue
+        byLift[liftKey(entry)] = { log, entry }
+        byExercise[entry.exerciseId] = { log, entry }
       }
     }
-    return history
+    return { byLift, byExercise }
   }, [data, today])
+
+  const machineById = useMemo(
+    () => new Map((machines ?? []).map((machine) => [machine.id, machine])),
+    [machines]
+  )
+
+  /**
+   * Máquina do exercício neste treino: a escolhida; senão a do último
+   * registro (você costuma voltar à mesma), a menos que tenha sido arquivada.
+   * null = sem máquina.
+   */
+  const machineIdOf = (ex: Pick<ExercisePrescription, "id" | "machineId">): string | null => {
+    if (ex.machineId !== undefined) return ex.machineId
+    const last = exerciseHistory.byExercise[ex.id]?.entry.machineId
+    return last && !machineById.get(last)?.archived ? last : null
+  }
+
+  /** Último registro do exercício NA MESMA MÁQUINA (ou sem máquina). */
+  const historyOf = (ex: Pick<ExercisePrescription, "id" | "machineId">) =>
+    exerciseHistory.byLift[liftKey({ exerciseId: ex.id, machineId: machineIdOf(ex) ?? undefined })]
 
   /**
    * Unidade em que a carga do exercício é lida hoje: a escolhida neste treino,
-   * senão a do último registro (a pilha em lb é lembrada sozinha), senão kg.
+   * senão a da máquina, senão a do último registro (a pilha em lb é lembrada
+   * sozinha), senão kg.
    */
-  const loadUnitOf = (ex: Pick<ExercisePrescription, "id" | "loadUnit">): LoadUnit =>
-    ex.loadUnit ?? exerciseHistory[ex.id]?.entry.loadUnit ?? "kg"
+  const loadUnitOf = (
+    ex: Pick<ExercisePrescription, "id" | "loadUnit" | "machineId">
+  ): LoadUnit => {
+    const machineId = machineIdOf(ex)
+    return (
+      ex.loadUnit ??
+      (machineId ? machineById.get(machineId)?.loadUnit : undefined) ??
+      historyOf(ex)?.entry.loadUnit ??
+      "kg"
+    )
+  }
 
   /** BPM padrão do bloco: o do último registro, senão o meio da faixa alvo */
   const defaultBpm = (s: SessionPlan, ll: WorkoutLog | null): string => {
@@ -381,8 +423,8 @@ export default function TreinoPage() {
     const adapting =
       program === "engine" && today !== null && enginePhaseFor(today).id === "fundacao"
     for (const ex of exercises) {
-      const lastEntry = exerciseHistory[ex.id]?.entry
-      // na unidade da placa: pilha em lb pré-preenche em lb
+      // a última vez NA MESMA MÁQUINA; na unidade da placa (lb pré-preenche lb)
+      const lastEntry = historyOf(ex)?.entry
       const lastSets = lastEntry ? setsInUnit(lastEntry, loadUnitOf(ex)) : []
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastSets[i] ?? lastSets[lastSets.length - 1]
@@ -528,15 +570,18 @@ export default function TreinoPage() {
     > = {}
     if (!data || !today) return out
     for (const ex of activeExercises) {
-      const previous = exerciseHistory[ex.id]
+      // tudo na MESMA máquina: histórico, passo e a sugestão que sai deles
+      const previous = historyOf(ex)
+      const machineId = machineIdOf(ex)
+      const machine = machineId ? machineById.get(machineId) : undefined
       // passo e sugestão no número da placa: pilha em lb anda de 10 em 10 lb
       const loadUnit = loadUnitOf(ex)
-      const step = resolveLoadStep(
-        ex.id,
-        loggedWeights(data.workouts, ex.id, 12, loadUnit),
-        stepOverrides,
-        loadUnit
-      )
+      const history = loggedWeights(data.workouts, ex.id, 12, loadUnit, machineId)
+      // com máquina, o passo fixado é dela (sincroniza entre aparelhos); o
+      // passo manual do localStorage é do exercício sem máquina
+      const step = machine
+        ? machine.loadStep ?? resolveLoadStep(ex.id, history, {}, loadUnit)
+        : resolveLoadStep(ex.id, history, stepOverrides, loadUnit)
       const suggestion = suggestLoad({
         prescription: ex,
         lastEntry: previous?.entry,
@@ -549,13 +594,15 @@ export default function TreinoPage() {
         out[ex.id] = {
           suggestion,
           step,
-          manualStep: stepOverrides[stepKey(ex.id, loadUnit)] !== undefined,
+          manualStep: machine
+            ? machine.loadStep !== undefined
+            : stepOverrides[stepKey(ex.id, loadUnit)] !== undefined,
         }
       }
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeExercises, data, exerciseHistory, layoffNotice, stepOverrides, today])
+  }, [activeExercises, data, exerciseHistory, layoffNotice, machineById, stepOverrides, today])
 
   /**
    * kcal estimadas do treino salvo — duração real + MET ajustado pelo sRPE.
@@ -790,23 +837,99 @@ export default function TreinoPage() {
     setLayoffNotice(returningFromLayoff())
   }
 
+  /** máquina escolhida no exercício (objeto), se houver */
+  const machineOf = (ex: Pick<ExercisePrescription, "id" | "machineId">) => {
+    const id = machineIdOf(ex)
+    return id ? machineById.get(id) : undefined
+  }
+
+  /** grava a máquina; erro de API vira aviso, sem derrubar o treino */
+  const persistMachine = (machine: ExerciseMachine) =>
+    saveMachine(machine).catch((e: unknown) =>
+      setSaveError(e instanceof Error ? e.message : "Não deu para salvar a máquina")
+    )
+
   /**
    * Troca o passo de carga do exercício (máquina de 5 em 5, anilha de 20…).
-   * `key` vem de `stepKey`: o passo em lb não se mistura com o de kg.
+   * Com máquina escolhida, o passo é DELA e sincroniza entre aparelhos; sem
+   * máquina, fica no aparelho (em lb numa chave separada da de kg).
    */
-  const chooseStep = (key: string, step: number | null) => {
-    setStepOverrides(saveStepOverride(key, step))
+  const chooseStep = (ex: ExercisePrescription, step: number | null) => {
+    const machine = machineOf(ex)
+    if (machine) {
+      const { loadStep: _previous, ...rest } = machine
+      void persistMachine(step === null ? rest : { ...rest, loadStep: step })
+    } else {
+      setStepOverrides(saveStepOverride(stepKey(ex.id, loadUnitOf(ex)), step))
+    }
     setStepEditorFor(null)
+  }
+
+  /**
+   * Escolhe a máquina do exercício. As séries ainda não feitas passam a
+   * partir da última vez NAQUELA máquina — os números da outra não servem.
+   * Sem histórico nela, a carga fica em branco: esta sessão vira a base.
+   */
+  const selectMachine = (ex: ExercisePrescription, machineId: string | null) => {
+    const next: ExercisePrescription = { ...ex, machineId, loadUnit: undefined }
+    const fresh = buildPrefill(session, lastLog, [next]).rows[ex.id] ?? []
+    dirtyRef.current = true
+    tapFeedback()
+    setActiveExercises((current) =>
+      current.map((exercise) => (exercise.id === ex.id ? next : exercise))
+    )
+    setRows((current) => ({
+      ...current,
+      [ex.id]: (current[ex.id] ?? []).map((row, i) => {
+        if (row.done) return row
+        const base = fresh[i] ?? fresh[fresh.length - 1]
+        return base ? { ...row, weight: base.weight, reps: base.reps || row.reps } : row
+      }),
+    }))
+    setMachineSheetFor(null)
+  }
+
+  /** Cria a máquina (funciona offline: o id nasce aqui) e já a usa. */
+  const createMachine = (ex: ExercisePrescription, name: string, loadUnit: LoadUnit) => {
+    const machine: ExerciseMachine = { id: newMachineId(), exerciseId: ex.id, name, loadUnit }
+    void persistMachine(machine)
+    // a máquina ainda não está no estado: a unidade dela vai explícita
+    const next: ExercisePrescription = { ...ex, machineId: machine.id, loadUnit }
+    dirtyRef.current = true
+    tapFeedback()
+    setActiveExercises((current) =>
+      current.map((exercise) => (exercise.id === ex.id ? next : exercise))
+    )
+    // máquina nova não tem histórico: carga em branco nas séries não feitas
+    setRows((current) => ({
+      ...current,
+      [ex.id]: (current[ex.id] ?? []).map((row) => (row.done ? row : { ...row, weight: "" })),
+    }))
+  }
+
+  /**
+   * Marca treinos antigos (sem máquina) como feitos nesta máquina. Regrava
+   * cada treino pelo mesmo caminho do Histórico — offline vai para a fila.
+   */
+  const tagPastEntries = async (ex: ExercisePrescription, keys: string[]) => {
+    const machine = machineOf(ex)
+    if (!data || !machine || keys.length === 0) return 0
+    const changed = tagEntries(data.workouts, new Set(keys), ex.id, machine)
+    for (const log of changed) await addWorkout(log)
+    return changed.length
   }
 
   /**
    * kg ⇄ lb neste exercício. Converte o que já está nos campos para o número
    * da placa — o 41 que você convertia de cabeça vira 90 lb. A carga gravada
-   * segue em kg; o próximo treino já abre na unidade escolhida.
+   * segue em kg; o próximo treino já abre na unidade escolhida. Com máquina,
+   * a unidade é dela: fica gravada para a próxima vez.
    */
   const toggleLoadUnit = (ex: ExercisePrescription) => {
     const from = loadUnitOf(ex)
     const to: LoadUnit = from === "kg" ? "lb" : "kg"
+    const machine = machineOf(ex)
+    if (machine) void persistMachine({ ...machine, loadUnit: to })
     dirtyRef.current = true
     tapFeedback()
     setActiveExercises((current) =>
@@ -844,6 +967,14 @@ export default function TreinoPage() {
     const entries: ExerciseLog[] = activeExercises
       .map((ex) => {
         const loadUnit = loadUnitOf(ex)
+        const machineId = machineIdOf(ex)
+        // nome da máquina como snapshot; se a lista ainda não carregou, o do
+        // último registro nela
+        const machineName = machineId
+          ? machineById.get(machineId)?.name ??
+            historyOf(ex)?.entry.machineName ??
+            exerciseHistory.byExercise[ex.id]?.entry.machineName
+          : undefined
         return {
           exerciseId: ex.id,
           exerciseName: ex.name,
@@ -852,6 +983,8 @@ export default function TreinoPage() {
           unit: ex.unit,
           // digitado em lb fica anotado; a carga em si é gravada em kg
           ...(loadUnit === "lb" ? { loadUnit } : {}),
+          // a máquina define com quem esta carga se compara
+          ...(machineId ? { machineId, ...(machineName ? { machineName } : {}) } : {}),
           sets: (rows[ex.id] ?? [])
             .map((r) => ({
               weight: inputToKg(parseFloat(r.weight.replace(",", ".")), loadUnit),
@@ -927,10 +1060,12 @@ export default function TreinoPage() {
         const e1rm = bestE1RMAdjusted(entry)
         if (e1rm <= 0) continue
 
+        // PR só contra a MESMA máquina; a 1ª sessão numa máquina é a base
+        const key = liftKey(entry)
         let historicalMax = 0
         for (const w of data.workouts) {
           if (w.date >= log.date) continue
-          const prevEntry = w.entries.find((e) => e.exerciseId === entry.exerciseId)
+          const prevEntry = w.entries.find((e) => liftKey(e) === key)
           if (prevEntry) {
             historicalMax = Math.max(historicalMax, bestE1RMAdjusted(prevEntry))
           }
@@ -1008,6 +1143,33 @@ export default function TreinoPage() {
         normalizeName(exercise.nameEn).includes(pickerQuery)
       : exercise.muscleGroup === pickerGroup
   )
+
+  /* seletor de máquina aberto: dados da folha */
+  const sheetExercise = machineSheetFor
+    ? activeExercises.find((exercise) => exercise.id === machineSheetFor) ?? null
+    : null
+  const sheetMachine = sheetExercise ? machineOf(sheetExercise) : undefined
+  /** "03/10 · 160 lb × 12·12" — ajuda a reconhecer qual é qual */
+  const sheetLastUse: Record<string, string | undefined> = {}
+  if (sheetExercise) {
+    const describeLast = (machineId: string | undefined, unit: LoadUnit) => {
+      const last = exerciseHistory.byLift[liftKey({ exerciseId: sheetExercise.id, machineId })]
+      if (!last) return undefined
+      return `${shortDate(last.log.date)} · ${formatSetsSummary(
+        setsInUnit(last.entry, unit),
+        "reps",
+        unit
+      )}`
+    }
+    for (const machine of machinesFor(machines ?? [], sheetExercise.id)) {
+      sheetLastUse[machine.id] = describeLast(machine.id, machine.loadUnit)
+    }
+    sheetLastUse[""] = describeLast(undefined, "kg")
+  }
+  const sheetCandidates =
+    sheetExercise && sheetMachine
+      ? backfillCandidates(data.workouts, sheetExercise.id, sheetMachine, toDateKey(today))
+      : []
 
   return (
     <main className="pb-24">
@@ -1459,8 +1621,19 @@ export default function TreinoPage() {
       )}
 
       {activeExercises.map((ex, exIdx) => {
-        const previous = exerciseHistory[ex.id]
+        // última vez NA MESMA MÁQUINA: é ela que dá "última vez", setas e sugestão
+        const previous = historyOf(ex)
         const lastEntry = previous?.entry
+        const exerciseMachines = machinesFor(machines ?? [], ex.id)
+        // máquinas só fazem sentido onde há carga × repetições
+        const machineable = ex.unit === "reps"
+        // nome da máquina do dia; enquanto a lista carrega, o do último registro
+        const machineLabel = machineIdOf(ex)
+          ? machineOf(ex)?.name ??
+            lastEntry?.machineName ??
+            exerciseHistory.byExercise[ex.id]?.entry.machineName ??
+            "Máquina"
+          : null
         const doneCount = (rows[ex.id] ?? []).filter((r) => r.done).length
         const exComplete = doneCount > 0 && doneCount === (rows[ex.id]?.length ?? 0)
         const advice = suggestions[ex.id]
@@ -1527,16 +1700,36 @@ export default function TreinoPage() {
                 </button>
               </div>
             </div>
-            <div className="mt-1.5 flex items-center justify-between gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
               <span className="flex items-center gap-1.5">
                 <span className="font-mono text-[11px] text-ember-hot">
                   {formatPrescription(ex)}
                 </span>
                 <MeasureBadge unit={ex.unit} />
+                <span className="font-mono text-[10px] text-steel-dim">· descanso {ex.rest}</span>
               </span>
-              <span className="font-mono text-[10px] text-steel-dim">descanso {ex.rest}</span>
+              {/* máquina: a carga só se compara dentro dela. Escolhida = chip
+                  dourado; sem nenhuma cadastrada, um convite discreto */}
+              {machineable && (
+                <MachineChip
+                  label={machineLabel}
+                  hasMachines={exerciseMachines.length > 0}
+                  onOpen={() => setMachineSheetFor(ex.id)}
+                />
+              )}
             </div>
             <p className="mt-1 text-xs text-steel-dim">{ex.note}</p>
+
+            {/* máquina sem histórico: nada para comparar — e isso é o certo */}
+            {machineLabel && !lastEntry && (
+              <div className="mt-2 flex items-start gap-1.5 rounded border border-gold/25 bg-gold/5 px-2.5 py-1.5 text-[11px] leading-snug text-gold">
+                <Cog size={12} className="mt-0.5 shrink-0" aria-hidden />
+                <span>
+                  1ª vez na <span className="font-semibold">{machineLabel}</span> — sem
+                  comparação: esta sessão vira a base, sem PR e sem seta.
+                </span>
+              </div>
+            )}
 
             {/* referência da última vez — destacada */}
             {lastEntry && (
@@ -1624,7 +1817,7 @@ export default function TreinoPage() {
                       {stepOptionsFor(loadUnit).map((option) => (
                         <button
                           key={option}
-                          onClick={() => chooseStep(stepKey(ex.id, loadUnit), option)}
+                          onClick={() => chooseStep(ex, option)}
                           className={cn(
                             "h-7 min-w-11 rounded border px-2 font-mono text-[11px] font-semibold transition-colors",
                             advice.step === option
@@ -1638,7 +1831,7 @@ export default function TreinoPage() {
                       ))}
                       {advice.manualStep && (
                         <button
-                          onClick={() => chooseStep(stepKey(ex.id, loadUnit), null)}
+                          onClick={() => chooseStep(ex, null)}
                           className="h-7 rounded border border-seam px-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim transition-colors hover:text-bone"
                         >
                           automático
@@ -2096,6 +2289,33 @@ export default function TreinoPage() {
 
       <RestTimer timer={restTimer} />
       <HoldTimer timer={holdTimer} />
+      {sheetExercise && (
+        <MachineSheet
+          exerciseName={sheetExercise.name}
+          machines={machinesFor(machines ?? [], sheetExercise.id)}
+          selectedId={machineIdOf(sheetExercise)}
+          defaultUnit={loadUnitOf(sheetExercise)}
+          lastUse={sheetLastUse}
+          candidates={sheetCandidates}
+          describe={(entry) =>
+            formatSetsSummary(
+              setsInUnit(entry, sheetMachine?.loadUnit ?? "kg"),
+              "reps",
+              sheetMachine?.loadUnit ?? "kg"
+            )
+          }
+          onSelect={(machineId) => selectMachine(sheetExercise, machineId)}
+          onCreate={(name, unit) => createMachine(sheetExercise, name, unit)}
+          onRename={(machine, name) => void persistMachine({ ...machine, name })}
+          onArchive={(machine) => {
+            void persistMachine({ ...machine, archived: true })
+            // arquivou a do dia: o exercício volta a "sem máquina"
+            if (machineIdOf(sheetExercise) === machine.id) selectMachine(sheetExercise, null)
+          }}
+          onTag={(keys) => tagPastEntries(sheetExercise, keys)}
+          onClose={() => setMachineSheetFor(null)}
+        />
+      )}
     </main>
   )
 }

@@ -64,6 +64,17 @@ export function loadForInput(
   return Math.abs(lb - plate) <= LEGACY_SNAP_LB ? plate : roundTo(lb, 0.5)
 }
 
+/**
+ * A carga gravada em kg parece uma placa em lb convertida de cabeça? (36 kg →
+ * 80 lb sim; 60 kg → 132,3 lb não). Base do palpite que separa, no
+ * histórico, a extensora da pilha em lb da extensora em kg.
+ */
+export function isLegacyLbPlate(kg: number): boolean {
+  if (!Number.isFinite(kg) || kg <= 0) return false
+  const lb = kg / LB_TO_KG
+  return Math.abs(lb - Math.round(lb / 5) * 5) <= LEGACY_SNAP_LB
+}
+
 /** Quilos com uma casa, no formato brasileiro ("45,4") — para o "≈ X kg". */
 export function formatKgApprox(kg: number): string {
   return (Math.round(kg * 10) / 10).toLocaleString("pt-BR", { maximumFractionDigits: 1 })

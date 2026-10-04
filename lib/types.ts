@@ -76,6 +76,11 @@ export interface ExercisePrescription {
    * a carga é sempre gravada em kg.
    */
   loadUnit?: LoadUnit
+  /**
+   * Máquina escolhida neste treino. Ausente = a do último registro do
+   * exercício; null = "sem máquina" escolhido de propósito.
+   */
+  machineId?: string | null
   rest: string
   note: string
   /** Necessário em exercícios fora do plano para manter as métricas por grupo. */
@@ -142,7 +147,34 @@ export interface ExerciseLog {
    * Ausente = kg. Decide como o próximo treino mostra a carga.
    */
   loadUnit?: LoadUnit
+  /**
+   * Máquina usada (ver `ExerciseMachine`). Carga, PR e sugestão só se
+   * comparam dentro da mesma máquina. Ausente = sem máquina definida.
+   */
+  machineId?: string
+  /** Nome da máquina no momento do registro (snapshot, como o do exercício). */
+  machineName?: string
   sets: SetLog[]
+}
+
+/**
+ * Uma máquina específica de um exercício: "Extensora do fundo (lb)".
+ *
+ * A cadeira extensora de uma máquina vai a 100 kg e a da outra a 40 com o
+ * mesmo esforço — alavanca, polia e pilha diferentes. Comparar as duas fazia
+ * a troca de máquina parecer regressão no meio do treino.
+ */
+export interface ExerciseMachine {
+  /** gerado no aparelho: o registro referencia a máquina mesmo offline */
+  id: string
+  exerciseId: string
+  name: string
+  /** unidade da pilha — o treino abre nela */
+  loadUnit: LoadUnit
+  /** passo da carga na unidade da máquina; ausente = inferido do histórico */
+  loadStep?: number
+  /** fora da lista; o histórico continua apontando para ela */
+  archived?: boolean
 }
 
 export interface CardioLog {

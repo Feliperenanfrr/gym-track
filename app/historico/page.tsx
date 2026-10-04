@@ -25,6 +25,8 @@ import {
 import { CardioLog, CardioPurpose, ExerciseLog, ExerciseUnit, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { measureInfo, measureOf, workoutVolume } from "@/lib/measure"
 import { inputToKg, LoadUnit, loadForInput } from "@/lib/units"
+import { liftName, machinesFor } from "@/lib/machines"
+import { useExerciseMachines } from "@/lib/use-exercise-machines"
 import { cn, formatKg, fromDateKey, toDateKey } from "@/lib/utils"
 
 const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
@@ -48,6 +50,9 @@ interface EditableEntry {
   unit: ExerciseUnit
   /** pilha em lb: o editor mostra e recebe lb; grava kg */
   loadUnit: LoadUnit
+  /** máquina do registro; trocar aqui marca treinos antigos na máquina certa */
+  machineId?: string
+  machineName?: string
   sets: EditableSet[]
 }
 
@@ -78,6 +83,8 @@ function editableEntriesFrom(log: WorkoutLog): EditableEntry[] {
     ...(entry.muscleGroup !== undefined ? { muscleGroup: entry.muscleGroup } : {}),
     unit: measureOf(entry),
     loadUnit: entry.loadUnit ?? "kg",
+    ...(entry.machineId ? { machineId: entry.machineId } : {}),
+    ...(entry.machineName ? { machineName: entry.machineName } : {}),
     sets: entry.sets.map((s) => ({
       weight: String(loadForInput(s.weight, entry.loadUnit ?? "kg", entry.loadUnit ?? "kg")),
       reps: String(s.reps),
@@ -117,6 +124,7 @@ function monthLabel(dateKey: string): string {
 
 export default function Historico() {
   const { data, error, deleteWorkout, addWorkout } = useGymData()
+  const { machines } = useExerciseMachines()
   const router = useRouter()
   /** treino aguardando confirmação no diálogo de exclusão */
   const [pendingDelete, setPendingDelete] = useState<WorkoutLog | null>(null)
@@ -190,6 +198,25 @@ export default function Historico() {
   const closeEditor = () => {
     setEditingId(null)
     setEditEntries(null)
+  }
+
+  /** marca (ou desmarca) a máquina de um exercício do treino em edição */
+  const setEditableMachine = (ei: number, machineId: string) => {
+    const machine = (machines ?? []).find((m) => m.id === machineId)
+    setEditEntries((prev) =>
+      prev
+        ? prev.map((entry, i) => {
+            if (i !== ei) return entry
+            const { machineId: _id, machineName: _name, ...rest } = entry
+            if (!machineId) return rest
+            return {
+              ...rest,
+              machineId,
+              machineName: machine?.name ?? entry.machineName,
+            }
+          })
+        : prev
+    )
   }
 
   const updateEditableSet = (ei: number, si: number, patch: Partial<EditableSet>) => {
@@ -362,6 +389,9 @@ export default function Historico() {
         ...(e.muscleGroup !== undefined ? { muscleGroup: e.muscleGroup } : {}),
         unit: e.unit,
         ...(e.loadUnit === "lb" ? { loadUnit: e.loadUnit } : {}),
+        ...(e.machineId
+          ? { machineId: e.machineId, ...(e.machineName ? { machineName: e.machineName } : {}) }
+          : {}),
         sets: e.sets
           .map((s) => ({
             weight: inputToKg(parseFloat(s.weight.replace(",", ".")), e.loadUnit),
@@ -743,7 +773,7 @@ export default function Historico() {
                         {w.entries.map((entry) => (
                           <li key={entry.exerciseId} className="flex justify-between gap-3 text-xs">
                             <span className="text-steel">
-                              {entry.exerciseName ?? EXERCISES_BY_ID[entry.exerciseId]?.name ?? entry.exerciseId}
+                              {liftName(entry)}
                             </span>
                             <span className="shrink-0 font-mono text-steel-dim">
                               {entry.sets.length} séries
@@ -812,6 +842,30 @@ export default function Historico() {
                                 <Trash2 size={13} />
                               </button>
                             </div>
+                            {(() => {
+                              const options = machinesFor(machines ?? [], entry.exerciseId)
+                              // a do registro aparece mesmo arquivada, para não sumir
+                              const current =
+                                entry.machineId && !options.some((m) => m.id === entry.machineId)
+                                  ? [{ id: entry.machineId, name: entry.machineName ?? "Máquina arquivada" }]
+                                  : []
+                              if (options.length === 0 && current.length === 0) return null
+                              return (
+                                <select
+                                  value={entry.machineId ?? ""}
+                                  onChange={(event) => setEditableMachine(ei, event.target.value)}
+                                  aria-label="Máquina usada"
+                                  className="mt-1.5 h-9 w-full rounded border border-seam bg-coal px-2 text-xs text-bone outline-none focus:border-gold"
+                                >
+                                  <option value="">Sem máquina</option>
+                                  {[...current, ...options].map((machine) => (
+                                    <option key={machine.id} value={machine.id}>
+                                      {machine.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )
+                            })()}
                             <div className="mt-1.5 space-y-1.5">
                               {entry.sets.map((s, si) => (
                                 <div key={si} className="flex items-center gap-1.5">

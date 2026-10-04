@@ -1,3 +1,4 @@
+import { liftKey, liftName, parseLiftKey } from "./machines"
 import { isRepsMeasure } from "./measure"
 import { EXERCISES_BY_ID } from "./plan"
 import { ExerciseLog, SetLog, WorkoutLog } from "./types"
@@ -84,11 +85,14 @@ function shortLabel(dateKey: string): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
-/** Nome preferindo o que foi gravado no log (preserva substituições e avulsos). */
-function nameOf(exerciseId: string, entry?: ExerciseLog): string {
-  return (
-    entry?.exerciseName ?? EXERCISES_BY_ID[exerciseId]?.name ?? exerciseId
-  )
+/**
+ * Nome preferindo o que foi gravado no log (preserva substituições e avulsos),
+ * com a máquina quando houver: cada máquina é uma linha própria nos gráficos.
+ */
+function nameOf(key: string, entry?: ExerciseLog): string {
+  if (entry) return liftName(entry)
+  const { exerciseId } = parseLiftKey(key)
+  return EXERCISES_BY_ID[exerciseId]?.name ?? exerciseId
 }
 
 export interface FrequentExercise {
@@ -128,17 +132,19 @@ export function frequentExercises(
       if (!isRepsMeasure(entry)) continue
       const withLoad = entry.sets.filter((s) => s.weight > 0 && s.reps > 0)
       if (withLoad.length === 0) continue
-      const current = stats.get(entry.exerciseId) ?? {
-        name: nameOf(entry.exerciseId, entry),
+      // exercício + máquina: a extensora de 100 kg e a de 40 não se misturam
+      const key = liftKey(entry)
+      const current = stats.get(key) ?? {
+        name: nameOf(key, entry),
         sets: 0,
         sessions: 0,
       }
       current.sets += withLoad.length
-      if (!seen.has(entry.exerciseId)) {
+      if (!seen.has(key)) {
         current.sessions += 1
-        seen.add(entry.exerciseId)
+        seen.add(key)
       }
-      stats.set(entry.exerciseId, current)
+      stats.set(key, current)
     }
   }
 
@@ -148,20 +154,24 @@ export function frequentExercises(
     .slice(0, limit)
 }
 
-/** Série histórica de carga do top set de um exercício. */
+/**
+ * Série histórica de carga do top set de um exercício. `exerciseId` é a chave
+ * de comparação (`liftKey`): o id do exercício, ou exercício#máquina — só os
+ * registros daquela máquina entram.
+ */
 export function exerciseStrength(
   workouts: WorkoutLog[],
   exerciseId: string
 ): ExerciseStrength {
   const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date))
   const points: TopSetPoint[] = []
-  let name = EXERCISES_BY_ID[exerciseId]?.name ?? exerciseId
+  let name = nameOf(exerciseId)
   let runningBest = 0
   let bestWeight = 0
   let sessionsSinceIncrease: number | null = null
 
   for (const w of sorted) {
-    const entry = w.entries.find((e) => e.exerciseId === exerciseId)
+    const entry = w.entries.find((e) => liftKey(e) === exerciseId)
     if (!entry || !isRepsMeasure(entry)) continue
     const loaded = entry.sets.filter((s) => s.weight > 0 && s.reps > 0)
     if (loaded.length === 0) continue
@@ -267,7 +277,7 @@ export function relativeLoadBoard(
   for (const w of inWindow) {
     for (const entry of w.entries) {
       if (!isRepsMeasure(entry)) continue
-      if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(entry.exerciseId)
+      if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(liftKey(entry))
     }
   }
 

@@ -55,6 +55,8 @@ export function openLogForEditing(
       unit: entry.unit ?? known?.unit ?? measureOf(entry),
       // explícita: o que foi salvo em lb reabre em lb, seja qual for o histórico
       loadUnit: entry.loadUnit ?? "kg",
+      // idem a máquina: null = salvo sem máquina, não "a última usada"
+      machineId: entry.machineId ?? null,
       muscleGroup: entry.muscleGroup ?? known?.muscleGroup,
     })
     const loadUnit = entry.loadUnit ?? "kg"

@@ -82,18 +82,24 @@ export function inferLoadStep(weights: number[], unit: LoadUnit = "kg"): number 
  * Cargas já registradas no exercício, das sessões mais recentes para trás,
  * na unidade em que o equipamento é lido (kg gravado → lb quando a pilha é
  * em libra). O passo se infere no número que a placa mostra.
+ *
+ * `machineId` restringe a uma máquina (null = só registros sem máquina);
+ * ausente, vale o exercício inteiro. A extensora de 5 em 5 kg e a pilha de
+ * 10 em 10 lb não podem inferir passo juntas.
  */
 export function loggedWeights(
   workouts: WorkoutLog[],
   exerciseId: string,
   sessionLimit = 12,
-  unit: LoadUnit = "kg"
+  unit: LoadUnit = "kg",
+  machineId?: string | null
 ): number[] {
   const weights: number[] = []
   let sessions = 0
   for (let i = workouts.length - 1; i >= 0 && sessions < sessionLimit; i--) {
     const entry = workouts[i].entries.find((e) => e.exerciseId === exerciseId)
     if (!entry) continue
+    if (machineId !== undefined && (entry.machineId ?? null) !== machineId) continue
     sessions++
     for (const set of entry.sets) {
       if (set.weight > 0) weights.push(loadForInput(set.weight, unit, entry.loadUnit ?? "kg"))

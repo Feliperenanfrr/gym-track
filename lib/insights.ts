@@ -6,6 +6,7 @@ import {
   zone2Minutes,
 } from "./cardio"
 import { CardioLog, GymData, SessionId, TrainingProgram, WorkoutLog } from "./types"
+import { liftKey, liftName } from "./machines"
 import { bestE1RMAdjusted, workoutVolume } from "./measure"
 import { fromDateKey, toDateKey } from "./utils"
 
@@ -30,14 +31,16 @@ export function waterGoalMl(body: { weightKg?: number }[]): number {
 export interface PrEvent {
   /** yyyy-MM-dd */
   date: string
+  /** chave de comparação (`liftKey`): o exercício, ou exercício#máquina */
   exerciseId: string
+  /** nome com a máquina quando houver ("Cadeira extensora · Extensora do fundo") */
   exerciseName?: string
 }
 
 /**
  * Eventos de PR em ordem cronológica: a 1RM estimada do exercício supera todo
- * o histórico anterior. O primeiro registro de um exercício estabelece a base
- * e não conta como PR.
+ * o histórico anterior NA MESMA MÁQUINA. O primeiro registro de um exercício
+ * — ou de uma máquina nova — estabelece a base e não conta como PR.
  *
  * Usa a MESMA fórmula do gráfico de força e dos relatórios (Epley com reps
  * ajustadas por RIR). Antes daqui rodava o Epley cru enquanto o resto do app
@@ -52,11 +55,12 @@ export function prEvents(workouts: WorkoutLog[]): PrEvent[] {
     for (const e of w.entries) {
       const e1rm = bestE1RMAdjusted(e)
       if (e1rm <= 0) continue
-      const prev = best[e.exerciseId] ?? 0
+      const key = liftKey(e)
+      const prev = best[key] ?? 0
       if (prev > 0 && e1rm > prev) {
-        events.push({ date: w.date, exerciseId: e.exerciseId, exerciseName: e.exerciseName })
+        events.push({ date: w.date, exerciseId: key, exerciseName: liftName(e) })
       }
-      if (e1rm > prev) best[e.exerciseId] = e1rm
+      if (e1rm > prev) best[key] = e1rm
     }
   }
   return events
