@@ -1,5 +1,6 @@
 import { cardioBlocks } from "./cardio"
 import { measureOf } from "./measure"
+import { loadForInput } from "./units"
 import {
   CardioRow,
   ExercisePrescription,
@@ -52,10 +53,14 @@ export function openLogForEditing(
       // aconteceu de verdade, mesmo que o plano tenha mudado depois
       sets: Math.max(1, entry.sets.length),
       unit: entry.unit ?? known?.unit ?? measureOf(entry),
+      // explícita: o que foi salvo em lb reabre em lb, seja qual for o histórico
+      loadUnit: entry.loadUnit ?? "kg",
       muscleGroup: entry.muscleGroup ?? known?.muscleGroup,
     })
+    const loadUnit = entry.loadUnit ?? "kg"
     rows[entry.exerciseId] = entry.sets.map((set) => ({
-      weight: set.weight > 0 ? String(set.weight) : "",
+      // gravada em kg; o campo mostra o que a placa mostra
+      weight: set.weight > 0 ? String(loadForInput(set.weight, loadUnit, loadUnit)) : "",
       reps: String(set.reps),
       done: true,
       rir: set.rir !== undefined ? String(set.rir) : "",

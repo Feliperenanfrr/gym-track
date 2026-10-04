@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, Footprints, History, Minus, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, Timer, TrendingUp, Trash2, X } from "lucide-react"
 import { HoldTimer } from "@/components/hold-timer"
+import { LoadField } from "@/components/load-field"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
@@ -22,6 +23,7 @@ import {
   measureInfo,
   measureOf,
   MEASURES,
+  setsInUnit,
 } from "@/lib/measure"
 import {
   CatalogExercise,
@@ -40,6 +42,7 @@ import {
   toOperationalDateKey,
 } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
+import { inputToKg, LoadUnit, loadForInput } from "@/lib/units"
 import { useHoldTimer } from "@/lib/use-hold-timer"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
@@ -51,7 +54,8 @@ import {
   LoadSuggestion,
   resolveLoadStep,
   saveStepOverride,
-  STEP_OPTIONS,
+  stepKey,
+  stepOptionsFor,
   suggestLoad,
 } from "@/lib/progression"
 import {
@@ -295,6 +299,13 @@ export default function TreinoPage() {
     return history
   }, [data, today])
 
+  /**
+   * Unidade em que a carga do exercício é lida hoje: a escolhida neste treino,
+   * senão a do último registro (a pilha em lb é lembrada sozinha), senão kg.
+   */
+  const loadUnitOf = (ex: Pick<ExercisePrescription, "id" | "loadUnit">): LoadUnit =>
+    ex.loadUnit ?? exerciseHistory[ex.id]?.entry.loadUnit ?? "kg"
+
   /** BPM padrão do bloco: o do último registro, senão o meio da faixa alvo */
   const defaultBpm = (s: SessionPlan, ll: WorkoutLog | null): string => {
     const previous = ll ? cardioBlocks(ll)[0] : undefined
@@ -371,8 +382,10 @@ export default function TreinoPage() {
       program === "engine" && today !== null && enginePhaseFor(today).id === "fundacao"
     for (const ex of exercises) {
       const lastEntry = exerciseHistory[ex.id]?.entry
+      // na unidade da placa: pilha em lb pré-preenche em lb
+      const lastSets = lastEntry ? setsInUnit(lastEntry, loadUnitOf(ex)) : []
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
-        const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
+        const lastSet = lastSets[i] ?? lastSets[lastSets.length - 1]
         return {
           // sem carga (prancha, flexão) o campo fica vazio, não com um "0"
           weight: lastSet && lastSet.weight > 0 ? String(lastSet.weight) : "",
@@ -484,18 +497,21 @@ export default function TreinoPage() {
     let setsDone = 0
     let setsTotal = 0
     for (const ex of activeExercises) {
+      const loadUnit = loadUnitOf(ex)
       for (const r of rows[ex.id] ?? []) {
         setsTotal++
         if (r.done) setsDone++
         // tonelagem é carga × repetições: segundos e metros ficam de fora
         if (ex.unit !== "reps") continue
-        const w = parseFloat(r.weight.replace(",", "."))
+        // o campo pode estar em lb; a tonelagem é sempre em kg
+        const w = inputToKg(parseFloat(r.weight.replace(",", ".")), loadUnit)
         const reps = parseInt(r.reps)
-        if (!isNaN(w) && !isNaN(reps)) volume += w * reps
+        if (!isNaN(reps)) volume += w * reps
       }
     }
-    return { volume, setsDone, setsTotal }
-  }, [rows, activeExercises])
+    return { volume: Math.round(volume), setsDone, setsTotal }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, activeExercises, exerciseHistory])
 
   /**
    * Sugestão de carga por exercício — o que o app acha que você deve fazer
@@ -513,10 +529,13 @@ export default function TreinoPage() {
     if (!data || !today) return out
     for (const ex of activeExercises) {
       const previous = exerciseHistory[ex.id]
+      // passo e sugestão no número da placa: pilha em lb anda de 10 em 10 lb
+      const loadUnit = loadUnitOf(ex)
       const step = resolveLoadStep(
         ex.id,
-        loggedWeights(data.workouts, ex.id),
-        stepOverrides
+        loggedWeights(data.workouts, ex.id, 12, loadUnit),
+        stepOverrides,
+        loadUnit
       )
       const suggestion = suggestLoad({
         prescription: ex,
@@ -524,12 +543,18 @@ export default function TreinoPage() {
         step,
         layoffDays: previous ? daysSince(fromDateKey(previous.log.date), today) : null,
         returningFromLayoff: layoffNotice,
+        loadUnit,
       })
       if (suggestion) {
-        out[ex.id] = { suggestion, step, manualStep: stepOverrides[ex.id] !== undefined }
+        out[ex.id] = {
+          suggestion,
+          step,
+          manualStep: stepOverrides[stepKey(ex.id, loadUnit)] !== undefined,
+        }
       }
     }
     return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeExercises, data, exerciseHistory, layoffNotice, stepOverrides, today])
 
   /**
@@ -765,10 +790,36 @@ export default function TreinoPage() {
     setLayoffNotice(returningFromLayoff())
   }
 
-  /** troca o passo de carga do exercício (máquina de 5 em 5, anilha de 20…) */
-  const chooseStep = (exerciseId: string, step: number | null) => {
-    setStepOverrides(saveStepOverride(exerciseId, step))
+  /**
+   * Troca o passo de carga do exercício (máquina de 5 em 5, anilha de 20…).
+   * `key` vem de `stepKey`: o passo em lb não se mistura com o de kg.
+   */
+  const chooseStep = (key: string, step: number | null) => {
+    setStepOverrides(saveStepOverride(key, step))
     setStepEditorFor(null)
+  }
+
+  /**
+   * kg ⇄ lb neste exercício. Converte o que já está nos campos para o número
+   * da placa — o 41 que você convertia de cabeça vira 90 lb. A carga gravada
+   * segue em kg; o próximo treino já abre na unidade escolhida.
+   */
+  const toggleLoadUnit = (ex: ExercisePrescription) => {
+    const from = loadUnitOf(ex)
+    const to: LoadUnit = from === "kg" ? "lb" : "kg"
+    dirtyRef.current = true
+    tapFeedback()
+    setActiveExercises((current) =>
+      current.map((exercise) => (exercise.id === ex.id ? { ...exercise, loadUnit: to } : exercise))
+    )
+    setRows((current) => ({
+      ...current,
+      [ex.id]: (current[ex.id] ?? []).map((row) => {
+        const value = parseFloat(row.weight.replace(",", "."))
+        if (!(value > 0)) return row
+        return { ...row, weight: String(loadForInput(inputToKg(value, from), to, from)) }
+      }),
+    }))
   }
 
   /** aplica a sugestão nas séries que ainda não foram marcadas como feitas */
@@ -791,23 +842,28 @@ export default function TreinoPage() {
 
   const handleSave = async () => {
     const entries: ExerciseLog[] = activeExercises
-      .map((ex) => ({
-        exerciseId: ex.id,
-        exerciseName: ex.name,
-        muscleGroup: groupOfExercise(ex),
-        // snapshot do tipo de medida: o registro diz sozinho se 60 é rep ou segundo
-        unit: ex.unit,
-        sets: (rows[ex.id] ?? [])
-          .map((r) => ({
-            weight: parseFloat(r.weight.replace(",", ".")) || 0,
-            reps: parseInt(r.reps) || 0,
-            // RIR é reps em reserva: não existe em isometria nem em carregamento
-            ...(ex.unit === "reps" && r.rir !== undefined && r.rir !== ""
-              ? { rir: parseInt(r.rir) }
-              : {}),
-          }))
-          .filter((s) => s.reps > 0),
-      }))
+      .map((ex) => {
+        const loadUnit = loadUnitOf(ex)
+        return {
+          exerciseId: ex.id,
+          exerciseName: ex.name,
+          muscleGroup: groupOfExercise(ex),
+          // snapshot do tipo de medida: o registro diz sozinho se 60 é rep ou segundo
+          unit: ex.unit,
+          // digitado em lb fica anotado; a carga em si é gravada em kg
+          ...(loadUnit === "lb" ? { loadUnit } : {}),
+          sets: (rows[ex.id] ?? [])
+            .map((r) => ({
+              weight: inputToKg(parseFloat(r.weight.replace(",", ".")), loadUnit),
+              reps: parseInt(r.reps) || 0,
+              // RIR é reps em reserva: não existe em isometria nem em carregamento
+              ...(ex.unit === "reps" && r.rir !== undefined && r.rir !== ""
+                ? { rir: parseInt(r.rir) }
+                : {}),
+            }))
+            .filter((s) => s.reps > 0),
+        }
+      })
       .filter((e) => e.sets.length > 0)
 
     const cardios = cardioRowsToBlocks(cardioRows, { forceZone2: session.id === "engineZ2" })
@@ -1410,6 +1466,11 @@ export default function TreinoPage() {
         const advice = suggestions[ex.id]
         const suggestion = advice?.suggestion
         const measure = measureInfo(ex.unit)
+        /** unidade da placa: o que se digita e lê; grava em kg */
+        const loadUnit = loadUnitOf(ex)
+        const lb = loadUnit === "lb"
+        /** última vez, já no número da placa (setas e referência) */
+        const lastSets = lastEntry ? setsInUnit(lastEntry, loadUnit) : []
         const timed = ex.unit === "seconds"
         // 60 "reps" sem carga num exercício de 8–12: quase certo que foi tempo
         const suspectTime = (rows[ex.id] ?? []).some((row) =>
@@ -1483,7 +1544,7 @@ export default function TreinoPage() {
                 <History size={12} className="shrink-0 text-steel-dim" />
                 <span className="text-steel-dim">{shortDate(previous!.log.date)}:</span>
                 <span className="text-bone">
-                  {formatSetsSummary(lastEntry.sets, measureOf(lastEntry))}
+                  {formatSetsSummary(lastSets, measureOf(lastEntry), loadUnit)}
                 </span>
                 {fromOtherSession && (
                   <span className="text-steel-dim">· {fromOtherSession}</span>
@@ -1549,20 +1610,21 @@ export default function TreinoPage() {
                   aria-expanded={stepEditorFor === ex.id}
                 >
                   <SlidersHorizontal size={11} />
-                  passo {formatWeight(advice.step)} kg ·{" "}
+                  passo {formatWeight(advice.step)} {loadUnit} ·{" "}
                   {advice.manualStep ? "fixado" : "do histórico"}
                 </button>
                 {stepEditorFor === ex.id && (
                   <div className="mt-1.5 border-t border-seam pt-2">
                     <p className="text-[11px] leading-relaxed text-steel-dim">
-                      Quanto a menor carga deste aparelho sobe de uma vez? Máquina de
-                      pino costuma andar de 5 em 5 — aí 52,5 kg não existe.
+                      {lb
+                        ? "Quanto a menor carga desta pilha sobe de uma vez? Pilha em libra costuma andar de 10 em 10 lb."
+                        : "Quanto a menor carga deste aparelho sobe de uma vez? Máquina de pino costuma andar de 5 em 5 — aí 52,5 kg não existe."}
                     </p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {STEP_OPTIONS.map((option) => (
+                      {stepOptionsFor(loadUnit).map((option) => (
                         <button
                           key={option}
-                          onClick={() => chooseStep(ex.id, option)}
+                          onClick={() => chooseStep(stepKey(ex.id, loadUnit), option)}
                           className={cn(
                             "h-7 min-w-11 rounded border px-2 font-mono text-[11px] font-semibold transition-colors",
                             advice.step === option
@@ -1576,7 +1638,7 @@ export default function TreinoPage() {
                       ))}
                       {advice.manualStep && (
                         <button
-                          onClick={() => chooseStep(ex.id, null)}
+                          onClick={() => chooseStep(stepKey(ex.id, loadUnit), null)}
                           className="h-7 rounded border border-seam px-2 font-mono text-[10px] uppercase tracking-wider text-steel-dim transition-colors hover:text-bone"
                         >
                           automático
@@ -1591,11 +1653,11 @@ export default function TreinoPage() {
             {/* séries — alvos de toque grandes */}
             <div className="mt-3 space-y-2">
               {(rows[ex.id] ?? []).map((row, i) => {
-                const lastEntry = exerciseHistory[ex.id]?.entry
-                const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
+                const lastSet = lastSets[i] ?? lastSets[lastSets.length - 1]
                 // tendência da série vs. a mesma série da última vez (carga;
                 // em empate, reps/segundos/metros) — feedback ao vivo de
-                // sobrecarga progressiva, inclusive na prancha sem carga
+                // sobrecarga progressiva, inclusive na prancha sem carga.
+                // Comparada no número da placa: 41 kg antigos = 90 lb, não ▼
                 let trend: "up" | "down" | "same" | null = null
                 if (lastSet) {
                   const typedW = row.weight.trim() !== ""
@@ -1660,30 +1722,18 @@ export default function TreinoPage() {
                     </div>
 
                     <div className="flex min-w-0 flex-1 items-end gap-2">
-                      <label className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <input
-                          id={`weight-${ex.id}-${i}`}
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint="next"
-                          step="0.5"
-                          placeholder="–"
-                          value={row.weight}
-                          onChange={(e) => updateRow(ex.id, i, { weight: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault()
-                            document.getElementById(`reps-${ex.id}-${i}`)?.focus()
-                          }
-                        }}
-                        className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
+                      {/* na isometria a carga é opcional (prancha com anilha) */}
+                      <LoadField
+                        id={`weight-${ex.id}-${i}`}
+                        setNumber={i + 1}
+                        value={row.weight}
+                        loadUnit={loadUnit}
+                        optional={timed}
+                        onChange={(weight) => updateRow(ex.id, i, { weight })}
+                        onToggleUnit={() => toggleLoadUnit(ex)}
+                        onNext={() => document.getElementById(`reps-${ex.id}-${i}`)?.focus()}
                       />
-                      {/* na isometria a carga é opcional (prancha com anilha nas costas) */}
-                      <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
-                        {timed ? "+kg" : "kg"}
-                      </span>
-                    </label>
-                    <span className="pb-5 text-steel-dim">×</span>
+                    <span className="pb-7 text-steel-dim">×</span>
                     <label className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <input
                         id={`reps-${ex.id}-${i}`}
@@ -1703,7 +1753,7 @@ export default function TreinoPage() {
                         }}
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
                       />
-                      <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
+                      <span className="flex h-6 items-center justify-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
                         {measure.field}
                       </span>
                     </label>

@@ -1,6 +1,7 @@
 import { EXERCISES_BY_ID } from "./plan"
 import { formatWeight } from "./progression"
 import { ExerciseLog, ExercisePrescription, ExerciseUnit, SetLog, WorkoutLog } from "./types"
+import { LoadUnit, loadForInput } from "./units"
 
 /**
  * Tipo de medida de cada exercício: repetições, tempo ou distância.
@@ -63,22 +64,40 @@ export function formatPrescription(
 }
 
 /**
- * Resumo das séries para a referência "última vez".
- * reps: "50 kg × 8·5·5" ou "12·12·12 reps" (peso corporal)
+ * Séries de um registro com a carga na unidade em que a máquina é lida hoje
+ * (gravada em kg; lb quando a pilha é em libra). Para "última vez" e setas.
+ */
+export function setsInUnit(entry: ExerciseLog, loadUnit: LoadUnit): SetLog[] {
+  const recordedIn = entry.loadUnit ?? "kg"
+  if (loadUnit === "kg" && recordedIn === "kg") return entry.sets
+  return entry.sets.map((set) => ({
+    ...set,
+    weight: loadForInput(set.weight, loadUnit, recordedIn),
+  }))
+}
+
+/**
+ * Resumo das séries para a referência "última vez". `sets` já na unidade da
+ * máquina (ver `setsInUnit`); `loadUnit` só muda o rótulo.
+ * reps: "50 kg × 8·5·5", "100 lb × 12·12" ou "12·12·12 reps" (peso corporal)
  * tempo: "60·60·60 s" ou "+10 kg × 60·45 s"
  * distância: "24 kg × 40·40 m"
  */
-export function formatSetsSummary(sets: SetLog[], unit: ExerciseUnit): string {
+export function formatSetsSummary(
+  sets: SetLog[],
+  unit: ExerciseUnit,
+  loadUnit: LoadUnit = "kg"
+): string {
   const values = sets.map((set) => set.reps).join("·")
   const load = sets[0]?.weight ?? 0
   if (unit === "reps") {
-    return load > 0 ? `${formatWeight(load)} kg × ${values}` : `${values} reps`
+    return load > 0 ? `${formatWeight(load)} ${loadUnit} × ${values}` : `${values} reps`
   }
   const amount = `${values} ${measureInfo(unit).suffix}`
   if (load <= 0) return amount
   return unit === "seconds"
-    ? `+${formatWeight(load)} kg × ${amount}`
-    : `${formatWeight(load)} kg × ${amount}`
+    ? `+${formatWeight(load)} ${loadUnit} × ${amount}`
+    : `${formatWeight(load)} ${loadUnit} × ${amount}`
 }
 
 /** kg movimentados no exercício — zero para tempo e distância. */
