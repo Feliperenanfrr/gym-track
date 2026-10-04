@@ -9,7 +9,13 @@ import { isAuthError } from "./supabase/session"
  */
 export interface PendingMutation {
   action?: "upsert" | "delete"
-  table: "workouts" | "body_logs" | "hydration_logs" | "sleep_logs" | "meal_logs"
+  table:
+    | "workouts"
+    | "body_logs"
+    | "hydration_logs"
+    | "sleep_logs"
+    | "meal_logs"
+    | "exercise_machines"
   onConflict: string
   /** chave lógica para deduplicar (date+session ou date) */
   logicalKey: string
@@ -43,6 +49,13 @@ function write(items: PendingMutation[]) {
 
 export function queueCount(): number {
   return read().length
+}
+
+/** Payloads ainda na fila de uma tabela (para não "sumir" com o que foi criado offline). */
+export function pendingPayloads(table: PendingMutation["table"]): Record<string, unknown>[] {
+  return read()
+    .filter((m) => m.table === table && m.action !== "delete")
+    .map((m) => m.payload)
 }
 
 /** Adiciona (ou substitui a anterior de mesma tabela + chave lógica) */

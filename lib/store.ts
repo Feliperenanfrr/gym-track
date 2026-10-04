@@ -151,12 +151,12 @@ function emptyMealDay(date: string): MealLog {
   return { date, refeicoes: [], completo: false }
 }
 
-function isOffline() {
+export function isOffline() {
   return typeof navigator !== "undefined" && navigator.onLine === false
 }
 
 /** Erro de rede (fetch falhou) vs erro de API (Supabase retornou {error}) */
-function isNetworkError(e: unknown) {
+export function isNetworkError(e: unknown) {
   return (
     e instanceof TypeError ||
     (e instanceof Error && /fetch|network|Failed to fetch/i.test(e.message))

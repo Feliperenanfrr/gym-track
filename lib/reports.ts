@@ -49,6 +49,7 @@ import {
   RELATIVE_LOAD_ALERT_PCT,
 } from "./strength"
 import { BodyLog, GymData, MuscleGroup, TrainingProgram, WorkoutLog } from "./types"
+import { liftKey, parseLiftKey } from "./machines"
 import { workoutVolume } from "./measure"
 import { fromDateKey, mondayOf, toDateKey } from "./utils"
 
@@ -195,6 +196,12 @@ export const MAX_LIFT_LINES = 8
 /** Variação de carga que já não é troca de aparelho nem arredondamento. */
 export const LIFT_SIGNIFICANT_PCT = 5
 
+/** Grupo muscular pela chave de comparação (exercício ou exercício#máquina). */
+function baseMuscleGroup(key: string): MuscleGroup | null {
+  const { exerciseId } = parseLiftKey(key)
+  return EXERCISES_BY_ID[exerciseId]?.muscleGroup ?? EXERCISE_GROUP[exerciseId] ?? null
+}
+
 export interface LiftLine {
   exerciseId: string
   name: string
@@ -262,7 +269,7 @@ export function reportLifts(
     let muscleGroup: MuscleGroup | null = null
     for (const w of ws) {
       for (const entry of w.entries) {
-        if (entry.exerciseId !== id) continue
+        if (liftKey(entry) !== id) continue
         if (entry.exerciseName?.trim()) names.add(entry.exerciseName.trim())
         if (entry.muscleGroup) muscleGroup = entry.muscleGroup
       }
@@ -277,7 +284,7 @@ export function reportLifts(
       exerciseId: id,
       name: strength.name,
       muscleGroup:
-        muscleGroup ?? EXERCISES_BY_ID[id]?.muscleGroup ?? EXERCISE_GROUP[id] ?? null,
+        muscleGroup ?? baseMuscleGroup(id),
       sessions: strength.points.length,
       sets,
       firstDate: first.date,
@@ -2257,7 +2264,7 @@ export function comebackReport(
   const ids = new Set<string>()
   for (const w of ws) {
     for (const entry of w.entries) {
-      if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(entry.exerciseId)
+      if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(liftKey(entry))
     }
   }
 
@@ -2273,7 +2280,7 @@ export function comebackReport(
     const weights: number[] = []
     for (const w of ws) {
       for (const entry of w.entries) {
-        if (entry.exerciseId !== id) continue
+        if (liftKey(entry) !== id) continue
         if (entry.muscleGroup) muscleGroup = entry.muscleGroup
         for (const set of entry.sets) if (set.weight > 0) weights.push(set.weight)
         if (w.date === last.date) {
@@ -2282,7 +2289,7 @@ export function comebackReport(
       }
     }
     muscleGroup =
-      muscleGroup ?? EXERCISES_BY_ID[id]?.muscleGroup ?? EXERCISE_GROUP[id] ?? null
+      muscleGroup ?? baseMuscleGroup(id)
     if (muscleGroup) covered.add(muscleGroup)
 
     const daysSince = daysFrom(last.date)!
