@@ -24,6 +24,7 @@ import {
 } from "@/lib/strava"
 import { CardioLog, CardioPurpose, ExerciseLog, ExerciseUnit, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { measureInfo, measureOf, workoutVolume } from "@/lib/measure"
+import { inputToKg, LoadUnit, loadForInput } from "@/lib/units"
 import { cn, formatKg, fromDateKey, toDateKey } from "@/lib/utils"
 
 const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
@@ -45,6 +46,8 @@ interface EditableEntry {
   muscleGroup?: MuscleGroup
   /** tipo de medida resolvido na abertura — o editor mostra "s"/"m" e some com o RIR */
   unit: ExerciseUnit
+  /** pilha em lb: o editor mostra e recebe lb; grava kg */
+  loadUnit: LoadUnit
   sets: EditableSet[]
 }
 
@@ -74,8 +77,9 @@ function editableEntriesFrom(log: WorkoutLog): EditableEntry[] {
     ...(entry.exerciseName !== undefined ? { exerciseName: entry.exerciseName } : {}),
     ...(entry.muscleGroup !== undefined ? { muscleGroup: entry.muscleGroup } : {}),
     unit: measureOf(entry),
+    loadUnit: entry.loadUnit ?? "kg",
     sets: entry.sets.map((s) => ({
-      weight: String(s.weight),
+      weight: String(loadForInput(s.weight, entry.loadUnit ?? "kg", entry.loadUnit ?? "kg")),
       reps: String(s.reps),
       rir: s.rir !== undefined ? String(s.rir) : "",
     })),
@@ -357,9 +361,10 @@ export default function Historico() {
         ...(e.exerciseName !== undefined ? { exerciseName: e.exerciseName } : {}),
         ...(e.muscleGroup !== undefined ? { muscleGroup: e.muscleGroup } : {}),
         unit: e.unit,
+        ...(e.loadUnit === "lb" ? { loadUnit: e.loadUnit } : {}),
         sets: e.sets
           .map((s) => ({
-            weight: parseFloat(s.weight.replace(",", ".")) || 0,
+            weight: inputToKg(parseFloat(s.weight.replace(",", ".")), e.loadUnit),
             reps: parseInt(s.reps) || 0,
             ...(e.unit === "reps" && s.rir !== "" ? { rir: parseInt(s.rir) } : {}),
           }))
@@ -821,9 +826,12 @@ export default function Historico() {
                                     onChange={(e) =>
                                       updateEditableSet(ei, si, { weight: e.target.value })
                                     }
-                                    aria-label={`Peso da série ${si + 1}`}
+                                    aria-label={`Peso da série ${si + 1} em ${entry.loadUnit === "lb" ? "libras" : "quilos"}`}
                                     className="w-16 rounded border border-seam bg-coal px-1 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
                                   />
+                                  {entry.loadUnit === "lb" && (
+                                    <span className="font-mono text-[10px] uppercase text-gold">lb</span>
+                                  )}
                                   <span className="text-xs text-steel-dim">×</span>
                                   <input
                                     type="number"

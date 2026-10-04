@@ -1,3 +1,5 @@
+import type { LoadUnit } from "./units"
+
 export type SessionId =
   | "upperA"
   | "cardioZ2"
@@ -68,6 +70,12 @@ export interface ExercisePrescription {
   repsMin: number
   repsMax: number
   unit: ExerciseUnit
+  /**
+   * Unidade da carga no equipamento (pilha em lb). Ausente = a do último
+   * registro do exercício, senão kg. Só muda o que se digita e lê no treino:
+   * a carga é sempre gravada em kg.
+   */
+  loadUnit?: LoadUnit
   rest: string
   note: string
   /** Necessário em exercícios fora do plano para manter as métricas por grupo. */
@@ -102,6 +110,7 @@ export interface SessionPlan {
 }
 
 export interface SetLog {
+  /** sempre em kg, mesmo quando digitado em lb (ver `ExerciseLog.loadUnit`) */
   weight: number
   /** repetições — ou segundos/metros, conforme a `unit` do exercício */
   reps: number
@@ -128,6 +137,11 @@ export interface ExerciseLog {
    * antigos não têm: `measureOf()` resolve pelo plano.
    */
   unit?: ExerciseUnit
+  /**
+   * "lb" quando a carga foi digitada em libras (o `weight` continua em kg).
+   * Ausente = kg. Decide como o próximo treino mostra a carga.
+   */
+  loadUnit?: LoadUnit
   sets: SetLog[]
 }
 

@@ -1,4 +1,5 @@
 import { ExerciseLog, ExercisePrescription, SetLog, WorkoutLog } from "./types"
+import { LoadUnit, loadForInput } from "./units"
 
 /**
  * Progressão de carga: o app SUGERE, o usuário decide.
@@ -13,13 +14,33 @@ import { ExerciseLog, ExercisePrescription, SetLog, WorkoutLog } from "./types"
 
 /** Incrementos que existem de verdade numa sala de musculação. */
 export const STEP_OPTIONS = [1, 2, 2.5, 5, 10, 20]
+/** Pilhas em libra andam de 5, 10 ou 15 lb; halteres em lb, de 2,5 ou 5. */
+export const STEP_OPTIONS_LB = [2.5, 5, 10, 15, 20]
 /**
  * Ordem da inferência. Para em 5 de propósito: passos maiores existem (leg
  * press com anilha de 20), mas adivinhá-los a partir de duas cargas distantes
  * erraria para cima. Acima de 5, o passo é escolhido à mão.
  */
 const INFERENCE_STEPS = [5, 2.5, 2, 1]
+/**
+ * Em lb a pilha típica é de 10 em 10 (o abdominal do histórico: 50, 60, 70,
+ * 80, 90). Parar em 5 aqui sugeriria meio degrau que a placa não tem.
+ */
+const INFERENCE_STEPS_LB = [10, 5, 2.5, 1]
 export const DEFAULT_STEP = 2.5
+export const DEFAULT_STEP_LB = 5
+
+export function stepOptionsFor(unit: LoadUnit): number[] {
+  return unit === "lb" ? STEP_OPTIONS_LB : STEP_OPTIONS
+}
+
+/**
+ * Chave do passo manual. Em lb ganha sufixo próprio: um passo de 5 escolhido
+ * em kg não pode virar 5 lb quando a mesma máquina passa a ser lida em libra.
+ */
+export function stepKey(exerciseId: string, unit: LoadUnit = "kg"): string {
+  return unit === "lb" ? `${exerciseId}@lb` : exerciseId
+}
 /** Sem fazer o exercício por tanto tempo, reentre abaixo em vez de subir. */
 export const LAYOFF_DELOAD_DAYS = 14
 
@@ -50,17 +71,23 @@ export function formatWeight(n: number): string {
  * de 5 — e a sugestão deixa de pedir os 2,5 kg que a placa não tem.
  * null = sem histórico para inferir.
  */
-export function inferLoadStep(weights: number[]): number | null {
+export function inferLoadStep(weights: number[], unit: LoadUnit = "kg"): number | null {
   const distinct = [...new Set(weights.filter((w) => w > 0).map(round2))]
   if (distinct.length === 0) return null
-  return INFERENCE_STEPS.find((step) => distinct.every((w) => isMultipleOf(w, step))) ?? null
+  const steps = unit === "lb" ? INFERENCE_STEPS_LB : INFERENCE_STEPS
+  return steps.find((step) => distinct.every((w) => isMultipleOf(w, step))) ?? null
 }
 
-/** Cargas já registradas no exercício, das sessões mais recentes para trás. */
+/**
+ * Cargas já registradas no exercício, das sessões mais recentes para trás,
+ * na unidade em que o equipamento é lido (kg gravado → lb quando a pilha é
+ * em libra). O passo se infere no número que a placa mostra.
+ */
 export function loggedWeights(
   workouts: WorkoutLog[],
   exerciseId: string,
-  sessionLimit = 12
+  sessionLimit = 12,
+  unit: LoadUnit = "kg"
 ): number[] {
   const weights: number[] = []
   let sessions = 0
@@ -68,7 +95,9 @@ export function loggedWeights(
     const entry = workouts[i].entries.find((e) => e.exerciseId === exerciseId)
     if (!entry) continue
     sessions++
-    for (const set of entry.sets) if (set.weight > 0) weights.push(set.weight)
+    for (const set of entry.sets) {
+      if (set.weight > 0) weights.push(loadForInput(set.weight, unit, entry.loadUnit ?? "kg"))
+    }
   }
   return weights
 }
@@ -88,13 +117,14 @@ export function loadStepOverrides(): Record<string, number> {
   }
 }
 
+/** `key` vem de `stepKey()`: o passo em lb fica separado do passo em kg. */
 export function saveStepOverride(
-  exerciseId: string,
+  key: string,
   step: number | null
 ): Record<string, number> {
   const next = loadStepOverrides()
-  if (step === null) delete next[exerciseId]
-  else next[exerciseId] = step
+  if (step === null) delete next[key]
+  else next[key] = step
   try {
     localStorage.setItem(STEP_KEY, JSON.stringify(next))
   } catch {
@@ -103,13 +133,21 @@ export function saveStepOverride(
   return next
 }
 
-/** Passo válido para o exercício: escolha manual > histórico > padrão. */
+/**
+ * Passo válido para o exercício: escolha manual > histórico > padrão, tudo na
+ * unidade do equipamento (`history` vem de `loggedWeights` na mesma unidade).
+ */
 export function resolveLoadStep(
   exerciseId: string,
   history: number[],
-  overrides: Record<string, number> = {}
+  overrides: Record<string, number> = {},
+  unit: LoadUnit = "kg"
 ): number {
-  return overrides[exerciseId] ?? inferLoadStep(history) ?? DEFAULT_STEP
+  return (
+    overrides[stepKey(exerciseId, unit)] ??
+    inferLoadStep(history, unit) ??
+    (unit === "lb" ? DEFAULT_STEP_LB : DEFAULT_STEP)
+  )
 }
 
 export type LoadAdvice = "progress" | "hold" | "deload"
@@ -142,6 +180,11 @@ export interface SuggestionInput {
   layoffDays?: number | null
   /** o ciclo detectou volta de pausa (dias sem nenhuma musculação) */
   returningFromLayoff?: boolean
+  /**
+   * Unidade do equipamento: a sugestão sai no número que a placa mostra, e o
+   * `step` vem nela. `lastEntry` continua em kg — a conversão é feita aqui.
+   */
+  loadUnit?: LoadUnit
 }
 
 /** Séries reais da última vez, na ordem (descarta linhas vazias). */
@@ -160,9 +203,17 @@ export function suggestLoad({
   step,
   layoffDays,
   returningFromLayoff,
+  loadUnit = "kg",
 }: SuggestionInput): LoadSuggestion | null {
-  const sets = workingSets(lastEntry)
+  const recordedIn = lastEntry?.loadUnit ?? "kg"
+  const sets = workingSets(lastEntry).map((set) =>
+    loadUnit === "kg" && recordedIn === "kg"
+      ? set
+      : { ...set, weight: loadForInput(set.weight, loadUnit, recordedIn) }
+  )
   if (sets.length === 0) return null
+  /** "kg" ou "lb" — a unidade da placa */
+  const u = loadUnit
 
   const base = Array.from(
     { length: Math.max(1, prescription.sets) },
@@ -209,7 +260,7 @@ export function suggestLoad({
     return finish(
       "deload",
       suggested,
-      uniform ? `Reentrar com ${formatWeight(suggested[0].weight)} kg` : "Reentrar ~10% abaixo",
+      uniform ? `Reentrar com ${formatWeight(suggested[0].weight)} ${u}` : "Reentrar ~10% abaixo",
       layoffDays != null && layoffDays >= LAYOFF_DELOAD_DAYS
         ? `${layoffDays} dias sem este exercício — volte a ~90% e recupere a carga na próxima.`
         : "Voltando de pausa — reentre a ~90% e recupere a carga na próxima sessão."
@@ -226,9 +277,9 @@ export function suggestLoad({
       "progress",
       suggested,
       uniform
-        ? `Subir para ${formatWeight(suggested[0].weight)} kg ${times(prescription.repsMin)}`
-        : `Subir ${formatWeight(step)} kg em todas as séries`,
-      `Topo da faixa (${prescription.repsMax} ${unit}) em todas as séries — passo de ${formatWeight(step)} kg.`
+        ? `Subir para ${formatWeight(suggested[0].weight)} ${u} ${times(prescription.repsMin)}`
+        : `Subir ${formatWeight(step)} ${u} em todas as séries`,
+      `Topo da faixa (${prescription.repsMax} ${unit}) em todas as séries — passo de ${formatWeight(step)} ${u}.`
     )
   }
 
@@ -252,7 +303,7 @@ export function suggestLoad({
     "hold",
     suggested,
     weighted
-      ? `Manter ${formatWeight(base[0].weight)} kg e buscar ${target} ${unit}`
+      ? `Manter ${formatWeight(base[0].weight)} ${u} e buscar ${target} ${unit}`
       : `Buscar ${target} ${unit}`,
     `A carga sobe quando fechar ${prescription.repsMax} ${unit} em todas as ${prescription.sets} séries.`
   )
