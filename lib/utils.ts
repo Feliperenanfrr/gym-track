@@ -1,23 +1,16 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { ExerciseLog, SetLog, WorkoutLog } from "./types"
+import { ExerciseLog, SetLog } from "./types"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Volume de uma série (kg movimentado) */
-export function setVolume(set: SetLog): number {
-  return set.weight * set.reps
-}
-
-/** Volume total de um treino de musculação (ignora isometrias sem carga) */
-export function workoutVolume(w: WorkoutLog): number {
-  return w.entries.reduce(
-    (sum, e) => sum + e.sets.reduce((s, set) => s + setVolume(set), 0),
-    0
-  )
-}
+/*
+ * Tonelagem e 1RM ajustada moram em `measure.ts`: dependem do tipo de medida
+ * do exercício (tempo e distância ficam de fora), e o plano não pode ser
+ * importado daqui sem ciclo.
+ */
 
 /** 1RM estimada (fórmula de Epley) da melhor série do exercício */
 export function bestE1RM(entry: ExerciseLog): number {
@@ -25,19 +18,6 @@ export function bestE1RM(entry: ExerciseLog): number {
     if (s.weight <= 0) return best
     const e1rm = s.weight * (1 + s.reps / 30)
     return Math.max(best, e1rm)
-  }, 0)
-}
-
-/**
- * 1RM estimada ajustada por RIR: reps efetivas = reps feitas + reps em
- * reserva (75 kg × 8 @RIR2 vale como 10 reps até a falha). Séries sem
- * RIR se comportam como na fórmula clássica.
- */
-export function bestE1RMAdjusted(entry: ExerciseLog): number {
-  return entry.sets.reduce((best, s) => {
-    if (s.weight <= 0) return best
-    const effReps = s.reps + (s.rir ?? 0)
-    return Math.max(best, s.weight * (1 + effReps / 30))
   }, 0)
 }
 

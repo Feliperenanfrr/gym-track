@@ -13,7 +13,9 @@ export const PERFORMANCE_START_DATE = "2026-09-21"
  * `normalizeTemplate()` já descarta o template materializado da fase anterior
  * em favor do default novo. Nenhuma tela nova, nenhum contador de semana.
  */
-export const PERFORMANCE_PLAN_VERSION = "performance-f1"
+export const PERFORMANCE_PLAN_VERSION = "performance-f1-r2"
+// "-r2": revisão dentro da Fase 1 (tipo de medida — farmer walk em metros,
+// prancha com deslocamento com id próprio). A fase segue sendo o "f1".
 
 /**
  * Rótulo da fase corrente. É texto fixo, casado com PERFORMANCE_PLAN_VERSION —
@@ -138,10 +140,13 @@ export const PERFORMANCE_PLAN: SessionPlan[] = [
         sets: 4,
         repsMin: 40,
         repsMax: 40,
-        unit: "reps",
+        // metros, com a carga por mão no campo de peso. Era "reps" porque o
+        // campo de peso ficava bloqueado em exercícios de tempo — e 24 kg × 40
+        // "reps" virava 1RM de 56 kg e um PR falso a cada +2 kg
+        unit: "meters",
         rest: "90 s",
         note:
-          "NOVO · as repetições são METROS e a carga é por mão — iniciar 2 × 24 kg, +2 kg por semana. Ombros para trás, costelas para baixo, passo curto. Sem espaço? Segure parado por 45 s.",
+          "NOVO · carga por mão — iniciar 2 × 24 kg, +2 kg por semana. Ombros para trás, costelas para baixo, passo curto. Sem espaço? Troque por Farmer hold (parado, por tempo).",
       },
       {
         id: "dead-hang",
@@ -355,7 +360,9 @@ export const PERFORMANCE_PLAN: SessionPlan[] = [
           "RIR 1 · repetições por lado · iniciar 15–20 kg. Anti-rotação é o core do grappling: resistir a ser girado vale mais que abdominal. Quadril fixo, braços estendem e voltam devagar.",
       },
       {
-        id: "plank",
+        // id próprio: dividindo "plank" com a Prancha do Lower A, esta vencia no
+        // catálogo e buscar "prancha" não achava prancha simples nenhuma
+        id: "plank-reach",
         name: "Prancha com deslocamento",
         nameEn: "Plank with Reach",
         muscleGroup: "Core",

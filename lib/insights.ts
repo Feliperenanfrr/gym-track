@@ -6,7 +6,8 @@ import {
   zone2Minutes,
 } from "./cardio"
 import { CardioLog, GymData, SessionId, TrainingProgram, WorkoutLog } from "./types"
-import { bestE1RMAdjusted, fromDateKey, toDateKey, workoutVolume } from "./utils"
+import { bestE1RMAdjusted, workoutVolume } from "./measure"
+import { fromDateKey, toDateKey } from "./utils"
 
 /* ------------------------------------------------------------------ */
 /* Hidratação                                                           */

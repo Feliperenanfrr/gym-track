@@ -275,6 +275,7 @@ export function TemplateEditor({
                   >
                     <option value="reps">reps</option>
                     <option value="seconds">segundos</option>
+                    <option value="meters">metros</option>
                   </select>
                 </label>
                 <label className="col-span-2 text-[10px] uppercase text-steel-dim">

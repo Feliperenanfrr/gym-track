@@ -32,7 +32,7 @@ function isExercise(value: unknown): value is ExercisePrescription {
     typeof exercise.sets === "number" &&
     typeof exercise.repsMin === "number" &&
     typeof exercise.repsMax === "number" &&
-    (exercise.unit === "reps" || exercise.unit === "seconds") &&
+    (exercise.unit === "reps" || exercise.unit === "seconds" || exercise.unit === "meters") &&
     typeof exercise.rest === "string" &&
     typeof exercise.note === "string"
   )

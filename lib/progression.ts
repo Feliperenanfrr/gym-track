@@ -168,7 +168,6 @@ export function suggestLoad({
     { length: Math.max(1, prescription.sets) },
     (_, i) => sets[i] ?? sets[sets.length - 1]
   )
-  const timed = prescription.unit === "seconds"
   const weighted = base.some((set) => set.weight > 0)
   const deload =
     weighted &&
@@ -177,7 +176,10 @@ export function suggestLoad({
   const topOfRange =
     sets.length >= prescription.sets &&
     sets.every((set) => set.reps >= prescription.repsMax)
-  const unit = timed ? "s" : "reps"
+  const unit =
+    prescription.unit === "seconds" ? "s" : prescription.unit === "meters" ? "m" : "reps"
+  /** "× 8" para repetições; tempo e distância levam a unidade: "× 45 s" */
+  const times = (n: number) => (unit === "reps" ? `× ${n}` : `× ${n} ${unit}`)
 
   const finish = (
     advice: LoadAdvice,
@@ -224,14 +226,14 @@ export function suggestLoad({
       "progress",
       suggested,
       uniform
-        ? `Subir para ${formatWeight(suggested[0].weight)} kg × ${prescription.repsMin}`
+        ? `Subir para ${formatWeight(suggested[0].weight)} kg ${times(prescription.repsMin)}`
         : `Subir ${formatWeight(step)} kg em todas as séries`,
       `Topo da faixa (${prescription.repsMax} ${unit}) em todas as séries — passo de ${formatWeight(step)} kg.`
     )
   }
 
   if (topOfRange) {
-    const bump = timed ? 5 : 1
+    const bump = unit === "reps" ? 1 : 5
     const suggested = base.map((set) => ({ weight: set.weight, reps: set.reps + bump }))
     return finish(
       "progress",
