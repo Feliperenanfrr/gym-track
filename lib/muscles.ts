@@ -1,3 +1,4 @@
+import { entryVolume } from "./measure"
 import { MuscleGroup, WorkoutLog } from "./types"
 
 /**
@@ -66,7 +67,9 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   "neck-iso": "Pescoço",
   "walking-lunge": "Quadríceps",
   "farmer-carry": "Core",
+  "farmer-hold": "Core",
   pallof: "Core",
+  "plank-reach": "Core",
   "goblet-squat": "Quadríceps",
   "db-row": "Costas",
   pushup: "Peito",
@@ -81,7 +84,8 @@ export function volumeByGroup(workouts: WorkoutLog[]): Record<MuscleGroup, numbe
     for (const e of w.entries) {
       const group = e.muscleGroup ?? EXERCISE_GROUP[e.exerciseId]
       if (!group) continue
-      out[group] += e.sets.reduce((s, set) => s + set.weight * set.reps, 0)
+      // tempo e distância não são tonelagem — séries duras abaixo contam todas
+      out[group] += entryVolume(e)
     }
   }
   return out

@@ -25,17 +25,10 @@ import {
   enginePhaseFor,
   engineWeeklyTargetFor,
 } from "@/lib/engine-plan"
-import { ExercisePrescription, SessionPlan } from "@/lib/types"
+import { formatPrescription } from "@/lib/measure"
+import { SessionPlan } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Card, CollapsibleSection, SectionTitle } from "./ui"
-
-function prescription(exercise: ExercisePrescription) {
-  const reps =
-    exercise.repsMin === exercise.repsMax
-      ? String(exercise.repsMin)
-      : `${exercise.repsMin}–${exercise.repsMax}`
-  return `${exercise.sets} × ${reps}${exercise.unit === "seconds" ? "s" : ""}`
-}
 
 const ZONE_STYLE: Record<string, { bar: string; text: string }> = {
   steel: { bar: "bg-steel-dim", text: "text-steel-dim" },
@@ -364,7 +357,7 @@ export function EnginePlanView({
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-sm font-semibold text-bone">{exercise.name}</p>
                   <span className="shrink-0 font-mono text-[11px] text-ember-hot">
-                    {prescription(exercise)}
+                    {formatPrescription(exercise)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-baseline justify-between gap-3">

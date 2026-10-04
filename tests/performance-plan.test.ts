@@ -119,13 +119,18 @@ describe("prescrição da pré-temporada", () => {
     expect(ids).toContain("neck-iso")
   })
 
-  it("o farmer walk registra carga: metros em reps, kg por mão no peso", () => {
-    // o campo de peso fica desabilitado quando a unidade é "seconds", e é a
-    // carga por mão que progride neste exercício
+  it("o farmer walk mede metros, com a carga por mão no peso", () => {
+    // em "reps", 24 kg × 40 viravam 1RM de 56 kg e um PR falso a cada +2 kg
     const farmer = PERFORMANCE_PLAN.flatMap((s) => s.exercises).find(
       (exercise) => exercise.id === "farmer-carry"
     )
-    expect(farmer?.unit).toBe("reps")
+    expect(farmer?.unit).toBe("meters")
+  })
+
+  it("a prancha com deslocamento não divide o id da prancha simples", () => {
+    const ids = PERFORMANCE_PLAN.flatMap((s) => s.exercises).map((exercise) => exercise.id)
+    expect(ids).toContain("plank-reach")
+    expect(ids).not.toContain("plank")
   })
 
   it("o explosivo abre a sessão que tem explosivo", () => {

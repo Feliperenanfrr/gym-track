@@ -9,7 +9,8 @@ import {
 } from "./engine-plan"
 import { GymData } from "./types"
 import { countsTowardProgramTarget, countsTowardTrainingTarget } from "./plan"
-import { fromDateKey, mondayOf, toDateKey, workoutVolume } from "./utils"
+import { workoutVolume } from "./measure"
+import { fromDateKey, mondayOf, toDateKey } from "./utils"
 
 /**
  * Conquistas Xbox-style: marcos calculados do histórico completo.

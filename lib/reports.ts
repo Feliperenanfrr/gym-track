@@ -49,7 +49,8 @@ import {
   RELATIVE_LOAD_ALERT_PCT,
 } from "./strength"
 import { BodyLog, GymData, MuscleGroup, TrainingProgram, WorkoutLog } from "./types"
-import { fromDateKey, mondayOf, toDateKey, workoutVolume } from "./utils"
+import { workoutVolume } from "./measure"
+import { fromDateKey, mondayOf, toDateKey } from "./utils"
 
 const DAY_MS = 86_400_000
 

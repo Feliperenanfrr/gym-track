@@ -108,6 +108,29 @@ export function tapFeedback() {
 }
 
 /**
+ * Contagem regressiva (3, 2, 1) antes de uma isometria. Roda fora de gesto:
+ * só vibração e bipe curto — o háptico do iOS exige toque e fica de fora.
+ */
+export function countdownFeedback() {
+  try {
+    navigator.vibrate?.(30)
+  } catch {
+    /* ignore */
+  }
+  withRunningCtx((ctx) => playTone(ctx, 660, 120, 0.18))
+}
+
+/** "Valendo": a isometria começou a contar. Mais agudo que a contagem. */
+export function goFeedback() {
+  try {
+    navigator.vibrate?.(80)
+  } catch {
+    /* ignore */
+  }
+  withRunningCtx((ctx) => playTone(ctx, 1320, 260, 0.22))
+}
+
+/**
  * Alerta de fim de descanso: vibração em padrão + bipe mais longo.
  * O bipe funciona fora de gesto porque o contexto já foi destravado
  * pelo tapFeedback que iniciou o timer.

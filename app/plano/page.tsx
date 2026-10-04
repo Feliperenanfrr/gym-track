@@ -7,6 +7,7 @@ import { PerformancePlanView } from "@/components/performance-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
 import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
+import { formatPrescription } from "@/lib/measure"
 import { GOLDEN_RULES, NUTRITION_GUIDELINES, planForProgram, TIMELINE } from "@/lib/plan"
 import { SessionId } from "@/lib/types"
 import { useTrainingProgram } from "@/lib/use-training-program"
@@ -202,8 +203,7 @@ export default function PlanoPage() {
                 <div className="flex items-baseline justify-between gap-2">
                   <p className="text-sm font-semibold text-bone">{ex.name}</p>
                   <span className="shrink-0 font-mono text-[11px] text-ember-hot">
-                    {ex.sets} × {ex.repsMin}–{ex.repsMax}
-                    {ex.unit === "seconds" ? "s" : ""}
+                    {formatPrescription(ex)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-baseline justify-between gap-2">

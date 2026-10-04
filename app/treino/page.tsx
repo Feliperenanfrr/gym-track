@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, History, Minus, Pencil, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, TrendingUp, Trash2, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, CloudOff, Dumbbell, Footprints, History, Minus, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, SlidersHorizontal, Timer, TrendingUp, Trash2, X } from "lucide-react"
+import { HoldTimer } from "@/components/hold-timer"
 import { ProgramTabs } from "@/components/program-tabs"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
@@ -12,7 +13,16 @@ import { PERF_CYCLE, nextPerformanceSession } from "@/lib/performance-plan"
 import { cardioBlocks, cardioRowsToBlocks } from "@/lib/cardio"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import { CardioPurpose, CardioRow, ExercisePrescription, ExerciseLog, MuscleGroup, SessionId, SessionKind, SessionPlan, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
+import { CardioPurpose, CardioRow, ExercisePrescription, ExerciseLog, ExerciseUnit, MuscleGroup, SessionId, SessionKind, SessionPlan, SetRow, TrainingProgram, WorkoutLog } from "@/lib/types"
+import {
+  bestE1RMAdjusted,
+  formatPrescription,
+  formatSetsSummary,
+  looksLikeTimeInReps,
+  measureInfo,
+  measureOf,
+  MEASURES,
+} from "@/lib/measure"
 import {
   CatalogExercise,
   groupOfExercise,
@@ -20,7 +30,6 @@ import {
   MUSCLE_GROUP_OPTIONS,
 } from "@/lib/exercise-catalog"
 import {
-  bestE1RMAdjusted,
   cn,
   daysSince,
   formatKg,
@@ -31,6 +40,7 @@ import {
   toOperationalDateKey,
 } from "@/lib/utils"
 import { parseRestSeconds } from "@/lib/rest"
+import { useHoldTimer } from "@/lib/use-hold-timer"
 import { useRestTimer } from "@/lib/use-rest-timer"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import { CycleSuggestion, getScheduleMode, nextInCycle } from "@/lib/cycle"
@@ -97,12 +107,28 @@ const GHOST_BTN =
 const ICON_BTN =
   "flex h-8 w-8 items-center justify-center rounded-md border border-seam text-steel-dim transition-colors"
 
+/**
+ * Selo do tipo de medida no seletor e no card. Só tempo e distância ganham
+ * selo: repetição é o padrão, e marcar tudo viraria ruído.
+ */
+function MeasureBadge({ unit }: { unit: ExerciseUnit }) {
+  if (unit === "reps") return null
+  const Icon = unit === "seconds" ? Timer : Footprints
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-zone/40 bg-zone/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-zone">
+      <Icon size={10} strokeWidth={2.5} aria-hidden />
+      {measureInfo(unit).label}
+    </span>
+  )
+}
+
 export default function TreinoPage() {
   const { data, addWorkout, pendingCount } = useGymData()
   const router = useRouter()
   const { program, selectProgram } = useTrainingProgram()
   const { templates, templateById, exerciseCatalog } = useWorkoutTemplates()
   const restTimer = useRestTimer()
+  const holdTimer = useHoldTimer()
   const [today, setToday] = useState<Date | null>(null)
   const [sessionId, setSessionId] = useState<SessionId | null>(null)
   const [activeExercises, setActiveExercises] = useState<ExercisePrescription[]>([])
@@ -115,6 +141,8 @@ export default function TreinoPage() {
   const [pickerGroup, setPickerGroup] = useState<MuscleGroup>("Peito")
   const [pickerSearch, setPickerSearch] = useState("")
   const [customName, setCustomName] = useState("")
+  /** tipo de medida do exercício cadastrado na hora ("Outro exercício") */
+  const [customUnit, setCustomUnit] = useState<ExerciseUnit>("reps")
   const [saved, setSaved] = useState(false)
   const [savedOffline, setSavedOffline] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -133,6 +161,8 @@ export default function TreinoPage() {
   const [stepEditorFor, setStepEditorFor] = useState<string | null>(null)
   const dirtyRef = useRef(false)
   const popRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  /** seletor de exercício: abre no topo da lista, longe do card que pediu */
+  const pickerRef = useRef<HTMLDivElement | null>(null)
   /** epoch ms da primeira série marcada (duração real da sessão) */
   const startedAtRef = useRef<number | null>(null)
   const sessionPickedRef = useRef(false)
@@ -344,7 +374,8 @@ export default function TreinoPage() {
       rows[ex.id] = Array.from({ length: ex.sets }, (_, i) => {
         const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
         return {
-          weight: lastSet ? String(lastSet.weight) : "",
+          // sem carga (prancha, flexão) o campo fica vazio, não com um "0"
+          weight: lastSet && lastSet.weight > 0 ? String(lastSet.weight) : "",
           // no bloco de fundação, mesma carga e o piso da faixa de repetições
           reps: lastSet ? String(adapting ? ex.repsMin : lastSet.reps) : "",
           done: false,
@@ -428,6 +459,12 @@ export default function TreinoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, lastLog, todayLog, today, cycleSug])
 
+  // o seletor nasce acima da lista: trocar o 5º exercício abria fora da tela
+  useEffect(() => {
+    if (!pickerFor) return
+    pickerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [pickerFor])
+
   // autosave do rascunho a cada edição do usuário
   useEffect(() => {
     if (!session || !today || !dirtyRef.current) return
@@ -450,6 +487,8 @@ export default function TreinoPage() {
       for (const r of rows[ex.id] ?? []) {
         setsTotal++
         if (r.done) setsDone++
+        // tonelagem é carga × repetições: segundos e metros ficam de fora
+        if (ex.unit !== "reps") continue
         const w = parseFloat(r.weight.replace(",", "."))
         const reps = parseInt(r.reps)
         if (!isNaN(w) && !isNaN(reps)) volume += w * reps
@@ -544,6 +583,8 @@ export default function TreinoPage() {
     setPickerGroup(current ? groupOfExercise(current) : "Peito")
     setPickerSearch("")
     setCustomName("")
+    // trocar uma prancha por um exercício novo provavelmente ainda é tempo
+    setCustomUnit(current?.unit ?? "reps")
   }
 
   const applyExerciseChoice = (choice: CatalogExercise) => {
@@ -573,10 +614,15 @@ export default function TreinoPage() {
 
   const addCustomExercise = () => {
     if (!customName.trim()) return
-    applyExerciseChoice(makeCustomExercise(customName, pickerGroup))
+    applyExerciseChoice(makeCustomExercise(customName, pickerGroup, customUnit))
   }
 
+  /** o cronômetro de isometria pertence a este exercício? */
+  const holdBelongsTo = (exerciseId: string) =>
+    holdTimer.active?.key.startsWith(`${exerciseId}-`) ?? false
+
   const removeExercise = (exerciseId: string) => {
+    if (holdBelongsTo(exerciseId)) holdTimer.cancel()
     dirtyRef.current = true
     setActiveExercises((current) => current.filter((exercise) => exercise.id !== exerciseId))
     setRows((current) => {
@@ -608,7 +654,9 @@ export default function TreinoPage() {
   }
 
   const removeSet = (exerciseId: string) => {
-    if ((rows[exerciseId]?.length ?? 0) <= 1) return
+    const count = rows[exerciseId]?.length ?? 0
+    if (count <= 1) return
+    if (holdTimer.active?.key === `${exerciseId}-${count - 1}`) holdTimer.cancel()
     dirtyRef.current = true
     setRows((current) => ({ ...current, [exerciseId]: current[exerciseId].slice(0, -1) }))
     setActiveExercises((current) =>
@@ -636,19 +684,23 @@ export default function TreinoPage() {
     setPickerFor(null)
   }
 
+  /** micro-animação pop no botão de concluir a série */
+  const popCheck = (key: string) => {
+    const btn = popRefs.current.get(key)
+    if (!btn) return
+    btn.classList.remove("check-pop")
+    // force reflow para reiniciar a animação caso já esteja ativa
+    void btn.offsetWidth
+    btn.classList.add("check-pop")
+  }
+
   // marca/desmarca a série e, ao concluir, dispara o timer de descanso
   const toggleSet = (ex: ExercisePrescription, idx: number, currentlyDone: boolean) => {
+    // marcar à mão encerra o cronômetro desta série sem registrar por cima
+    if (holdTimer.active?.key === `${ex.id}-${idx}`) holdTimer.cancel()
     const nowDone = !currentlyDone
     updateRow(ex.id, idx, { done: nowDone })
-
-    // micro-animação pop no botão
-    const btn = popRefs.current.get(`${ex.id}-${idx}`)
-    if (btn) {
-      btn.classList.remove("check-pop")
-      // force reflow para reiniciar a animação caso já esteja ativa
-      void btn.offsetWidth
-      btn.classList.add("check-pop")
-    }
+    popCheck(`${ex.id}-${idx}`)
 
     if (nowDone) {
       // primeira série marcada = início real da sessão
@@ -656,6 +708,28 @@ export default function TreinoPage() {
       tapFeedback()
       restTimer.start(parseRestSeconds(ex.rest), ex.name)
     }
+  }
+
+  /**
+   * Isometria cronometrada: 3-2-1, conta o alvo e fecha a série sozinha com
+   * os segundos sustentados — e o descanso começa. Nada para digitar com o
+   * corpo no chão. O alvo é o valor do campo; vazio, o topo da prescrição.
+   */
+  const startHold = (ex: ExercisePrescription, idx: number, row: SetRow) => {
+    const typed = parseInt(row.reps)
+    const seconds = typed > 0 ? typed : ex.repsMax
+    // dentro do gesto: destrava o áudio para os bipes da contagem no iOS
+    tapFeedback()
+    restTimer.dismiss()
+    if (!startedAtRef.current) startedAtRef.current = Date.now()
+    holdTimer.start(
+      { key: `${ex.id}-${idx}`, label: `${ex.name} · série ${idx + 1}`, seconds },
+      (heldSeconds) => {
+        updateRow(ex.id, idx, { reps: String(heldSeconds), done: true })
+        popCheck(`${ex.id}-${idx}`)
+        restTimer.start(parseRestSeconds(ex.rest), ex.name)
+      }
+    )
   }
 
   const updateCardioRow = (index: number, patch: Partial<CardioRow>) => {
@@ -721,11 +795,16 @@ export default function TreinoPage() {
         exerciseId: ex.id,
         exerciseName: ex.name,
         muscleGroup: groupOfExercise(ex),
+        // snapshot do tipo de medida: o registro diz sozinho se 60 é rep ou segundo
+        unit: ex.unit,
         sets: (rows[ex.id] ?? [])
           .map((r) => ({
             weight: parseFloat(r.weight.replace(",", ".")) || 0,
             reps: parseInt(r.reps) || 0,
-            ...(r.rir !== undefined && r.rir !== "" ? { rir: parseInt(r.rir) } : {}),
+            // RIR é reps em reserva: não existe em isometria nem em carregamento
+            ...(ex.unit === "reps" && r.rir !== undefined && r.rir !== ""
+              ? { rir: parseInt(r.rir) }
+              : {}),
           }))
           .filter((s) => s.reps > 0),
       }))
@@ -1153,6 +1232,7 @@ export default function TreinoPage() {
       </Card>
 
       {pickerFor && (
+        <div ref={pickerRef} className="scroll-mt-4">
         <Card className="rise mb-4 border-l-4 border-l-gold">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -1203,9 +1283,16 @@ export default function TreinoPage() {
                 onClick={() => applyExerciseChoice(exercise)}
                 className="rounded border border-seam bg-coal px-3 py-2 text-left transition-colors hover:border-gold/60"
               >
-                <span className="block text-sm font-semibold text-bone">{exercise.name}</span>
-                <span className="font-mono text-[10px] uppercase text-steel-dim">
-                  {exercise.muscleGroup} · {exercise.equipment} · {exercise.sets} × {exercise.repsMin}–{exercise.repsMax}
+                <span className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 text-sm font-semibold text-bone">{exercise.name}</span>
+                  <MeasureBadge unit={exercise.unit} />
+                </span>
+                {/* a unidade aparece na faixa: "3 × 45–60 s" não se confunde com reps */}
+                <span className="font-mono text-[10px] text-steel-dim">
+                  <span className="uppercase">
+                    {exercise.muscleGroup} · {exercise.equipment}
+                  </span>{" "}
+                  · {formatPrescription(exercise)}
                 </span>
               </button>
             ))}
@@ -1240,8 +1327,33 @@ export default function TreinoPage() {
                 Incluir
               </button>
             </div>
+            {/* o tipo de medida nasce com o exercício: prancha é tempo, não reps */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className="shrink-0 font-mono text-[10px] uppercase text-steel-dim">
+                Mede por
+              </span>
+              <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Tipo de medida">
+                {MEASURES.map((measure) => (
+                  <button
+                    key={measure.id}
+                    role="radio"
+                    aria-checked={customUnit === measure.id}
+                    onClick={() => setCustomUnit(measure.id)}
+                    className={cn(
+                      "h-10 rounded-md border text-xs font-semibold transition-colors",
+                      customUnit === measure.id
+                        ? "border-gold bg-gold/15 text-gold"
+                        : "border-seam text-steel hover:text-bone"
+                    )}
+                  >
+                    {measure.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </Card>
+        </div>
       )}
 
       {/* musculação */}
@@ -1297,6 +1409,12 @@ export default function TreinoPage() {
         const exComplete = doneCount > 0 && doneCount === (rows[ex.id]?.length ?? 0)
         const advice = suggestions[ex.id]
         const suggestion = advice?.suggestion
+        const measure = measureInfo(ex.unit)
+        const timed = ex.unit === "seconds"
+        // 60 "reps" sem carga num exercício de 8–12: quase certo que foi tempo
+        const suspectTime = (rows[ex.id] ?? []).some((row) =>
+          looksLikeTimeInReps(ex, parseFloat(row.weight.replace(",", ".")) || 0, parseInt(row.reps))
+        )
         // só oferece "aplicar" quando a carga muda; manter carga é orientação,
         // não algo para escrever no campo antes de a série acontecer. O botão
         // some depois de aplicado — nada de convidar para o mesmo toque duas vezes
@@ -1348,10 +1466,12 @@ export default function TreinoPage() {
                 </button>
               </div>
             </div>
-            <div className="mt-1.5 flex items-baseline justify-between gap-2">
-              <span className="font-mono text-[11px] text-ember-hot">
-                {ex.sets} × {ex.repsMin}–{ex.repsMax}
-                {ex.unit === "seconds" ? "s" : ""}
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5">
+                <span className="font-mono text-[11px] text-ember-hot">
+                  {formatPrescription(ex)}
+                </span>
+                <MeasureBadge unit={ex.unit} />
               </span>
               <span className="font-mono text-[10px] text-steel-dim">descanso {ex.rest}</span>
             </div>
@@ -1363,8 +1483,7 @@ export default function TreinoPage() {
                 <History size={12} className="shrink-0 text-steel-dim" />
                 <span className="text-steel-dim">{shortDate(previous!.log.date)}:</span>
                 <span className="text-bone">
-                  {formatWeight(lastEntry.sets[0]?.weight ?? 0)} kg ×{" "}
-                  {lastEntry.sets.map((s) => s.reps).join("·")}
+                  {formatSetsSummary(lastEntry.sets, measureOf(lastEntry))}
                 </span>
                 {fromOtherSession && (
                   <span className="text-steel-dim">· {fromOtherSession}</span>
@@ -1475,23 +1594,27 @@ export default function TreinoPage() {
                 const lastEntry = exerciseHistory[ex.id]?.entry
                 const lastSet = lastEntry?.sets[i] ?? lastEntry?.sets[lastEntry.sets.length - 1]
                 // tendência da série vs. a mesma série da última vez (carga;
-                // em empate, reps) — feedback ao vivo de sobrecarga progressiva
+                // em empate, reps/segundos/metros) — feedback ao vivo de
+                // sobrecarga progressiva, inclusive na prancha sem carga
                 let trend: "up" | "down" | "same" | null = null
-                if (lastSet && row.weight) {
-                  const currentW = parseFloat(row.weight)
-                  if (!isNaN(currentW)) {
+                if (lastSet) {
+                  const typedW = row.weight.trim() !== ""
+                  const currentW = typedW ? parseFloat(row.weight.replace(",", ".")) : 0
+                  // com carga na última vez, campo vazio é digitação em curso
+                  if (!isNaN(currentW) && (typedW || lastSet.weight <= 0)) {
+                    const currentR = parseInt(row.reps)
                     if (currentW > lastSet.weight) trend = "up"
                     else if (currentW < lastSet.weight) trend = "down"
-                    else {
-                      const currentR = parseInt(row.reps)
-                      if (!isNaN(currentR)) {
-                        if (currentR > lastSet.reps) trend = "up"
-                        else if (currentR < lastSet.reps) trend = "down"
-                        else trend = "same"
-                      }
+                    else if (!isNaN(currentR)) {
+                      if (currentR > lastSet.reps) trend = "up"
+                      else if (currentR < lastSet.reps) trend = "down"
+                      else trend = "same"
                     }
                   }
                 }
+                const holdKey = `${ex.id}-${i}`
+                const holdingThis = holdTimer.active?.key === holdKey
+                const holdTarget = parseInt(row.reps) > 0 ? parseInt(row.reps) : ex.repsMax
 
                 return (
                   <div
@@ -1553,11 +1676,11 @@ export default function TreinoPage() {
                             document.getElementById(`reps-${ex.id}-${i}`)?.focus()
                           }
                         }}
-                        className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember disabled:opacity-40"
-                        disabled={ex.unit === "seconds"}
+                        className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
                       />
+                      {/* na isometria a carga é opcional (prancha com anilha nas costas) */}
                       <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
-                        kg
+                        {timed ? "+kg" : "kg"}
                       </span>
                     </label>
                     <span className="pb-5 text-steel-dim">×</span>
@@ -1581,7 +1704,7 @@ export default function TreinoPage() {
                         className="w-full rounded-md border border-seam bg-coal py-2.5 text-center font-mono text-lg text-bone outline-none focus:border-ember"
                       />
                       <span className="text-center font-mono text-[10px] uppercase tracking-wide text-steel-dim">
-                        {ex.unit === "seconds" ? "seg" : "reps"}
+                        {measure.field}
                       </span>
                     </label>
                   </div>
@@ -1601,6 +1724,40 @@ export default function TreinoPage() {
                     <Check size={22} strokeWidth={3} />
                   </button>
                   </div>
+
+                  {/* isometria: um toque, 3-2-1, e a série fecha sozinha no alvo */}
+                  {timed && !row.done && (
+                    <button
+                      onClick={() =>
+                        holdingThis ? holdTimer.stop() : startHold(ex, i, row)
+                      }
+                      disabled={Boolean(holdTimer.active) && !holdingThis}
+                      className={cn(
+                        "mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-md border font-mono text-xs font-semibold uppercase tracking-wider transition-colors active:scale-[0.99] disabled:opacity-30",
+                        holdingThis
+                          ? "border-ember bg-ember/15 text-ember"
+                          : "border-ember/40 text-ember hover:bg-ember/10"
+                      )}
+                      aria-label={
+                        holdingThis
+                          ? `Parar a série ${i + 1} e registrar o tempo`
+                          : `Cronometrar a série ${i + 1}: ${holdTarget} segundos`
+                      }
+                    >
+                      {holdingThis ? (
+                        <>
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-ember" />
+                          {holdTimer.phase === "prep"
+                            ? `Prepare-se · ${holdTimer.remaining}`
+                            : `Segurando · ${holdTimer.held} de ${holdTarget} s`}
+                        </>
+                      ) : (
+                        <>
+                          <Play size={14} fill="currentColor" /> Cronometrar {holdTarget} s
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   {/* RIR — reps em reserva, 1 tap depois de concluir a série */}
                   {row.done && ex.unit === "reps" && (
@@ -1632,6 +1789,22 @@ export default function TreinoPage() {
                 </div>
               )})}
             </div>
+            {/* guarda de sanidade: o erro da prancha registrada como dead bug */}
+            {suspectTime && (
+              <div className="mt-2 flex items-center gap-2 rounded-md border border-gold/40 bg-gold/5 px-2.5 py-2">
+                <AlertTriangle size={14} className="shrink-0 text-gold" />
+                <p className="min-w-0 flex-1 text-[11px] leading-snug text-gold">
+                  Tantas reps sem carga? Se foi <span className="font-semibold">tempo</span>,
+                  troque por um exercício de tempo.
+                </p>
+                <button
+                  onClick={() => openExercisePicker(ex.id)}
+                  className="h-9 shrink-0 rounded-md bg-gold px-3 font-mono text-[10px] font-bold uppercase tracking-wider text-coal transition-colors hover:bg-gold/85"
+                >
+                  Trocar
+                </button>
+              </div>
+            )}
             <div className="mt-3 flex justify-end gap-2">
               <button
                 onClick={() => removeSet(ex.id)}
@@ -1872,6 +2045,7 @@ export default function TreinoPage() {
       </div>
 
       <RestTimer timer={restTimer} />
+      <HoldTimer timer={holdTimer} />
     </main>
   )
 }

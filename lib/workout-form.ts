@@ -1,4 +1,5 @@
 import { cardioBlocks } from "./cardio"
+import { measureOf } from "./measure"
 import {
   CardioRow,
   ExercisePrescription,
@@ -47,8 +48,10 @@ export function openLogForEditing(
       catalog.find((ex) => ex.id === entry.exerciseId)
     exercises.push({
       ...(known ?? { ...FALLBACK, id: entry.exerciseId, name: entry.exerciseName ?? entry.exerciseId }),
-      // o registro manda no número de séries: foi o que aconteceu de verdade
+      // o registro manda no número de séries e no tipo de medida: foi o que
+      // aconteceu de verdade, mesmo que o plano tenha mudado depois
       sets: Math.max(1, entry.sets.length),
+      unit: entry.unit ?? known?.unit ?? measureOf(entry),
       muscleGroup: entry.muscleGroup ?? known?.muscleGroup,
     })
     rows[entry.exerciseId] = entry.sets.map((set) => ({

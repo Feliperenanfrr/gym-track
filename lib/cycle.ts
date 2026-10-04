@@ -1,7 +1,8 @@
 import { SessionId, TrainingProgram, WorkoutLog } from "./types"
 import { intenseMinutes, zone2Minutes } from "./cardio"
 import { countsTowardProgramTarget, PLAN_BY_ID } from "./plan"
-import { isoWeekday, toDateKey, WEEKDAY_SHORT, workoutVolume } from "./utils"
+import { workoutVolume } from "./measure"
+import { isoWeekday, toDateKey, WEEKDAY_SHORT } from "./utils"
 
 /**
  * Ciclo rotativo de treinos: em vez de prescrever por dia da semana, o

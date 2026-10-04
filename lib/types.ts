@@ -50,15 +50,24 @@ export type MuscleGroup =
 
 export type CardioPurpose = "zone2" | "intense" | "sport"
 
+/**
+ * Como a série é medida. Um exercício tem UM tipo de medida: "Dead bug /
+ * prancha" medido em reps transformou uma prancha de 60 s em 60 repetições.
+ * - "reps": carga × repetições (o único que entra em 1RM, PR e tonelagem)
+ * - "seconds": isometria (prancha, suspensão) — carga opcional
+ * - "meters": carregamento (farmer walk) — carga por mão
+ */
+export type ExerciseUnit = "reps" | "seconds" | "meters"
+
 export interface ExercisePrescription {
   id: string
   name: string
   nameEn: string
   sets: number
+  /** faixa da prescrição, na unidade de `unit` (reps, segundos ou metros) */
   repsMin: number
   repsMax: number
-  /** "reps" para séries normais, "seconds" para isometria (prancha) */
-  unit: "reps" | "seconds"
+  unit: ExerciseUnit
   rest: string
   note: string
   /** Necessário em exercícios fora do plano para manter as métricas por grupo. */
@@ -94,6 +103,7 @@ export interface SessionPlan {
 
 export interface SetLog {
   weight: number
+  /** repetições — ou segundos/metros, conforme a `unit` do exercício */
   reps: number
   /** reps em reserva ao fim da série (0–4); opcional, registros antigos não têm */
   rir?: number
@@ -113,6 +123,11 @@ export interface ExerciseLog {
   /** Preserva exercícios personalizados e substituições no histórico. */
   exerciseName?: string
   muscleGroup?: MuscleGroup
+  /**
+   * Tipo de medida no momento do registro (snapshot, como o nome). Registros
+   * antigos não têm: `measureOf()` resolve pelo plano.
+   */
+  unit?: ExerciseUnit
   sets: SetLog[]
 }
 

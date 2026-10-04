@@ -22,8 +22,9 @@ import {
   parseStravaCsv,
   toStravaCardioLog,
 } from "@/lib/strava"
-import { CardioLog, CardioPurpose, ExerciseLog, MuscleGroup, WorkoutLog } from "@/lib/types"
-import { cn, formatKg, fromDateKey, toDateKey, workoutVolume } from "@/lib/utils"
+import { CardioLog, CardioPurpose, ExerciseLog, ExerciseUnit, MuscleGroup, WorkoutLog } from "@/lib/types"
+import { measureInfo, measureOf, workoutVolume } from "@/lib/measure"
+import { cn, formatKg, fromDateKey, toDateKey } from "@/lib/utils"
 
 const PURPOSE_OPTIONS: { id: CardioPurpose; label: string; hint: string }[] = [
   { id: "zone2", label: "Zona 2", hint: "conta para a meta semanal de Zona 2" },
@@ -42,6 +43,8 @@ interface EditableEntry {
   exerciseId: string
   exerciseName?: string
   muscleGroup?: MuscleGroup
+  /** tipo de medida resolvido na abertura — o editor mostra "s"/"m" e some com o RIR */
+  unit: ExerciseUnit
   sets: EditableSet[]
 }
 
@@ -70,6 +73,7 @@ function editableEntriesFrom(log: WorkoutLog): EditableEntry[] {
     exerciseId: entry.exerciseId,
     ...(entry.exerciseName !== undefined ? { exerciseName: entry.exerciseName } : {}),
     ...(entry.muscleGroup !== undefined ? { muscleGroup: entry.muscleGroup } : {}),
+    unit: measureOf(entry),
     sets: entry.sets.map((s) => ({
       weight: String(s.weight),
       reps: String(s.reps),
@@ -352,11 +356,12 @@ export default function Historico() {
         exerciseId: e.exerciseId,
         ...(e.exerciseName !== undefined ? { exerciseName: e.exerciseName } : {}),
         ...(e.muscleGroup !== undefined ? { muscleGroup: e.muscleGroup } : {}),
+        unit: e.unit,
         sets: e.sets
           .map((s) => ({
             weight: parseFloat(s.weight.replace(",", ".")) || 0,
             reps: parseInt(s.reps) || 0,
-            ...(s.rir !== "" ? { rir: parseInt(s.rir) } : {}),
+            ...(e.unit === "reps" && s.rir !== "" ? { rir: parseInt(s.rir) } : {}),
           }))
           .filter((s) => s.reps > 0),
       }))
@@ -827,9 +832,15 @@ export default function Historico() {
                                     onChange={(e) =>
                                       updateEditableSet(ei, si, { reps: e.target.value })
                                     }
-                                    aria-label={`Repetições da série ${si + 1}`}
+                                    aria-label={`${entry.unit === "reps" ? "Repetições" : entry.unit === "seconds" ? "Segundos" : "Metros"} da série ${si + 1}`}
                                     className="w-14 rounded border border-seam bg-coal px-1 py-1.5 text-center font-mono text-sm text-bone outline-none focus:border-gold"
                                   />
+                                  {entry.unit !== "reps" && (
+                                    <span className="font-mono text-xs text-steel-dim">
+                                      {measureInfo(entry.unit).suffix}
+                                    </span>
+                                  )}
+                                  {entry.unit === "reps" && (
                                   <select
                                     value={s.rir}
                                     onChange={(e) =>
@@ -846,6 +857,7 @@ export default function Historico() {
                                       </option>
                                     ))}
                                   </select>
+                                  )}
                                 </div>
                               ))}
                             </div>

@@ -1,3 +1,4 @@
+import { isRepsMeasure } from "./measure"
 import { EXERCISES_BY_ID } from "./plan"
 import { ExerciseLog, SetLog, WorkoutLog } from "./types"
 import { fromDateKey, topSet } from "./utils"
@@ -122,7 +123,9 @@ export function frequentExercises(
     if (w.date < sinceKey) continue
     const seen = new Set<string>()
     for (const entry of w.entries) {
-      // isometria e séries sem carga não dizem nada sobre progressão de carga
+      // isometria, carregamento e séries sem carga não dizem nada sobre
+      // progressão de carga × repetições
+      if (!isRepsMeasure(entry)) continue
       const withLoad = entry.sets.filter((s) => s.weight > 0 && s.reps > 0)
       if (withLoad.length === 0) continue
       const current = stats.get(entry.exerciseId) ?? {
@@ -159,7 +162,7 @@ export function exerciseStrength(
 
   for (const w of sorted) {
     const entry = w.entries.find((e) => e.exerciseId === exerciseId)
-    if (!entry) continue
+    if (!entry || !isRepsMeasure(entry)) continue
     const loaded = entry.sets.filter((s) => s.weight > 0 && s.reps > 0)
     if (loaded.length === 0) continue
     const top = topSet({ ...entry, sets: loaded })
@@ -263,6 +266,7 @@ export function relativeLoadBoard(
   const ids = new Set<string>()
   for (const w of inWindow) {
     for (const entry of w.entries) {
+      if (!isRepsMeasure(entry)) continue
       if (entry.sets.some((set) => set.weight > 0 && set.reps > 0)) ids.add(entry.exerciseId)
     }
   }

@@ -5,17 +5,10 @@ import {
   PERFORMANCE_Z2_TARGET,
   PERF_CYCLE,
 } from "@/lib/performance-plan"
-import { ExercisePrescription, SessionPlan } from "@/lib/types"
+import { formatPrescription } from "@/lib/measure"
+import { SessionPlan } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Card, SectionTitle } from "./ui"
-
-function prescription(exercise: ExercisePrescription) {
-  const reps =
-    exercise.repsMin === exercise.repsMax
-      ? String(exercise.repsMin)
-      : `${exercise.repsMin}–${exercise.repsMax}`
-  return `${exercise.sets} × ${reps}${exercise.unit === "seconds" ? "s" : ""}`
-}
 
 /** Alvos corporais da fase — os mesmos campos que a aba Medidas registra. */
 const BODY_TARGETS = [
@@ -158,7 +151,7 @@ export function PerformancePlanView({
                     {exercise.name}
                   </p>
                   <span className="shrink-0 font-mono text-[11px] text-gold">
-                    {prescription(exercise)}
+                    {formatPrescription(exercise)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-baseline justify-between gap-3">

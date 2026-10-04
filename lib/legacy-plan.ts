@@ -181,15 +181,17 @@ export const LEGACY_SESSIONS: SessionPlan[] = [
       },
       {
         id: "dead-bug",
-        name: "Dead bug / prancha",
-        nameEn: "Dead Bug / Plank",
+        // era "Dead bug / prancha": um item, dois movimentos e uma unidade só
+        // (reps). Prancha de 60 s virou 60 repetições — a prancha é `plank`
+        name: "Dead bug",
+        nameEn: "Dead Bug",
         muscleGroup: "Core",
         sets: 3,
         repsMin: 8,
         repsMax: 12,
         unit: "reps",
         rest: "60 s",
-        note: "Escolha um. No dead bug, conte por lado; na prancha, troque para 30–45 s.",
+        note: "Repetições por lado. Lombar colada no chão do início ao fim.",
       },
     ],
   },
@@ -241,9 +243,11 @@ export const LEGACY_SESSIONS: SessionPlan[] = [
         note: "Alternativa: 3–4 empurrões de trenó. Potência de quadril com baixo impacto.",
       },
       {
-        id: "farmer-carry",
-        name: "Farmer carry",
-        nameEn: "Farmer Carry",
+        // id próprio: "farmer-carry" é o farmer walk em METROS da pré-temporada,
+        // e um id não pode mudar de tipo de medida entre protocolos
+        id: "farmer-carry-timed",
+        name: "Farmer carry por tempo",
+        nameEn: "Timed Farmer Carry",
         muscleGroup: "Core",
         sets: 3,
         repsMin: 30,

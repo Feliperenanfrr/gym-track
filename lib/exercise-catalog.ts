@@ -1,6 +1,6 @@
 import { EXERCISES_BY_ID } from "./plan"
 import { EXERCISE_GROUP, MUSCLE_GROUPS } from "./muscles"
-import { ExercisePrescription, MuscleGroup, SessionPlan } from "./types"
+import { ExercisePrescription, ExerciseUnit, MuscleGroup, SessionPlan } from "./types"
 
 export interface CatalogExercise extends ExercisePrescription {
   muscleGroup: MuscleGroup
@@ -43,6 +43,7 @@ const extra: CatalogExercise[] = [
   { id: "machine-crunch", name: "Abdominal crunch na máquina", nameEn: "Machine Abdominal Crunch", muscleGroup: "Core", equipment: "academia", sets: 3, repsMin: 12, repsMax: 15, unit: "reps", rest: "60 s", note: "Enrole o tronco; pausa de 1 s no topo" },
   { id: "crunch", name: "Abdominal supra no chão", nameEn: "Floor Crunch", muscleGroup: "Core", equipment: "peso corporal", sets: 3, repsMin: 15, repsMax: 20, unit: "reps", rest: "60 s", note: "Lombar colada no chão, mãos leves na cabeça" },
   { id: "leg-raise", name: "Elevação de pernas", nameEn: "Leg Raise", muscleGroup: "Core", equipment: "peso corporal", sets: 3, repsMin: 10, repsMax: 15, unit: "reps", rest: "60 s", note: "No banco ou suspenso, lombar sempre apoiada" },
+  { id: "farmer-hold", name: "Farmer hold (parado)", nameEn: "Farmer's Hold", muscleGroup: "Core", equipment: "halteres", sets: 3, repsMin: 30, repsMax: 45, unit: "seconds", rest: "90 s", note: "Halteres pesados ao lado do corpo, parado; carga por mão. Alternativa ao farmer walk sem espaço" },
   { id: "db-plank-pull-through", name: "Prancha com halter (pull-through)", nameEn: "Dumbbell Plank Pull-Through", muscleGroup: "Core", equipment: "halteres", sets: 3, repsMin: 10, repsMax: 16, unit: "reps", rest: "60 s", note: "Em prancha alta, puxe o halter por baixo do corpo para o outro lado; quadril estável" },
 ]
 
@@ -81,7 +82,18 @@ export function groupOfExercise(
   return exercise.muscleGroup ?? EXERCISE_CATALOG.find((item) => item.id === exercise.id)?.muscleGroup ?? "Core"
 }
 
-export function makeCustomExercise(name: string, muscleGroup: MuscleGroup): CatalogExercise {
+/** Prescrição de partida de um exercício novo, por tipo de medida. */
+const CUSTOM_DEFAULTS: Record<ExerciseUnit, Pick<CatalogExercise, "repsMin" | "repsMax" | "rest" | "equipment">> = {
+  reps: { repsMin: 8, repsMax: 12, rest: "90 s", equipment: "halteres" },
+  seconds: { repsMin: 30, repsMax: 60, rest: "60 s", equipment: "peso corporal" },
+  meters: { repsMin: 20, repsMax: 40, rest: "90 s", equipment: "halteres" },
+}
+
+export function makeCustomExercise(
+  name: string,
+  muscleGroup: MuscleGroup,
+  unit: ExerciseUnit = "reps"
+): CatalogExercise {
   const slug = name
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -93,12 +105,9 @@ export function makeCustomExercise(name: string, muscleGroup: MuscleGroup): Cata
     name: name.trim(),
     nameEn: "Exercício personalizado",
     muscleGroup,
-    equipment: "halteres",
     sets: 3,
-    repsMin: 8,
-    repsMax: 12,
-    unit: "reps",
-    rest: "90 s",
+    ...CUSTOM_DEFAULTS[unit],
+    unit,
     note: "Adicionado por você",
   }
 }

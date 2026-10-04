@@ -55,6 +55,7 @@ import {
   weeklySummary,
   weightTrend7d,
 } from "@/lib/insights"
+import { workoutVolume } from "@/lib/measure"
 import { hardSetsByGroup, MUSCLE_GROUPS } from "@/lib/muscles"
 import { countsTowardProgramTarget, PLAN_BY_ID, planForProgram, sessionForWeekday } from "@/lib/plan"
 import { formatWeight } from "@/lib/progression"
@@ -73,7 +74,6 @@ import {
   mondayOf,
   toDateKey,
   WEEKDAY_SHORT,
-  workoutVolume,
 } from "@/lib/utils"
 
 const HYPERTROPHY_Z2_TARGET = { min: 60, max: 70 }
