@@ -65,6 +65,22 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
   dia usa uma cópia: remover/trocar um exercício no registro não modifica o template;
   mudanças permanentes são feitas em **Plano → Editar template**.
 
+## Keep-alive do Supabase
+
+O plano Free **pausa o projeto depois de 7 dias sem uso**, e aí o app inteiro
+para de responder. O cron da Vercel (`vercel.json`) chama `/api/keep-alive`
+todo dia às 12:00 UTC. A rota executa a RPC `keep_alive()` (migration 0014), que
+só devolve `now()`. A anon key não lê nenhuma tabela, mas a RPC é uma requisição
+de verdade à API que chega ao Postgres. Defina `CRON_SECRET` na Vercel para que só o cron consiga chamar a rota.
+
+Se mesmo assim pausar, dá para restaurar sem o painel, com o token do `.env.local`:
+
+```bash
+curl -X POST -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" https://api.supabase.com/v1/projects/<project-ref>/restore
+```
+
+Leva alguns minutos (`COMING_UP` → `ACTIVE_HEALTHY` em `GET /v1/projects/<project-ref>`).
+
 ## Backup do banco
 
 O plano Free do Supabase **não faz backup nenhum** — nem diário, nem snapshot ao

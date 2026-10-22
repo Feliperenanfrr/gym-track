@@ -40,8 +40,9 @@ export async function middleware(request: NextRequest) {
   )
 
   const { pathname } = request.nextUrl
-  // rotas públicas: login + arquivos do PWA (manifest/sw/offline)
-  const PUBLIC = ["/login", "/offline", "/manifest.webmanifest", "/sw.js"]
+  // rotas públicas: login + arquivos do PWA (manifest/sw/offline) + keep-alive
+  // do cron da Vercel, que chega sem sessão
+  const PUBLIC = ["/login", "/offline", "/manifest.webmanifest", "/sw.js", "/api/keep-alive"]
   const isPublic = PUBLIC.some((p) => pathname === p || pathname.startsWith(p + "/"))
   const isLogin = pathname.startsWith("/login")
 
