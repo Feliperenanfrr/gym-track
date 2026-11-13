@@ -628,6 +628,7 @@ export interface RunHistorySnapshot {
   overCeiling: boolean
   segmentTimeSec?: number
   paceLabel: string | null
+  best5kSec?: number
 }
 
 export interface RunningTodayView {
@@ -652,6 +653,11 @@ export interface RunningTodayView {
     base: typeof RUNNING_BASE_BENCHMARK
     rehearsal: RunHistorySnapshot | null
     race: RunHistorySnapshot | null
+    best5kFromGpx: {
+      date: string
+      durationSec: number
+      paceLabel: string | null
+    } | null
   }
 }
 
@@ -695,9 +701,15 @@ export function runningTodayView(
     const distanceKm = runDistanceKm(workout)
     const painScore = runPainScore(workout)
     const explicitStage = runExplicitStageId(workout)
-    const segmentTimeSec = runningCardioBlocks(workout).find(
+    const blocks = runningCardioBlocks(workout)
+    const segmentTimeSec = blocks.find(
       (b) => typeof b.segmentTimeSec === "number" && b.segmentTimeSec > 0
     )?.segmentTimeSec
+    const best5kCandidates = blocks
+      .map((b) => b.gpx?.bestWindowsSec?.km5)
+      .filter((v): v is number => typeof v === "number" && v > 0)
+    const best5kSec =
+      best5kCandidates.length > 0 ? Math.min(...best5kCandidates) : undefined
 
     let effectiveStageId: RunStageId
     if (explicitStage) {
@@ -726,6 +738,7 @@ export function runningTodayView(
       overCeiling,
       segmentTimeSec,
       paceLabel: formatPace(durationSec, distanceKm),
+      ...(best5kSec ? { best5kSec } : {}),
     })
 
     if (painScore !== undefined && painScore > RUNNING_PAIN_THRESHOLD) {
@@ -793,6 +806,20 @@ export function runningTodayView(
     snapshots.find((s) => s.date === RUNNING_RACE_DATE) ??
     null
 
+  const gpx5kRuns = snapshots.filter((s) => s.best5kSec !== undefined)
+  const fastestGpx5k =
+    gpx5kRuns.length > 0
+      ? [...gpx5kRuns].sort((a, b) => (a.best5kSec ?? Infinity) - (b.best5kSec ?? Infinity))[0]
+      : null
+  const best5kFromGpx =
+    fastestGpx5k?.best5kSec !== undefined
+      ? {
+          date: fastestGpx5k.date,
+          durationSec: fastestGpx5k.best5kSec,
+          paceLabel: formatPace(fastestGpx5k.best5kSec, 5),
+        }
+      : null
+
   const totalDistanceKm = Number(
     snapshots.reduce((sum, s) => sum + s.distanceKm, 0).toFixed(2)
   )
@@ -819,6 +846,7 @@ export function runningTodayView(
       base: RUNNING_BASE_BENCHMARK,
       rehearsal,
       race,
+      best5kFromGpx,
     },
   }
 }
