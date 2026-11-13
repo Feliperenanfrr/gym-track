@@ -1,6 +1,6 @@
 "use client"
 
-import { Dumbbell, HeartPulse, Swords } from "lucide-react"
+import { Dumbbell, Footprints, HeartPulse, Swords } from "lucide-react"
 import { TrainingProgram } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -12,6 +12,13 @@ const PROGRAMS: {
   /** cor do estado ativo — uma por objetivo */
   accent: "gold" | "zone" | "ember"
 }[] = [
+  {
+    id: "running",
+    label: "Corrida 5k",
+    detail: "28/11 · 5 km",
+    icon: Footprints,
+    accent: "zone",
+  },
   {
     id: "performance",
     label: "Performance",
@@ -57,7 +64,7 @@ export function ProgramTabs({
       role="tablist"
       aria-label="Programa de treino"
       className={cn(
-        "grid grid-cols-3 rounded-lg border border-seam bg-iron p-1",
+        "grid grid-cols-2 gap-1 rounded-lg border border-seam bg-iron p-1 sm:grid-cols-4 sm:gap-0",
         className
       )}
     >
