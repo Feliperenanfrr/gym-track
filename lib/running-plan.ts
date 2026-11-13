@@ -2,8 +2,8 @@ import { cardioBlocks } from "./cardio"
 import { CardioLog, ExercisePrescription, SessionId, SessionPlan, WorkoutLog } from "./types"
 import { fromDateKey, toDateKey } from "./utils"
 
-/** Início efetivo do ciclo de 5 km (base no Açude Velho). */
-export const RUNNING_START_DATE = "2026-11-07"
+/** Início efetivo do ciclo de 5 km (primeiro treino em 06/11 + base registrada). */
+export const RUNNING_START_DATE = "2026-11-06"
 
 /** Dia da prova alvo (Corrida Beneficente 5 km · sábado). */
 export const RUNNING_RACE_DATE = "2026-11-28"
@@ -11,6 +11,11 @@ export const RUNNING_RACE_DATE = "2026-11-28"
 export const RUNNING_PLAN_VERSION = "running-v1"
 
 export const RUNNING_SHOE_NAME = "Olympikus Corre Max 2"
+export const RUNNING_ALT_SHOE_NAME = "Fila Lite Progress"
+export const RUNNING_SHOE_OPTIONS = [
+  RUNNING_SHOE_NAME,
+  RUNNING_ALT_SHOE_NAME,
+] as const
 export const RUNNING_SHOE_START_DATE = "2026-11-09"
 export const RUNNING_SHOE_DETAIL = "neutro · amortecimento máximo (40/32 mm, drop 8 mm)"
 
@@ -518,6 +523,15 @@ export function runExplicitStageId(workout: WorkoutLog): RunStageId | undefined 
   for (const block of runningCardioBlocks(workout)) {
     if (block.runStageId && block.runStageId in RUN_STAGE_BY_ID) {
       return block.runStageId as RunStageId
+    }
+  }
+  return undefined
+}
+
+export function runExplicitShoe(workout: WorkoutLog): string | undefined {
+  for (const block of runningCardioBlocks(workout)) {
+    if (block.shoe && block.shoe.trim()) {
+      return block.shoe.trim()
     }
   }
   return undefined

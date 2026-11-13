@@ -16,6 +16,7 @@ import { PERF_CYCLE, nextPerformanceSession } from "@/lib/performance-plan"
 import {
   RUNNING_PAIN_THRESHOLD,
   RUNNING_SHOE_NAME,
+  RUNNING_SHOE_OPTIONS,
   RUN_STAGES,
   RUN_STAGE_BY_ID,
   RunStageId,
@@ -197,7 +198,7 @@ export default function TreinoPage() {
   const [runPainScore, setRunPainScore] = useState<number | null>(null)
   const [runDistanceKm, setRunDistanceKm] = useState("")
   const [runSegmentClock, setRunSegmentClock] = useState("")
-  const [runUseCorreMax, setRunUseCorreMax] = useState(true)
+  const [runShoe, setRunShoe] = useState<string>(RUNNING_SHOE_NAME)
   const [showStravaInTreino, setShowStravaInTreino] = useState(false)
 
   const availableSessions = useMemo(
@@ -575,7 +576,7 @@ export default function TreinoPage() {
         )
         setRunPainScore(typeof runBlock?.painScore === "number" ? runBlock.painScore : null)
         setRunDistanceKm(runBlock?.distanceKm ? String(runBlock.distanceKm) : "")
-        setRunUseCorreMax(runBlock?.shoe ? runBlock.shoe === RUNNING_SHOE_NAME : true)
+        setRunShoe(runBlock?.shoe ?? RUNNING_SHOE_NAME)
         if (runBlock?.segmentTimeSec && runBlock.segmentTimeSec > 0) {
           const m = Math.floor(runBlock.segmentTimeSec / 60)
           const sec = runBlock.segmentTimeSec % 60
@@ -596,7 +597,7 @@ export default function TreinoPage() {
       setRunPainScore(null)
       setRunDistanceKm("")
       setRunSegmentClock("")
-      setRunUseCorreMax(true)
+      setRunShoe(RUNNING_SHOE_NAME)
     }
     setActiveExercises(session.exercises)
     applyPrefill(buildPrefill(session, lastLog))
@@ -1158,7 +1159,7 @@ export default function TreinoPage() {
                   ...block,
                   runStageId,
                   ...(runPainScore !== null ? { painScore: runPainScore } : {}),
-                  ...(runUseCorreMax ? { shoe: RUNNING_SHOE_NAME } : {}),
+                  ...(runShoe ? { shoe: runShoe } : {}),
                   ...(Number.isFinite(parsedDistanceKm) && parsedDistanceKm > 0
                     ? { distanceKm: Number(parsedDistanceKm.toFixed(2)) }
                     : {}),
@@ -2461,15 +2462,36 @@ export default function TreinoPage() {
               )}
             </div>
 
-            <label className="mt-3 flex items-center gap-2 rounded border border-seam bg-coal px-2.5 py-2 text-xs text-bone">
-              <input
-                type="checkbox"
-                checked={runUseCorreMax}
-                onChange={(event) => setRunUseCorreMax(event.target.checked)}
-                className="accent-zone"
-              />
-              <span>Tênis: {RUNNING_SHOE_NAME}</span>
-            </label>
+            <div className="mt-3">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-steel">
+                Tênis usado
+              </span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {[...RUNNING_SHOE_OPTIONS, ""].map((shoeOption) => {
+                  const selected = runShoe === shoeOption
+                  const label =
+                    shoeOption === RUNNING_SHOE_NAME
+                      ? "Corre Max 2 (padrão)"
+                      : shoeOption || "Não informar"
+                  return (
+                    <button
+                      key={shoeOption || "none"}
+                      type="button"
+                      onClick={() => setRunShoe(shoeOption)}
+                      className={cn(
+                        "rounded border px-2.5 py-1.5 text-xs font-semibold transition-colors",
+                        selected
+                          ? "border-zone bg-zone/15 text-zone"
+                          : "border-seam bg-coal text-steel hover:text-bone"
+                      )}
+                      aria-pressed={selected}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
 
             {totalCardioMin > 0 && isOverVolumeCeiling(runStageId, totalCardioMin) && (
               <p className="mt-2.5 flex items-center gap-1.5 rounded border border-gold/30 bg-gold/5 px-2.5 py-2 text-xs text-gold">
@@ -2487,11 +2509,11 @@ export default function TreinoPage() {
               body={data.body}
               addWorkout={addWorkout}
               compact
-              title="Importar corrida direto do CSV do Strava"
+              title="Importar corrida (.GPX ou .CSV) do Strava"
               subtitle="Mesma ferramenta do Histórico, já preenchendo seu estágio e dor."
               runningOptions={{
                 defaultStageId: runStageId,
-                defaultShoe: runUseCorreMax ? RUNNING_SHOE_NAME : undefined,
+                defaultShoe: runShoe,
               }}
               onSaved={() => setShowStravaInTreino(false)}
             />

@@ -239,6 +239,9 @@ export function RunningPlanView({
           <div>
             <p className="text-xs font-semibold text-bone">{RUNNING_SHOE_NAME}</p>
             <p className="font-mono text-[10px] text-steel-dim">{RUNNING_SHOE_DETAIL}</p>
+            <p className="mt-0.5 font-mono text-[10px] text-steel-dim">
+              Alternativo (ex.: 06/11): Fila Lite Progress · contabilizado separado
+            </p>
           </div>
           <span className="shrink-0 rounded-full border border-zone/30 bg-zone/10 px-2.5 py-1 font-mono text-xs font-semibold text-zone">
             {view.shoeSessions} sessões

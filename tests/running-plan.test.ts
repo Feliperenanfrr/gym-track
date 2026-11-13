@@ -9,14 +9,17 @@ import {
   planForProgram,
 } from "../lib/plan"
 import {
+  RUNNING_ALT_SHOE_NAME,
   RUNNING_BASE_BENCHMARK,
   RUNNING_RACE_DATE,
   RUNNING_SHOE_NAME,
+  RUNNING_SHOE_OPTIONS,
   RUN_EXERCISES_A,
   RUN_EXERCISES_B,
   formatPace,
   isOverVolumeCeiling,
   isRunningActivityLog,
+  runExplicitShoe,
   runningShoeCount,
   runningTodayView,
   strengthBPhaseFor,
@@ -141,6 +144,20 @@ describe("running-plan · progressão adaptativa", () => {
     expect(isRunningActivityLog(logs[0])).toBe(false)
     expect(isRunningActivityLog(logs[1])).toBe(true)
     expect(runningShoeCount(logs, "2026-11-13")).toBe(2)
+
+    const withAltShoeOnNov06 = [
+      makeWorkout("2026-11-06", "strava", {
+        minutes: 42,
+        distanceKm: 4.67,
+        shoe: RUNNING_ALT_SHOE_NAME,
+        runStageId: "1-2x8",
+      }),
+      ...logs.slice(2),
+    ]
+    expect(isRunningActivityLog(withAltShoeOnNov06[0])).toBe(true)
+    expect(runExplicitShoe(withAltShoeOnNov06[0])).toBe("Fila Lite Progress")
+    expect(runningShoeCount(withAltShoeOnNov06, "2026-11-13")).toBe(2)
+    expect(RUNNING_SHOE_OPTIONS).toEqual([RUNNING_SHOE_NAME, RUNNING_ALT_SHOE_NAME])
 
     const view = runningTodayView(logs, fromDateKey("2026-11-13"))
     expect(view.totalRuns).toBe(3)
