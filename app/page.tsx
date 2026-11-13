@@ -12,6 +12,7 @@ import {
   ZoneChart,
 } from "@/components/charts"
 import { RelativeLoadBoard } from "@/components/relative-load-board"
+import { GpxTelemetryCard } from "@/components/gpx-telemetry-card"
 import { StravaImporter } from "@/components/strava-importer"
 import { TrainingCalendar } from "@/components/training-calendar"
 import { CaloriePanel, DayEnergyPanel, EnergyPanel } from "@/components/energy-panels"
@@ -848,8 +849,8 @@ export default function Dashboard() {
             body={data.body}
             addWorkout={addWorkout}
             compact
-            title="Colar CSV do Strava"
-            subtitle="Cole ou envie o CSV direto aqui — já marca o estágio atual e sua dor pós-treino."
+            title="Importar GPX ou CSV do Strava"
+            subtitle="Envie arquivos .gpx/.csv ou cole direto aqui — já marca o estágio atual e sua dor pós-treino."
             runningOptions={{
               defaultStageId: view.runningView.nextStage.id,
               defaultShoe: view.runningView.shoeName,
@@ -866,14 +867,24 @@ export default function Dashboard() {
                 <p className="font-mono text-[10px] text-zone">Seg 16:28</p>
               </div>
               <div className="rounded border border-seam bg-coal/60 p-2">
-                <p className="font-mono text-[10px] text-steel-dim">Ensaio 5 km</p>
+                <p className="font-mono text-[10px] text-steel-dim">
+                  {view.runningView.benchmarks.rehearsal
+                    ? "Ensaio 5 km"
+                    : view.runningView.benchmarks.best5kFromGpx
+                      ? `Melhor 5 km GPX · ${new Date(`${view.runningView.benchmarks.best5kFromGpx.date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`
+                      : "Ensaio 5 km"}
+                </p>
                 <p className="mt-0.5 font-semibold text-bone">
                   {view.runningView.benchmarks.rehearsal
                     ? `${view.runningView.benchmarks.rehearsal.distanceKm.toLocaleString("pt-BR")} km · ${formatDurationClock(view.runningView.benchmarks.rehearsal.durationSec)}`
-                    : "Pendente"}
+                    : view.runningView.benchmarks.best5kFromGpx
+                      ? formatDurationClock(view.runningView.benchmarks.best5kFromGpx.durationSec)
+                      : "Pendente"}
                 </p>
                 <p className="font-mono text-[10px] text-steel-dim">
-                  {view.runningView.benchmarks.rehearsal?.paceLabel ?? "Sem. 3 Açude"}
+                  {view.runningView.benchmarks.rehearsal?.paceLabel ??
+                    view.runningView.benchmarks.best5kFromGpx?.paceLabel ??
+                    "Sem. 3 Açude"}
                 </p>
               </div>
               <div className="rounded border border-seam bg-coal/60 p-2">
@@ -888,6 +899,15 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
+            {(() => {
+              const latestRunWorkout = view.runningView.lastRun
+                ? data.workouts.find((w) => w.id === view.runningView.lastRun?.workoutId)
+                : undefined
+              const latestGpx = latestRunWorkout
+                ? cardioBlocks(latestRunWorkout).find((b) => Boolean(b.gpx))?.gpx
+                : undefined
+              return latestGpx ? <GpxTelemetryCard gpx={latestGpx} compact className="mt-2.5" /> : null
+            })()}
           </Card>
         </div>
       )}

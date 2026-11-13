@@ -183,6 +183,38 @@ export interface ExerciseMachine {
   archived?: boolean
 }
 
+export interface GpxSplit {
+  km: number
+  label: string
+  distanceKm: number
+  secPerKm: number
+  elevationDeltaM?: number
+}
+
+export interface GpxRunWalkAnalysis {
+  troteMinutes: number
+  walkMinutes: number
+  /** Minutos de trote mais rápidos que 7:30/km (acima do ritmo de conversa). */
+  fastTroteMinutes: number
+  troteBouts: number
+  avgTroteSec: number
+  longestTroteSec: number
+  trotePct: number
+}
+
+export interface GpxTelemetry {
+  movingSeconds: number
+  elapsedSeconds: number
+  splits: GpxSplit[]
+  bestWindowsSec?: {
+    km1?: number
+    mi1?: number
+    km5?: number
+  }
+  runWalk?: GpxRunWalkAnalysis
+  splitTrend?: "negative" | "positive" | "even"
+}
+
 export interface CardioLog {
   minutes: number
   /** Duração precisa quando a origem informa segundos (o campo minutes segue compatível). */
@@ -205,6 +237,8 @@ export interface CardioLog {
   painScore?: number
   shoe?: string
   segmentTimeSec?: number
+  /** Resumo compacto extraído de um arquivo .gpx (sem armazenar milhares de pontos). */
+  gpx?: GpxTelemetry
 }
 
 /** Linha de cardio na UI de registro (strings cruas dos inputs) */
