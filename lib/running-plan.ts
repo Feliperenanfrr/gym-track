@@ -2,8 +2,8 @@ import { cardioBlocks } from "./cardio"
 import { CardioLog, ExercisePrescription, SessionId, SessionPlan, WorkoutLog } from "./types"
 import { fromDateKey, toDateKey } from "./utils"
 
-/** Início efetivo do ciclo de 5 km (base no Açude Velho). */
-export const RUNNING_START_DATE = "2026-11-07"
+/** Início efetivo do ciclo de 5 km (primeiro treino em 06/11 + base registrada). */
+export const RUNNING_START_DATE = "2026-11-06"
 
 /** Dia da prova alvo (Corrida Beneficente 5 km · sábado). */
 export const RUNNING_RACE_DATE = "2026-11-28"
@@ -11,6 +11,11 @@ export const RUNNING_RACE_DATE = "2026-11-28"
 export const RUNNING_PLAN_VERSION = "running-v1"
 
 export const RUNNING_SHOE_NAME = "Olympikus Corre Max 2"
+export const RUNNING_ALT_SHOE_NAME = "Fila Lite Progress"
+export const RUNNING_SHOE_OPTIONS = [
+  RUNNING_SHOE_NAME,
+  RUNNING_ALT_SHOE_NAME,
+] as const
 export const RUNNING_SHOE_START_DATE = "2026-11-09"
 export const RUNNING_SHOE_DETAIL = "neutro · amortecimento máximo (40/32 mm, drop 8 mm)"
 
@@ -523,6 +528,15 @@ export function runExplicitStageId(workout: WorkoutLog): RunStageId | undefined 
   return undefined
 }
 
+export function runExplicitShoe(workout: WorkoutLog): string | undefined {
+  for (const block of runningCardioBlocks(workout)) {
+    if (block.shoe && block.shoe.trim()) {
+      return block.shoe.trim()
+    }
+  }
+  return undefined
+}
+
 export function formatPace(durationSec: number, distanceKm: number): string | null {
   if (durationSec <= 0 || distanceKm <= 0) return null
   const secPerKm = Math.round(durationSec / distanceKm)
@@ -848,5 +862,218 @@ export function runningTodayView(
       race,
       best5kFromGpx,
     },
+  }
+}
+
+export interface RunningWeeklyVolumeDatum {
+  weekStart: string
+  label: string
+  distanceKm: number
+  minutes: number
+  runs: number
+  current: boolean
+}
+
+export interface RunningSessionPoint {
+  workoutId: string
+  date: string
+  label: string
+  title: string
+  distanceKm: number
+  minutes: number
+  durationSec: number
+  avgPaceSecPerKm: number | null
+  best1kSecPerKm: number | null
+  best5kSec: number | null
+  best5kPaceSecPerKm: number | null
+  segmentPaceSecPerKm: number | null
+  walkMinutes: number
+  controlledTroteMinutes: number
+  fastTroteMinutes: number
+  hasGpx: boolean
+  painScore: number | null
+  shoe: string | null
+  overCeiling: boolean
+  stageLabel: string
+}
+
+export interface RunningLatestSplits {
+  date: string
+  label: string
+  title: string
+  distanceKm: number
+  avgSecPerKm: number
+  fastestKm: number
+  splitTrend?: "negative" | "positive" | "even"
+  splits: {
+    km: number
+    label: string
+    secPerKm: number
+    distanceKm: number
+    elevationDeltaM?: number
+    isFastest: boolean
+  }[]
+}
+
+export interface RunningChartsBundle {
+  weeklyVolume: RunningWeeklyVolumeDatum[]
+  sessions: RunningSessionPoint[]
+  latestGpxSplits: RunningLatestSplits | null
+}
+
+function mondayOfDateKey(key: string): Date {
+  const d = fromDateKey(key)
+  const day = (d.getDay() + 6) % 7 // 0 = seg .. 6 = dom
+  d.setDate(d.getDate() - day)
+  return d
+}
+
+function shortDayMonth(key: string): string {
+  const [, month, day] = key.split("-")
+  return `${day}/${month}`
+}
+
+/**
+ * Monta as séries analíticas específicas do programa Corrida 5 km a partir
+ * dos registros já salvos (distância, duração, dor pós-treino, tênis e GPX).
+ */
+export function runningChartData(
+  workouts: WorkoutLog[],
+  today = new Date(),
+  weeksCount = 6
+): RunningChartsBundle {
+  const todayKey = toDateKey(today)
+  const runLogs = workouts
+    .filter((w) => isRunningActivityLog(w) && w.date <= todayKey)
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  // Semanas calendário (seg–dom) até a semana de `today`
+  const currentMonday = mondayOfDateKey(todayKey)
+  const currentMondayKey = toDateKey(currentMonday)
+  const weekMap = new Map<string, RunningWeeklyVolumeDatum>()
+  const weeklyVolume: RunningWeeklyVolumeDatum[] = []
+  for (let i = weeksCount - 1; i >= 0; i--) {
+    const start = new Date(currentMonday)
+    start.setDate(start.getDate() - i * 7)
+    const weekStart = toDateKey(start)
+    const datum: RunningWeeklyVolumeDatum = {
+      weekStart,
+      label: shortDayMonth(weekStart),
+      distanceKm: 0,
+      minutes: 0,
+      runs: 0,
+      current: weekStart === currentMondayKey,
+    }
+    weekMap.set(weekStart, datum)
+    weeklyVolume.push(datum)
+  }
+
+  const sessions: RunningSessionPoint[] = []
+  let latestGpxSplits: RunningLatestSplits | null = null
+
+  for (const workout of runLogs) {
+    const blocks = runningCardioBlocks(workout)
+    const distanceKm = runDistanceKm(workout)
+    const durationSec = runDurationSeconds(workout)
+    const minutes = runDurationMinutes(workout)
+    const painScore = runPainScore(workout) ?? null
+    const explicitStage = runExplicitStageId(workout)
+    const stageLabel = explicitStage ? RUN_STAGE_BY_ID[explicitStage].shortLabel : "Corrida"
+    const gpxBlock = blocks.find((b) => Boolean(b.gpx))
+    const gpx = gpxBlock?.gpx
+    const segmentSec = blocks.find(
+      (b) => typeof b.segmentTimeSec === "number" && b.segmentTimeSec > 0
+    )?.segmentTimeSec
+
+    const weekKey = toDateKey(mondayOfDateKey(workout.date))
+    const weekBucket = weekMap.get(weekKey)
+    if (weekBucket) {
+      weekBucket.distanceKm = Number((weekBucket.distanceKm + distanceKm).toFixed(2))
+      weekBucket.minutes += minutes
+      weekBucket.runs += 1
+    }
+
+    const avgPaceSecPerKm =
+      distanceKm > 0 && durationSec > 0 ? Math.round(durationSec / distanceKm) : null
+    const best1kSecPerKm = gpx?.bestWindowsSec?.km1 ?? null
+    const best5kSec = gpx?.bestWindowsSec?.km5 ?? null
+    const best5kPaceSecPerKm = best5kSec ? Math.round(best5kSec / 5) : null
+    const segmentPaceSecPerKm = segmentSec
+      ? Math.round(segmentSec / RUNNING_STRAVA_SEGMENT.distanceKm)
+      : null
+
+    const rw = gpx?.runWalk
+    const walkMinutes = rw ? rw.walkMinutes : 0
+    const fastTroteMinutes = rw ? rw.fastTroteMinutes : 0
+    const controlledTroteMinutes = rw ? Math.max(0, rw.troteMinutes - rw.fastTroteMinutes) : 0
+
+    const shoe =
+      runExplicitShoe(workout) ??
+      (workout.date >= RUNNING_SHOE_START_DATE ? RUNNING_SHOE_NAME : null)
+
+    const overCeiling = explicitStage
+      ? isOverVolumeCeiling(explicitStage, minutes)
+      : minutes > 45 && workout.date < RUNNING_RACE_DATE
+
+    const title =
+      blocks.find((b) => b.title?.trim())?.title?.trim() ??
+      (distanceKm > 0 ? `Corrida ${distanceKm.toLocaleString("pt-BR")} km` : stageLabel)
+
+    sessions.push({
+      workoutId: workout.id,
+      date: workout.date,
+      label: shortDayMonth(workout.date),
+      title,
+      distanceKm,
+      minutes,
+      durationSec,
+      avgPaceSecPerKm,
+      best1kSecPerKm,
+      best5kSec,
+      best5kPaceSecPerKm,
+      segmentPaceSecPerKm,
+      walkMinutes,
+      controlledTroteMinutes,
+      fastTroteMinutes,
+      hasGpx: Boolean(gpx),
+      painScore,
+      shoe,
+      overCeiling,
+      stageLabel,
+    })
+
+    if (gpx && gpx.splits.length > 0) {
+      const fullSplits = gpx.splits.filter((s) => s.distanceKm >= 0.85)
+      const pacePool = fullSplits.length > 0 ? fullSplits : gpx.splits
+      const fastestSec = Math.min(...pacePool.map((s) => s.secPerKm))
+      const fastestKm = pacePool.find((s) => s.secPerKm === fastestSec)?.km ?? gpx.splits[0].km
+      const avgSecPerKm =
+        avgPaceSecPerKm ??
+        Math.round(gpx.splits.reduce((sum, s) => sum + s.secPerKm, 0) / gpx.splits.length)
+
+      latestGpxSplits = {
+        date: workout.date,
+        label: shortDayMonth(workout.date),
+        title,
+        distanceKm,
+        avgSecPerKm,
+        fastestKm,
+        splitTrend: gpx.splitTrend,
+        splits: gpx.splits.map((s) => ({
+          km: s.km,
+          label: s.distanceKm >= 0.98 ? `km ${s.km}` : `${s.label} km`,
+          secPerKm: s.secPerKm,
+          distanceKm: s.distanceKm,
+          ...(s.elevationDeltaM !== undefined ? { elevationDeltaM: s.elevationDeltaM } : {}),
+          isFastest: s.km === fastestKm,
+        })),
+      }
+    }
+  }
+
+  return {
+    weeklyVolume,
+    sessions,
+    latestGpxSplits,
   }
 }

@@ -9,14 +9,18 @@ import {
   planForProgram,
 } from "../lib/plan"
 import {
+  RUNNING_ALT_SHOE_NAME,
   RUNNING_BASE_BENCHMARK,
   RUNNING_RACE_DATE,
   RUNNING_SHOE_NAME,
+  RUNNING_SHOE_OPTIONS,
   RUN_EXERCISES_A,
   RUN_EXERCISES_B,
   formatPace,
   isOverVolumeCeiling,
   isRunningActivityLog,
+  runExplicitShoe,
+  runningChartData,
   runningShoeCount,
   runningTodayView,
   strengthBPhaseFor,
@@ -142,6 +146,20 @@ describe("running-plan · progressão adaptativa", () => {
     expect(isRunningActivityLog(logs[1])).toBe(true)
     expect(runningShoeCount(logs, "2026-11-13")).toBe(2)
 
+    const withAltShoeOnNov06 = [
+      makeWorkout("2026-11-06", "strava", {
+        minutes: 42,
+        distanceKm: 4.67,
+        shoe: RUNNING_ALT_SHOE_NAME,
+        runStageId: "1-2x8",
+      }),
+      ...logs.slice(2),
+    ]
+    expect(isRunningActivityLog(withAltShoeOnNov06[0])).toBe(true)
+    expect(runExplicitShoe(withAltShoeOnNov06[0])).toBe("Fila Lite Progress")
+    expect(runningShoeCount(withAltShoeOnNov06, "2026-11-13")).toBe(2)
+    expect(RUNNING_SHOE_OPTIONS).toEqual([RUNNING_SHOE_NAME, RUNNING_ALT_SHOE_NAME])
+
     const view = runningTodayView(logs, fromDateKey("2026-11-13"))
     expect(view.totalRuns).toBe(3)
     expect(view.totalDistanceKm).toBe(15.65)
@@ -232,5 +250,95 @@ describe("integração do programa running no domínio existente", () => {
     for (const exercise of [...RUN_EXERCISES_A, ...RUN_EXERCISES_B]) {
       expect(EXERCISE_GROUP[exercise.id]).toBeDefined()
     }
+  })
+
+  it("gera séries semanais, pace/janelas, mix trote-caminhada, dor/tênis e splits GPX em runningChartData", () => {
+    const logs = [
+      makeWorkout("2026-11-06", "strava", {
+        minutes: 42,
+        durationSeconds: 2543,
+        distanceKm: 4.67,
+        shoe: RUNNING_ALT_SHOE_NAME,
+        runStageId: "1-2x8",
+        painScore: 2,
+        gpx: {
+          movingSeconds: 2543,
+          elapsedSeconds: 2586,
+          splits: [
+            { km: 1, label: "1", distanceKm: 1, secPerKm: 555 },
+            { km: 2, label: "2", distanceKm: 1, secPerKm: 518 },
+          ],
+          bestWindowsSec: { km1: 468 },
+          runWalk: {
+            troteMinutes: 19,
+            walkMinutes: 23,
+            fastTroteMinutes: 12,
+            troteBouts: 16,
+            avgTroteSec: 70,
+            longestTroteSec: 212,
+            trotePct: 46,
+          },
+          splitTrend: "positive",
+        },
+      }),
+      makeWorkout("2026-11-09", "strava", {
+        minutes: 81,
+        durationSeconds: 4882,
+        distanceKm: 8.94,
+        shoe: RUNNING_SHOE_NAME,
+        runStageId: "2-1x8",
+        painScore: 4,
+        gpx: {
+          movingSeconds: 4882,
+          elapsedSeconds: 4998,
+          splits: [
+            { km: 1, label: "1", distanceKm: 1, secPerKm: 520 },
+            { km: 2, label: "2", distanceKm: 1, secPerKm: 490 },
+          ],
+          bestWindowsSec: { km1: 469, km5: 2757 },
+          runWalk: {
+            troteMinutes: 31,
+            walkMinutes: 50,
+            fastTroteMinutes: 23,
+            troteBouts: 22,
+            avgTroteSec: 83,
+            longestTroteSec: 231,
+            trotePct: 39,
+          },
+          splitTrend: "negative",
+        },
+      }),
+    ]
+
+    const charts = runningChartData(logs, fromDateKey("2026-11-13"))
+    expect(charts.weeklyVolume).toHaveLength(6)
+    const nov02Week = charts.weeklyVolume.find((w) => w.weekStart === "2026-11-02")
+    const nov09Week = charts.weeklyVolume.find((w) => w.weekStart === "2026-11-09")
+    expect(nov02Week?.distanceKm).toBe(4.67)
+    expect(nov09Week?.distanceKm).toBe(8.94)
+    expect(nov09Week?.current).toBe(true)
+
+    expect(charts.sessions).toHaveLength(2)
+    expect(charts.sessions[0]).toMatchObject({
+      label: "06/11",
+      controlledTroteMinutes: 7,
+      fastTroteMinutes: 12,
+      walkMinutes: 23,
+      painScore: 2,
+      shoe: RUNNING_ALT_SHOE_NAME,
+      overCeiling: false,
+      best1kSecPerKm: 468,
+    })
+    expect(charts.sessions[1]).toMatchObject({
+      label: "09/11",
+      best5kSec: 2757,
+      best5kPaceSecPerKm: 551,
+      painScore: 4,
+      shoe: RUNNING_SHOE_NAME,
+      overCeiling: true,
+    })
+
+    expect(charts.latestGpxSplits?.fastestKm).toBe(2)
+    expect(charts.latestGpxSplits?.splitTrend).toBe("negative")
   })
 })

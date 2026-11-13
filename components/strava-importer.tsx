@@ -10,6 +10,7 @@ import { sessionKcal, weightKgOn } from "@/lib/insights"
 import {
   RUNNING_PAIN_THRESHOLD,
   RUNNING_SHOE_NAME,
+  RUNNING_SHOE_OPTIONS,
   RUNNING_START_DATE,
   RUN_STAGES,
   RunStageId,
@@ -141,7 +142,9 @@ export function StravaImporter({
     runningOptions?.defaultStageId ?? "1-2x8"
   )
   const [painScore, setPainScore] = useState<number | null>(null)
-  const [useCorreMax, setUseCorreMax] = useState(true)
+  const [selectedShoe, setSelectedShoe] = useState<string>(
+    runningOptions?.defaultShoe ?? RUNNING_SHOE_NAME
+  )
   const [segmentClock, setSegmentClock] = useState("")
 
   useEffect(() => {
@@ -149,6 +152,12 @@ export function StravaImporter({
       setStageId(runningOptions.defaultStageId)
     }
   }, [runningOptions?.defaultStageId])
+
+  useEffect(() => {
+    if (runningOptions?.defaultShoe !== undefined) {
+      setSelectedShoe(runningOptions.defaultShoe)
+    }
+  }, [runningOptions?.defaultShoe])
 
   const textParse = useMemo(() => {
     const trimmed = stravaText.trim()
@@ -245,9 +254,7 @@ export function StravaImporter({
         ...baseBlock,
         runStageId: stageId,
         ...(painScore !== null ? { painScore } : {}),
-        ...(useCorreMax
-          ? { shoe: runningOptions.defaultShoe ?? RUNNING_SHOE_NAME }
-          : {}),
+        ...(selectedShoe ? { shoe: selectedShoe } : {}),
         ...(segmentTimeSec !== undefined ? { segmentTimeSec } : {}),
       }
     }
@@ -436,23 +443,44 @@ export function StravaImporter({
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className="flex items-center gap-2 rounded border border-seam bg-coal px-2.5 py-2 text-xs text-bone">
-              <input
-                type="checkbox"
-                checked={useCorreMax}
-                onChange={(event) => setUseCorreMax(event.target.checked)}
-                className="accent-zone"
-              />
-              <span className="truncate">{runningOptions.defaultShoe ?? RUNNING_SHOE_NAME}</span>
-            </label>
+          <div className="space-y-2">
+            <div>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-steel">
+                Tênis usado
+              </span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {[...RUNNING_SHOE_OPTIONS, ""].map((shoeOption) => {
+                  const selected = selectedShoe === shoeOption
+                  const label =
+                    shoeOption === RUNNING_SHOE_NAME
+                      ? "Corre Max 2 (padrão)"
+                      : shoeOption || "Não informar"
+                  return (
+                    <button
+                      key={shoeOption || "none"}
+                      type="button"
+                      onClick={() => setSelectedShoe(shoeOption)}
+                      className={cn(
+                        "rounded border px-2.5 py-1.5 text-xs font-semibold transition-colors",
+                        selected
+                          ? "border-zone bg-zone/15 text-zone"
+                          : "border-seam bg-coal text-steel hover:text-bone"
+                      )}
+                      aria-pressed={selected}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             <input
               type="text"
               inputMode="numeric"
               value={segmentClock}
               onChange={(event) => setSegmentClock(event.target.value)}
               placeholder="Segmento 1,64 km (ex.: 16:28)"
-              className="rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none placeholder:text-steel-dim focus:border-zone"
+              className="w-full rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none placeholder:text-steel-dim focus:border-zone"
             />
           </div>
         </div>
@@ -465,6 +493,26 @@ export function StravaImporter({
             const existingOnDate = workouts.find(
               (workout) => workout.date === effectiveDate && workout.sessionId === "strava"
             )
+            const gpxTimeMin = parseClockToMinutes(gpx.startTime)
+            const nearbyMatch = !existingOnDate
+              ? workouts.find((workout) => {
+                  if (workout.sessionId !== "strava" || workout.date === effectiveDate) return false
+                  const dayDiff = Math.abs(
+                    (fromDateKey(workout.date).getTime() - fromDateKey(effectiveDate).getTime()) /
+                      86_400_000
+                  )
+                  if (dayDiff > 1.5) return false
+                  return cardioBlocks(workout).some((b) => {
+                    if (b.gpx) return false
+                    const distMatch =
+                      b.distanceKm !== undefined && Math.abs(b.distanceKm - gpx.distanceKm) <= 0.45
+                    const mB = parseClockToMinutes(b.startTime)
+                    const timeMatch =
+                      gpxTimeMin !== undefined && mB !== undefined && Math.abs(gpxTimeMin - mB) <= 30
+                    return distMatch && timeMatch
+                  })
+                })
+              : undefined
             const block = gpxToCardioLog(gpx)
             const previewWorkout: WorkoutLog = {
               id: gpx.sourceId,
@@ -537,11 +585,29 @@ export function StravaImporter({
                   </label>
                 </div>
 
-                {existingOnDate && (
+                {existingOnDate ? (
                   <p className="mt-1.5 font-mono text-[10px] text-zone">
                     Vai mesclar no registro Strava de {fromDateKey(effectiveDate).toLocaleDateString("pt-BR")} (preserva passos/FC).
                   </p>
-                )}
+                ) : nearbyMatch ? (
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 rounded border border-gold/30 bg-gold/5 px-2 py-1.5">
+                    <span className="font-mono text-[10px] text-gold">
+                      Existe Strava sem GPX em {fromDateKey(nearbyMatch.date).toLocaleDateString("pt-BR")} ({gpx.startTime}) — use a mesma data para mesclar.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setGpxDateOverrides((prev) => ({
+                          ...prev,
+                          [gpx.sourceId]: nearbyMatch.date,
+                        }))
+                      }
+                      className="rounded bg-gold/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-gold hover:bg-gold/30"
+                    >
+                      Usar {fromDateKey(nearbyMatch.date).toLocaleDateString("pt-BR")}
+                    </button>
+                  </div>
+                ) : null}
 
                 <GpxTelemetryCard gpx={gpx.telemetry} compact className="mt-2.5" />
 

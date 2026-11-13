@@ -20,6 +20,7 @@ import { sessionKcal, weightKgOn } from "@/lib/insights"
 import {
   RUNNING_PAIN_THRESHOLD,
   RUNNING_SHOE_NAME,
+  RUNNING_SHOE_OPTIONS,
   RUN_STAGES,
   RUN_STAGE_BY_ID,
   RunStageId,
@@ -29,6 +30,7 @@ import {
   runDistanceKm,
   runDurationMinutes,
   runDurationSeconds,
+  runExplicitShoe,
   runExplicitStageId,
   runPainScore,
 } from "@/lib/running-plan"
@@ -75,6 +77,7 @@ interface EditableCardio {
   mode: string
   purpose: CardioPurpose
   runStageId?: RunStageId
+  shoe?: string
   /** Preserva distância/passos/elevação do Strava ao editar campos básicos. */
   original?: CardioLog
 }
@@ -88,6 +91,7 @@ function editableCardioFrom(log: WorkoutLog): EditableCardio[] {
     ...(block.runStageId && block.runStageId in RUN_STAGE_BY_ID
       ? { runStageId: block.runStageId as RunStageId }
       : {}),
+    ...(block.shoe ? { shoe: block.shoe } : {}),
     original: block,
   }))
 }
@@ -289,8 +293,9 @@ export default function Historico() {
   const saveEdit = async (w: WorkoutLog) => {
     const cardios: CardioLog[] = editCardio.map((row) => {
       const minutes = parseInt(row.minutes) || 0
+      const { shoe: _prevShoe, runStageId: _prevStage, ...baseOriginal } = row.original ?? {}
       return {
-        ...(row.original ?? {}),
+        ...baseOriginal,
         minutes,
         ...(row.original?.durationSeconds !== undefined
           ? {
@@ -304,6 +309,7 @@ export default function Historico() {
         mode: row.mode.trim(),
         purpose: row.purpose,
         ...(row.runStageId ? { runStageId: row.runStageId } : {}),
+        ...(row.shoe ? { shoe: row.shoe } : {}),
       }
     })
 
@@ -556,8 +562,7 @@ export default function Historico() {
               (runStageId
                 ? isOverVolumeCeiling(runStageId, runDur)
                 : runDur > 45 && w.date < "2026-11-28")
-            const hasCorreMax =
-              isRunLog && cardioBlocks(w).some((block) => block.shoe === RUNNING_SHOE_NAME)
+            const runShoe = isRunLog ? runExplicitShoe(w) : undefined
             const gpxBlocks = cardioBlocks(w).flatMap((block) =>
               block.gpx ? [block.gpx] : []
             )
@@ -611,9 +616,9 @@ export default function Historico() {
                           acima do teto
                         </span>
                       )}
-                      {hasCorreMax && (
+                      {runShoe && (
                         <span className="inline-flex rounded-full border border-seam bg-coal px-2 py-0.5 font-mono text-[10px] text-steel-dim">
-                          Corre Max 2
+                          {runShoe === RUNNING_SHOE_NAME ? "Corre Max 2" : runShoe}
                         </span>
                       )}
                       {isRunLog && runPain === undefined && (
@@ -960,29 +965,56 @@ export default function Historico() {
                             {PURPOSE_OPTIONS.find((o) => o.id === row.purpose)?.hint}
                           </p>
                           {isRunLog && (
-                            <label className="mt-2 flex flex-col gap-1">
-                              <span className="font-mono text-[10px] uppercase text-steel-dim">
-                                Estágio do plano 5 km
-                              </span>
-                              <select
-                                value={row.runStageId ?? ""}
-                                onChange={(e) =>
-                                  updateEditableCardio(ci, {
-                                    runStageId: e.target.value
-                                      ? (e.target.value as RunStageId)
-                                      : undefined,
-                                  })
-                                }
-                                className="rounded border border-seam bg-coal px-2 py-1.5 text-xs text-bone outline-none focus:border-zone"
-                              >
-                                <option value="">Sem estágio marcado</option>
-                                {RUN_STAGES.map((stage) => (
-                                  <option key={stage.id} value={stage.id}>
-                                    {stage.label} · {stage.weekLabel}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <label className="flex flex-col gap-1">
+                                <span className="font-mono text-[10px] uppercase text-steel-dim">
+                                  Estágio do plano 5 km
+                                </span>
+                                <select
+                                  value={row.runStageId ?? ""}
+                                  onChange={(e) =>
+                                    updateEditableCardio(ci, {
+                                      runStageId: e.target.value
+                                        ? (e.target.value as RunStageId)
+                                        : undefined,
+                                    })
+                                  }
+                                  className="rounded border border-seam bg-coal px-2 py-1.5 text-xs text-bone outline-none focus:border-zone"
+                                >
+                                  <option value="">Sem estágio marcado</option>
+                                  {RUN_STAGES.map((stage) => (
+                                    <option key={stage.id} value={stage.id}>
+                                      {stage.label} · {stage.weekLabel}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="flex flex-col gap-1">
+                                <span className="font-mono text-[10px] uppercase text-steel-dim">
+                                  Tênis usado
+                                </span>
+                                <select
+                                  value={row.shoe ?? ""}
+                                  onChange={(e) =>
+                                    updateEditableCardio(ci, {
+                                      shoe: e.target.value || undefined,
+                                    })
+                                  }
+                                  className="rounded border border-seam bg-coal px-2 py-1.5 text-xs text-bone outline-none focus:border-zone"
+                                >
+                                  <option value="">Não informado</option>
+                                  {RUNNING_SHOE_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                  {row.shoe &&
+                                    !RUNNING_SHOE_OPTIONS.includes(
+                                      row.shoe as (typeof RUNNING_SHOE_OPTIONS)[number]
+                                    ) && <option value={row.shoe}>{row.shoe}</option>}
+                                </select>
+                              </label>
+                            </div>
                           )}
                         </div>
                       ))}

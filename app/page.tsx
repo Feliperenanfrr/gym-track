@@ -13,6 +13,13 @@ import {
 } from "@/components/charts"
 import { RelativeLoadBoard } from "@/components/relative-load-board"
 import { GpxTelemetryCard } from "@/components/gpx-telemetry-card"
+import {
+  RunPaceEvolutionChart,
+  RunPainLoadChart,
+  RunSplitsChart,
+  RunWalkMixChart,
+  RunWeeklyVolumeChart,
+} from "@/components/running-charts"
 import { StravaImporter } from "@/components/strava-importer"
 import { TrainingCalendar } from "@/components/training-calendar"
 import { CaloriePanel, DayEnergyPanel, EnergyPanel } from "@/components/energy-panels"
@@ -46,6 +53,7 @@ import {
   RUNNING_PAIN_THRESHOLD,
   RUNNING_STRAVA_SEGMENT,
   formatDurationClock,
+  runningChartData,
   runningTodayView,
 } from "@/lib/running-plan"
 import {
@@ -528,6 +536,7 @@ export default function Dashboard() {
       headNote,
       enginePhase,
       runningView,
+      runningCharts: runningChartData(data.workouts, today),
     }
   }, [data, templates, templateById, today, lift, mode, program])
 
@@ -1204,25 +1213,49 @@ export default function Dashboard() {
         )}
       </Card>
 
-      {/* Carga semanal — o card diz como está hoje; as barras, o ritmo do bloco */}
-      <CollapsibleSection
-        title="Carga interna — 12 semanas"
-        badge={`${view.weeklyLoad[view.weeklyLoad.length - 1].load.toLocaleString("pt-BR")} AU`}
-        defaultOpen
-      >
-        <Card className="rise rise-3">
-          <WeeklyLoadChart data={view.weeklyLoad} />
-          <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
-            Esforço × minutos de cada sessão somado por semana (AU, método de Foster).
-            A <span className="text-zone">linha turquesa</span> é a sua média das 4
-            semanas anteriores: acima dela a carga está subindo, abaixo está caindo.
-            A semana em curso vem mais clara porque ainda não terminou.
-            {view.weeklyLoad[view.weeklyLoad.length - 1].avg4 !== null && (
-              <> Sua média recente é {view.weeklyLoad[view.weeklyLoad.length - 1].avg4!.toLocaleString("pt-BR")} AU/semana.</>
-            )}
-          </p>
-        </Card>
-      </CollapsibleSection>
+      {program === "running" ? (
+        <CollapsibleSection
+          title="Volume semanal de corrida — 6 semanas"
+          accent="zone"
+          badge={`${view.runningCharts.weeklyVolume[view.runningCharts.weeklyVolume.length - 1]?.distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) ?? "0"} km`}
+          defaultOpen
+        >
+          <Card className="rise rise-3 border-l-4 border-l-zone">
+            <RunWeeklyVolumeChart data={view.runningCharts.weeklyVolume} />
+            <div className="mt-2 flex flex-wrap gap-3 font-mono text-[10px] text-steel-dim">
+              <span>
+                <span className="inline-block h-2 w-2 rounded-sm bg-zone align-middle" /> km na semana
+              </span>
+              <span>
+                <span className="inline-block h-0.5 w-3 bg-gold align-middle" /> média das semanas fechadas
+              </span>
+            </div>
+            <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
+              Volume semanal em km e minutos. Acompanhar picos semanais ajuda a evitar sobrecarga na canela e sola antes do dia 28/11.
+            </p>
+          </Card>
+        </CollapsibleSection>
+      ) : (
+        /* Carga semanal — o card diz como está hoje; as barras, o ritmo do bloco */
+        <CollapsibleSection
+          title="Carga interna — 12 semanas"
+          badge={`${view.weeklyLoad[view.weeklyLoad.length - 1].load.toLocaleString("pt-BR")} AU`}
+          defaultOpen
+        >
+          <Card className="rise rise-3">
+            <WeeklyLoadChart data={view.weeklyLoad} />
+            <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+              Esforço × minutos de cada sessão somado por semana (AU, método de Foster).
+              A <span className="text-zone">linha turquesa</span> é a sua média das 4
+              semanas anteriores: acima dela a carga está subindo, abaixo está caindo.
+              A semana em curso vem mais clara porque ainda não terminou.
+              {view.weeklyLoad[view.weeklyLoad.length - 1].avg4 !== null && (
+                <> Sua média recente é {view.weeklyLoad[view.weeklyLoad.length - 1].avg4!.toLocaleString("pt-BR")} AU/semana.</>
+              )}
+            </p>
+          </Card>
+        </CollapsibleSection>
+      )}
 
       {/* Sono — recuperação diária */}
       <Card className="rise rise-3 mt-4 border-l-4 border-l-[#a78bfa]">
@@ -1500,8 +1533,94 @@ export default function Dashboard() {
         </Card>
       </CollapsibleSection>
 
-      {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
-      <CollapsibleSection title="Treino — 6 semanas" defaultOpen>
+      {program === "running" ? (
+        <>
+          <CollapsibleSection
+            title="Evolução de pace — Sessão vs. 1 km / 5 km"
+            accent="zone"
+            badge={
+              view.runningView.benchmarks.best5kFromGpx
+                ? `5 km ${formatDurationClock(view.runningView.benchmarks.best5kFromGpx.durationSec)}`
+                : undefined
+            }
+            defaultOpen
+          >
+            <Card className="rise rise-4 border-l-4 border-l-zone">
+              <RunPaceEvolutionChart data={view.runningCharts.sessions} />
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-steel-dim">
+                <span className="text-gold">● pace médio</span>
+                <span className="text-zone">● melhor 1 km (GPX)</span>
+                <span className="text-ember-hot">● melhor 5 km (GPX)</span>
+                <span className="text-[#a78bfa]">● seg. 1,64 km</span>
+              </div>
+              <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Quanto mais alto no gráfico, mais rápido o ritmo (min/km). Separa a velocidade real do trote das pausas de caminhada.
+              </p>
+            </Card>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Trote × Caminhada por sessão (GPX)" accent="zone" defaultOpen>
+            <Card className="rise rise-4 border-l-4 border-l-zone">
+              <RunWalkMixChart data={view.runningCharts.sessions} />
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-steel-dim">
+                <span>
+                  <span className="inline-block h-2 w-2 rounded-sm bg-[#64748b] align-middle" /> caminhada
+                </span>
+                <span>
+                  <span className="inline-block h-2 w-2 rounded-sm bg-zone align-middle" /> trote 7:30–8:30
+                </span>
+                <span>
+                  <span className="inline-block h-2 w-2 rounded-sm bg-gold align-middle" /> trote rápido &lt; 7:30/km
+                </span>
+              </div>
+              <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Ajuda a checar se os blocos de trote ficaram em ritmo conversacional ou rápidos demais para a adaptação.
+              </p>
+            </Card>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Dor pós-treino × duração & tênis" accent="gold" defaultOpen>
+            <Card className="rise rise-5 border-l-4 border-l-gold">
+              <RunPainLoadChart data={view.runningCharts.sessions} />
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] text-steel-dim">
+                <span className="text-zone">● dor 0–3/10 (seguro)</span>
+                <span className="text-ember-hot">● dor &gt; 3/10 (trava degrau)</span>
+                <span className="text-gold">┄ limite 3/10</span>
+              </div>
+              <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
+                Cruza duração da corrida (barras, dourado quando acima do teto), dor na sola/canela e qual tênis você usou (toque no ponto para detalhar).
+              </p>
+            </Card>
+          </CollapsibleSection>
+
+          {view.runningCharts.latestGpxSplits && (
+            <CollapsibleSection
+              title="Curva de ritmo por km — Último GPX"
+              accent="ember"
+              badge={`${view.runningCharts.latestGpxSplits.label} · ${
+                view.runningCharts.latestGpxSplits.splitTrend === "negative"
+                  ? "split negativo"
+                  : view.runningCharts.latestGpxSplits.splitTrend === "positive"
+                    ? "split positivo"
+                    : "constante"
+              }`}
+              defaultOpen
+            >
+              <Card className="rise rise-5 border-l-4 border-l-ember">
+                <RunSplitsChart latest={view.runningCharts.latestGpxSplits} />
+                <p className="mt-2 font-mono text-[10px] leading-relaxed text-steel-dim">
+                  Pace km a km de <span className="text-bone">{view.runningCharts.latestGpxSplits.title}</span>. Ponto em{" "}
+                  <span className="text-zone">turquesa</span> marca o km mais rápido (km{" "}
+                  {view.runningCharts.latestGpxSplits.fastestKm}); linha dourada marca a média da sessão.
+                </p>
+              </Card>
+            </CollapsibleSection>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Treino semanal — tonelagem total ou séries duras por grupo muscular */}
+          <CollapsibleSection title="Treino — 6 semanas" defaultOpen>
         <Card className="rise rise-4">
         <div className="mb-3 flex gap-1.5">
           {(["grupos", "total"] as const).map((v) => (
@@ -1737,6 +1856,8 @@ export default function Dashboard() {
           )}
         </Card>
       </CollapsibleSection>
+        </>
+      )}
 
       {/* Zona 2 */}
       <CollapsibleSection title="Base aeróbica — min/semana" accent="zone" defaultOpen>
