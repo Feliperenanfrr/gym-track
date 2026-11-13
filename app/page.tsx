@@ -12,6 +12,7 @@ import {
   ZoneChart,
 } from "@/components/charts"
 import { RelativeLoadBoard } from "@/components/relative-load-board"
+import { StravaImporter } from "@/components/strava-importer"
 import { TrainingCalendar } from "@/components/training-calendar"
 import { CaloriePanel, DayEnergyPanel, EnergyPanel } from "@/components/energy-panels"
 import { ProgramTabs } from "@/components/program-tabs"
@@ -33,13 +34,19 @@ import {
 } from "@/lib/strength"
 import { dayEnergy, weekBalance } from "@/lib/daily-energy"
 import { energyBalanceSeries, energyReport } from "@/lib/energy"
-import { intenseMinutes, zone2Minutes } from "@/lib/cardio"
+import { cardioBlocks, intenseMinutes, zone2Minutes } from "@/lib/cardio"
 import { enginePhaseFor, engineTodayView } from "@/lib/engine-plan"
 import {
   PERFORMANCE_PHASE,
   PERFORMANCE_Z2_TARGET,
   performanceTodayView,
 } from "@/lib/performance-plan"
+import {
+  RUNNING_PAIN_THRESHOLD,
+  RUNNING_STRAVA_SEGMENT,
+  formatDurationClock,
+  runningTodayView,
+} from "@/lib/running-plan"
 import {
   cycleTodayView,
   getScheduleMode,
@@ -155,6 +162,10 @@ function compactSessionTitle(
     sessionId === "cardioZ2"
   )
     return "Z2"
+  if (sessionId === "runSession") return "COR"
+  if (sessionId === "runFootA") return "PÉ"
+  if (sessionId === "runStrengthB") return "FOR"
+  if (sessionId === "strava") return "STR"
   if (sessionId === "free") return "AVL"
   if (sessionId === "sport") return "ESP"
   return (templateById[sessionId] ?? PLAN_BY_ID[sessionId]).title
@@ -198,7 +209,7 @@ function buildWeeks(data: GymData, today: Date, program: TrainingProgram, rollin
 }
 
 export default function Dashboard() {
-  const { data, error, pendingCount, addWater, signOut } = useGymData()
+  const { data, error, pendingCount, addWorkout, addWater, signOut } = useGymData()
   const { program, selectProgram } = useTrainingProgram()
   const { templates, templateById } = useWorkoutTemplates()
   const today = useOperationalDay()
@@ -207,6 +218,7 @@ export default function Dashboard() {
   const [volumeView, setVolumeView] = useState<"grupos" | "total">("grupos")
   const [calorieRange, setCalorieRange] = useState<CalorieTrendRange>("all")
   const [lastWaterAdd, setLastWaterAdd] = useState<number | null>(null)
+  const [savingPainScore, setSavingPainScore] = useState(false)
   const [mode, setMode] = useState<ScheduleMode>("ciclo")
   /** nudge de calibração (sem peso no banco) dispensado pelo usuário */
   const [nudgeDismissed, setNudgeDismissed] = useState(true)
@@ -348,6 +360,7 @@ export default function Dashboard() {
     const engineView = engineTodayView(data.workouts, today)
     const enginePhase = enginePhaseFor(today)
     const performanceView = performanceTodayView(data.workouts, today)
+    const runningView = runningTodayView(data.workouts, today)
 
     /**
      * Card principal, um objeto por programa.
@@ -359,6 +372,45 @@ export default function Dashboard() {
      * de uma vez só.
      */
     const head = (() => {
+      if (program === "running") {
+        const nextStage = runningView.nextStage
+        const baseRunSession = sessionById("runSession")
+        const suggestedSession: SessionPlan =
+          runningView.restDayRecommended && runningView.strengthBGuidance.recommended && !runningView.strengthBDoneToday
+            ? sessionById("runStrengthB")
+            : {
+                ...baseRunSession,
+                title: nextStage.label,
+                subtitle: `${nextStage.weekLabel} · meta ~${nextStage.targetMinutes} min (teto ${nextStage.ceilingMinutes} min)`,
+                duration: `~${nextStage.targetMinutes} min`,
+              }
+
+        let note: string | null = nextStage.note
+        if (runningView.repeatReason === "pain") {
+          note = `Dor > ${RUNNING_PAIN_THRESHOLD}/10 na última sessão: repita ${nextStage.label} sem subir degrau.`
+        } else if (runningView.repeatReason === "over-ceiling") {
+          note = `Última corrida passou do teto (${runningView.lastRun?.durationMin} min): consolidando ${nextStage.label} antes de avançar.`
+        } else if (runningView.restDayRecommended) {
+          note = "Você correu ontem — hoje priorize Rotina B + Rotina A ou descanso (evitar back-to-back)."
+        }
+
+        const doneToday =
+          runningView.runDoneToday ||
+          (runningView.restDayRecommended && runningView.strengthBDoneToday)
+
+        return {
+          session: suggestedSession,
+          done: doneToday,
+          pendingSession: runningView.footADoneToday ? null : sessionById("runFootA"),
+          kicker: runningView.daysUntilRace === 0
+            ? "DIA DA PROVA · 5 KM"
+            : runningView.daysUntilRace > 0
+              ? `CORRIDA 5 KM · FALTAM ${runningView.daysUntilRace} DIA${runningView.daysUntilRace === 1 ? "" : "S"}`
+              : "CORRIDA 5 KM · PÓS-PROVA",
+          note,
+        }
+      }
+
       if (program === "performance") {
         const pending =
           performanceView.pendingSessionId &&
@@ -474,6 +526,7 @@ export default function Dashboard() {
       headKicker,
       headNote,
       enginePhase,
+      runningView,
     }
   }, [data, templates, templateById, today, lift, mode, program])
 
@@ -506,20 +559,54 @@ export default function Dashboard() {
     )
   }
 
+  const saveLastRunPain = async (score: number) => {
+    if (!data || !view.runningView.lastRun || savingPainScore) return
+    const target = data.workouts.find((w) => w.id === view.runningView.lastRun?.workoutId)
+    if (!target) return
+    const blocks = cardioBlocks(target)
+    const nextBlocks =
+      blocks.length > 0
+        ? blocks.map((block, index) =>
+            index === blocks.length - 1 ? { ...block, painScore: score } : block
+          )
+        : [
+            {
+              minutes: target.durationMin ?? view.runningView.lastRun.durationMin ?? 30,
+              mode: "Corrida",
+              purpose: "zone2" as const,
+              painScore: score,
+            },
+          ]
+
+    setSavingPainScore(true)
+    try {
+      await addWorkout({
+        ...target,
+        cardio: nextBlocks[0],
+        cardios: nextBlocks,
+      })
+    } finally {
+      setSavingPainScore(false)
+    }
+  }
+
   const dateFmt = today.toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "2-digit",
     month: "short",
   })
   const rollingView = program !== "hypertrophy" || mode === "ciclo"
+  const RUNNING_Z2_TARGET = { min: 90, max: 150 }
   // No ciclo de motor a meta de Zona 2 sobe a cada bloco; o intenso é contado
   // à parte e não entra nesta faixa.
   const z2Target =
-    program === "engine"
-      ? view.enginePhase.z2Target
-      : program === "performance"
-        ? PERFORMANCE_Z2_TARGET
-        : HYPERTROPHY_Z2_TARGET
+    program === "running"
+      ? RUNNING_Z2_TARGET
+      : program === "engine"
+        ? view.enginePhase.z2Target
+        : program === "performance"
+          ? PERFORMANCE_Z2_TARGET
+          : HYPERTROPHY_Z2_TARGET
   const sessionTarget = program === "engine" ? view.enginePhase.weeklySessions : "5"
 
   return (
@@ -573,7 +660,7 @@ export default function Dashboard() {
       <Card
         className={cn(
           "rise rise-1 relative overflow-hidden border-l-4",
-          program === "engine"
+          program === "engine" || program === "running"
             ? "border-l-zone"
             : program === "performance"
               ? "border-l-gold"
@@ -611,6 +698,43 @@ export default function Dashboard() {
             <span className="ml-2 text-steel-dim">{PERFORMANCE_PHASE.detail}</span>
           </p>
         )}
+        {program === "running" && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase">
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5",
+                view.runningView.runDoneToday
+                  ? "border-zone/40 bg-zone/15 text-zone"
+                  : "border-seam bg-coal text-steel-dim"
+              )}
+            >
+              Corrida {view.runningView.runDoneToday ? "✓" : "·"}
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5",
+                view.runningView.footADoneToday
+                  ? "border-zone/40 bg-zone/15 text-zone"
+                  : "border-seam bg-coal text-steel-dim"
+              )}
+            >
+              Rotina A {view.runningView.footADoneToday ? "✓" : "~8′"}
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5",
+                view.runningView.strengthBDoneToday
+                  ? "border-zone/40 bg-zone/15 text-zone"
+                  : "border-seam bg-coal text-steel-dim"
+              )}
+            >
+              Rotina B {view.runningView.strengthBDoneToday ? "✓" : "~15′"}
+            </span>
+            <span className="rounded-full border border-seam bg-coal px-2 py-0.5 text-steel">
+              {view.runningView.shoeName.replace("Olympikus ", "")} · {view.runningView.shoeSessions} sess.
+            </span>
+          </div>
+        )}
         <p className="mt-2 font-mono text-xs text-steel-dim">
           {view.headSession.duration}
           {view.headSession.exercises.length > 0 &&
@@ -630,7 +754,60 @@ export default function Dashboard() {
               : "Concluído — bom trabalho"}
           </div>
         )}
-        {!view.headDone && view.headSession.kind === "rest" ? (
+        {program === "running" ? (
+          <div className="mt-4 space-y-3">
+            {view.runningView.pendingPainCheckIn && view.runningView.lastRun && (
+              <div className="rounded-md border border-zone/30 bg-zone/5 p-2.5">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-zone">
+                  Check-in rápido · Dor na sola/canela pós-{new Date(`${view.runningView.lastRun.date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                </p>
+                <div className="mt-1.5 grid grid-cols-6 gap-1 sm:grid-cols-11">
+                  {Array.from({ length: 11 }, (_, score) => (
+                    <button
+                      key={score}
+                      type="button"
+                      disabled={savingPainScore}
+                      onClick={() => void saveLastRunPain(score)}
+                      className={cn(
+                        "rounded border py-1 font-mono text-xs font-semibold transition-colors disabled:opacity-40",
+                        score > RUNNING_PAIN_THRESHOLD
+                          ? "border-gold/30 bg-coal text-gold hover:bg-gold/15"
+                          : "border-seam bg-coal text-steel hover:border-zone/50 hover:text-zone"
+                      )}
+                    >
+                      {score}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/treino?sessao=runSession"
+                className="inline-flex items-center gap-2 rounded bg-zone px-4 py-2.5 text-sm font-bold uppercase tracking-wider text-coal transition-colors hover:bg-teal-300"
+                style={{ fontFamily: "var(--font-condensed)" }}
+              >
+                {view.runningView.runDoneToday ? "Editar corrida" : `Registrar ${view.runningView.nextStage.shortLabel}`}
+                <ArrowRight size={16} />
+              </Link>
+              <Link
+                href="/treino?sessao=runFootA"
+                className="inline-flex items-center gap-1.5 rounded border border-seam bg-coal px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-bone transition-colors hover:border-zone/50 hover:text-zone"
+                style={{ fontFamily: "var(--font-condensed)" }}
+              >
+                {view.runningView.footADoneToday ? "✓ Rotina A" : "Rotina A · Pé (8′)"}
+              </Link>
+              <Link
+                href="/treino?sessao=runStrengthB"
+                className="inline-flex items-center gap-1.5 rounded border border-seam bg-coal px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-bone transition-colors hover:border-zone/50 hover:text-zone"
+                style={{ fontFamily: "var(--font-condensed)" }}
+              >
+                {view.runningView.strengthBDoneToday ? "✓ Rotina B" : "Rotina B · Força (15′)"}
+              </Link>
+            </div>
+          </div>
+        ) : !view.headDone && view.headSession.kind === "rest" ? (
           <p className="mt-4 text-sm text-steel">
             Descanso total ou caminhada leve. Durma 7–9 h.
           </p>
@@ -663,6 +840,57 @@ export default function Dashboard() {
           )
         )}
       </Card>
+
+      {program === "running" && data && (
+        <div className="rise rise-2 mt-4 space-y-3">
+          <StravaImporter
+            workouts={data.workouts}
+            body={data.body}
+            addWorkout={addWorkout}
+            compact
+            title="Colar CSV do Strava"
+            subtitle="Cole ou envie o CSV direto aqui — já marca o estágio atual e sua dor pós-treino."
+            runningOptions={{
+              defaultStageId: view.runningView.nextStage.id,
+              defaultShoe: view.runningView.shoeName,
+            }}
+          />
+          <Card className="border-l-4 border-l-steel">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+              Marcos 5 km · {RUNNING_STRAVA_SEGMENT.name} (1,64 km)
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded border border-seam bg-coal/60 p-2">
+                <p className="font-mono text-[10px] text-steel-dim">Base · 07/11</p>
+                <p className="mt-0.5 font-semibold text-bone">4,59 km · 43:06</p>
+                <p className="font-mono text-[10px] text-zone">Seg 16:28</p>
+              </div>
+              <div className="rounded border border-seam bg-coal/60 p-2">
+                <p className="font-mono text-[10px] text-steel-dim">Ensaio 5 km</p>
+                <p className="mt-0.5 font-semibold text-bone">
+                  {view.runningView.benchmarks.rehearsal
+                    ? `${view.runningView.benchmarks.rehearsal.distanceKm.toLocaleString("pt-BR")} km · ${formatDurationClock(view.runningView.benchmarks.rehearsal.durationSec)}`
+                    : "Pendente"}
+                </p>
+                <p className="font-mono text-[10px] text-steel-dim">
+                  {view.runningView.benchmarks.rehearsal?.paceLabel ?? "Sem. 3 Açude"}
+                </p>
+              </div>
+              <div className="rounded border border-seam bg-coal/60 p-2">
+                <p className="font-mono text-[10px] text-steel-dim">Prova · 28/11</p>
+                <p className="mt-0.5 font-semibold text-bone">
+                  {view.runningView.benchmarks.race
+                    ? `${view.runningView.benchmarks.race.distanceKm.toLocaleString("pt-BR")} km · ${formatDurationClock(view.runningView.benchmarks.race.durationSec)}`
+                    : `${view.runningView.totalDistanceKm.toLocaleString("pt-BR")} km acumul.`}
+                </p>
+                <p className="font-mono text-[10px] text-steel-dim">
+                  {view.runningView.benchmarks.race?.paceLabel ?? `${view.runningView.totalRuns} corridas`}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Resumo semanal — gerado no fechamento de domingo */}
       {view.weekSummary && (
@@ -1038,11 +1266,13 @@ export default function Dashboard() {
             </>
           }
           detail={`${
-            program === "engine"
-              ? "meta: 2 força + 1–2 intenso + 3–4 Z2"
-              : program === "performance"
-                ? "meta: 3 sala + 1 intervalado + 1 Z2"
-                : "meta: 4 musc + 1 cardio"
+            program === "running"
+              ? "meta: 3 corridas + 2 força pé/canela"
+              : program === "engine"
+                ? "meta: 2 força + 1–2 intenso + 3–4 Z2"
+                : program === "performance"
+                  ? "meta: 3 sala + 1 intervalado + 1 Z2"
+                  : "meta: 4 musc + 1 cardio"
           }${view.streak > 0 ? ` · ${view.streak} sem. no alvo 🔥` : ""}`}
         />
         <StatCard
@@ -1060,11 +1290,13 @@ export default function Dashboard() {
           detail={
             view.thisWeek.intense > 0
               ? `meta ${z2Target.min}–${z2Target.max}′ · +${view.thisWeek.intense}′ intenso à parte`
-              : program === "engine"
-                ? `meta ${z2Target.min}–${z2Target.max} min · ${view.enginePhase.label.replace("Bloco ", "bloco ")}`
-                : program === "performance"
-                  ? `meta ${z2Target.min}–${z2Target.max} min · somando os encerramentos`
-                  : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
+              : program === "running"
+                ? `${view.runningView.totalDistanceKm.toLocaleString("pt-BR")} km no ciclo · ritmo conversa`
+                : program === "engine"
+                  ? `meta ${z2Target.min}–${z2Target.max} min · ${view.enginePhase.label.replace("Bloco ", "bloco ")}`
+                  : program === "performance"
+                    ? `meta ${z2Target.min}–${z2Target.max} min · somando os encerramentos`
+                    : `meta ${z2Target.min}–${z2Target.max} min · inegociável`
           }
           accent="zone"
         />
@@ -1494,11 +1726,13 @@ export default function Dashboard() {
           target={z2Target.min}
         />
         <p className="mt-2 text-xs text-steel">
-          {program === "engine"
-            ? "3–4 sessões de 35–60′ a 122–138 bpm. É o volume que decide o gasto da semana e a gordura visceral — o intenso entra à parte, 1–2×."
-            : program === "performance"
-              ? "180–240′ a 125–138 bpm somando tudo: as sessões próprias, os 10′ que fecham cada treino de sala e as caminhadas do Strava. É o piso que sustenta o resto da semana."
-              : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
+          {program === "running"
+            ? "As corridas adaptativas, caminhadas de proteção e importações do Strava contam aqui. Priorize consistência sem dor > 3/10."
+            : program === "engine"
+              ? "3–4 sessões de 35–60′ a 122–138 bpm. É o volume que decide o gasto da semana e a gordura visceral — o intenso entra à parte, 1–2×."
+              : program === "performance"
+                ? "180–240′ a 125–138 bpm somando tudo: as sessões próprias, os 10′ que fecham cada treino de sala e as caminhadas do Strava. É o piso que sustenta o resto da semana."
+                : "É a Zona 2 que mata a tontura no futsal — terça + 20′ após o Lower B."}
         </p>
         <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-steel-dim">
           barras usam a mesma janela dos cards acima

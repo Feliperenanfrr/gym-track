@@ -1336,6 +1336,11 @@ export function coachReport(
   if (periodStatus === "parcial") {
     questions.push("Tratar este recorte como parcial; o bloco atual ainda não terminou.")
   }
+  if (program === "running") {
+    questions.push(
+      "Revisar dor na sola/canela (> 3/10 trava degrau) e respeito ao teto de ~45 min antes do ensaio de 5 km."
+    )
+  }
   if (program === "engine") {
     questions.push(
       "Confirmar as zonas de FC com teste ergométrico; as faixas em uso são estimadas a partir do próprio registro."
@@ -1365,9 +1370,11 @@ export function coachReport(
     weeks: Math.round(weeks * 10) / 10,
     program,
     purpose:
-      program === "engine"
-        ? "Revisão do ciclo de capacidade cardiorrespiratória e perda de gordura."
-        : "Revisão de hipertrofia, força e composição corporal para reconstrução do plano.",
+      program === "running"
+        ? "Revisão do ciclo de corrida 5 km, progressão adaptativa e proteção pé/canela."
+        : program === "engine"
+          ? "Revisão do ciclo de capacidade cardiorrespiratória e perda de gordura."
+          : "Revisão de hipertrofia, força e composição corporal para reconstrução do plano.",
     periodStatus,
     quality,
     training: {

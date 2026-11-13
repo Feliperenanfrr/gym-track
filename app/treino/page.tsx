@@ -8,10 +8,20 @@ import { HoldTimer } from "@/components/hold-timer"
 import { LoadField } from "@/components/load-field"
 import { MachineChip, MachineSheet } from "@/components/machine-sheet"
 import { ProgramTabs } from "@/components/program-tabs"
+import { StravaImporter } from "@/components/strava-importer"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { RestTimer } from "@/components/rest-timer"
 import { enginePlanForDate, enginePhaseFor, nextEngineSession } from "@/lib/engine-plan"
 import { PERF_CYCLE, nextPerformanceSession } from "@/lib/performance-plan"
+import {
+  RUNNING_PAIN_THRESHOLD,
+  RUNNING_SHOE_NAME,
+  RUN_STAGES,
+  RUN_STAGE_BY_ID,
+  RunStageId,
+  isOverVolumeCeiling,
+  runningTodayView,
+} from "@/lib/running-plan"
 import { cardioBlocks, cardioRowsToBlocks } from "@/lib/cardio"
 import { PLAN_BY_ID, planForProgram } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
@@ -176,10 +186,19 @@ export default function TreinoPage() {
   /** epoch ms da primeira série marcada (duração real da sessão) */
   const startedAtRef = useRef<number | null>(null)
   const sessionPickedRef = useRef(false)
+  const requestedSessionRef = useRef<SessionId | null>(null)
   const cycleInitRef = useRef(false)
   /** data|sessão do último pré-preenchimento, p/ não remontar o form salvo */
   const prefillKeyRef = useRef("")
   const initializedProgramRef = useRef<TrainingProgram | null>(null)
+
+  // Metadados específicos da sessão de corrida (5 km adaptativo)
+  const [runStageId, setRunStageId] = useState<RunStageId>("1-2x8")
+  const [runPainScore, setRunPainScore] = useState<number | null>(null)
+  const [runDistanceKm, setRunDistanceKm] = useState("")
+  const [runSegmentClock, setRunSegmentClock] = useState("")
+  const [runUseCorreMax, setRunUseCorreMax] = useState(true)
+  const [showStravaInTreino, setShowStravaInTreino] = useState(false)
 
   const availableSessions = useMemo(
     () => {
@@ -201,15 +220,22 @@ export default function TreinoPage() {
   }, [])
 
   useEffect(() => {
-    // ?data=yyyy-mm-dd → registro retroativo (treino esquecido, jogo não
-    // anotado). Datas no futuro caem para o dia operacional de hoje.
+    // ?data=yyyy-mm-dd → registro retroativo; ?sessao=id → abre sessão direto
     let day = operationalDay(new Date())
-    const raw = new URLSearchParams(window.location.search).get("data")
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get("data")
     if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
       const parsed = fromDateKey(raw)
       if (!Number.isNaN(parsed.getTime()) && toDateKey(parsed) <= toDateKey(day)) {
         day = parsed
       }
+    }
+    const requestedSession = params.get("sessao")
+    if (requestedSession && requestedSession in PLAN_BY_ID) {
+      const targetId = requestedSession as SessionId
+      requestedSessionRef.current = targetId
+      sessionPickedRef.current = true
+      setSessionId(targetId)
     }
     setToday(day)
   }, [])
@@ -223,9 +249,21 @@ export default function TreinoPage() {
   useEffect(() => {
     if (!program || !templates || !today || initializedProgramRef.current === program) return
     initializedProgramRef.current = program
+    if (requestedSessionRef.current) {
+      const req = requestedSessionRef.current
+      requestedSessionRef.current = null
+      if (availableSessions.some((candidate) => candidate.id === req)) {
+        setSessionId(req)
+        return
+      }
+    }
     sessionPickedRef.current = false
     cycleInitRef.current = false
     setCycleSug(null)
+    if (program === "running") {
+      setSessionId("runSession")
+      return
+    }
     if (program === "engine") {
       setSessionId("engineForceA")
       return
@@ -238,13 +276,26 @@ export default function TreinoPage() {
       (candidate) => candidate.weekday === isoWeekday(today)
     )
     setSessionId(planned && planned.kind !== "rest" ? planned.id : "upperA")
-  }, [program, templates, today])
+  }, [program, templates, today, availableSessions])
 
   // Quando os dados chegam, escolhe a próxima sessão uma vez por visita. A
   // escolha manual no seletor sempre tem prioridade.
   useEffect(() => {
     if (!data || !today || !program || cycleInitRef.current || sessionPickedRef.current) return
     cycleInitRef.current = true
+    if (program === "running") {
+      const rv = runningTodayView(data.workouts, today)
+      if (rv.restDayRecommended && !rv.strengthBDoneToday && rv.strengthBGuidance.recommended) {
+        setSessionId("runStrengthB")
+      } else if (!rv.runDoneToday) {
+        setSessionId("runSession")
+      } else if (!rv.footADoneToday) {
+        setSessionId("runFootA")
+      } else {
+        setSessionId("runSession")
+      }
+      return
+    }
     if (program === "engine") {
       setSessionId(nextEngineSession(data.workouts, today))
       return
@@ -397,6 +448,17 @@ export default function TreinoPage() {
     }
     // musculação pura começa sem cardio; o botão de adicionar cobre o extra
     if (!hasCardioForm(s.kind)) return []
+    if (s.id === "runSession") {
+      const rv = data && today ? runningTodayView(data.workouts, today) : null
+      return [
+        {
+          minutes: String(rv?.nextStage.targetMinutes ?? 34),
+          bpm,
+          mode: "Corrida",
+          purpose: "zone2",
+        },
+      ]
+    }
     return [
       {
         minutes: s.kind === "cardio" ? String(s.cardioTarget?.defaultMinutes ?? 45) : "60",
@@ -422,6 +484,7 @@ export default function TreinoPage() {
     const rows: Record<string, SetRow[]> = {}
     const adapting =
       program === "engine" && today !== null && enginePhaseFor(today).id === "fundacao"
+    const bodyweightChecklist = s?.id === "runFootA" || s?.id === "runStrengthB"
     for (const ex of exercises) {
       // a última vez NA MESMA MÁQUINA; na unidade da placa (lb pré-preenche lb)
       const lastEntry = historyOf(ex)?.entry
@@ -432,7 +495,11 @@ export default function TreinoPage() {
           // sem carga (prancha, flexão) o campo fica vazio, não com um "0"
           weight: lastSet && lastSet.weight > 0 ? String(lastSet.weight) : "",
           // no bloco de fundação, mesma carga e o piso da faixa de repetições
-          reps: lastSet ? String(adapting ? ex.repsMin : lastSet.reps) : "",
+          reps: lastSet
+            ? String(adapting ? ex.repsMin : lastSet.reps)
+            : bodyweightChecklist
+              ? String(ex.repsMin)
+              : "",
           done: false,
           rir: "",
         }
@@ -498,11 +565,38 @@ export default function TreinoPage() {
       setRows(opened.rows)
       setCardioRows(opened.cardioRows)
       setNotes(opened.notes)
+      if (session.id === "runSession") {
+        const runBlock = cardioBlocks(todayLog)[0]
+        const rv = data ? runningTodayView(data.workouts, today) : null
+        setRunStageId(
+          runBlock?.runStageId && runBlock.runStageId in RUN_STAGE_BY_ID
+            ? (runBlock.runStageId as RunStageId)
+            : rv?.nextStage.id ?? "1-2x8"
+        )
+        setRunPainScore(typeof runBlock?.painScore === "number" ? runBlock.painScore : null)
+        setRunDistanceKm(runBlock?.distanceKm ? String(runBlock.distanceKm) : "")
+        setRunUseCorreMax(runBlock?.shoe ? runBlock.shoe === RUNNING_SHOE_NAME : true)
+        if (runBlock?.segmentTimeSec && runBlock.segmentTimeSec > 0) {
+          const m = Math.floor(runBlock.segmentTimeSec / 60)
+          const sec = runBlock.segmentTimeSec % 60
+          setRunSegmentClock(`${m}:${String(sec).padStart(2, "0")}`)
+        } else {
+          setRunSegmentClock("")
+        }
+      }
       startedAtRef.current = null
       setDraftRestored(false)
       setEditingLog(todayLog)
       setLayoffNotice(false)
       return
+    }
+    if (session.id === "runSession" && data) {
+      const rv = runningTodayView(data.workouts, today)
+      setRunStageId(rv.nextStage.id)
+      setRunPainScore(null)
+      setRunDistanceKm("")
+      setRunSegmentClock("")
+      setRunUseCorreMax(true)
     }
     setActiveExercises(session.exercises)
     applyPrefill(buildPrefill(session, lastLog))
@@ -771,15 +865,54 @@ export default function TreinoPage() {
     // marcar à mão encerra o cronômetro desta série sem registrar por cima
     if (holdTimer.active?.key === `${ex.id}-${idx}`) holdTimer.cancel()
     const nowDone = !currentlyDone
-    updateRow(ex.id, idx, { done: nowDone })
+    const currentReps = rows[ex.id]?.[idx]?.reps ?? ""
+    updateRow(ex.id, idx, {
+      done: nowDone,
+      ...(nowDone && !currentReps.trim() ? { reps: String(ex.repsMin) } : {}),
+    })
     popCheck(`${ex.id}-${idx}`)
 
     if (nowDone) {
       // primeira série marcada = início real da sessão
       if (!startedAtRef.current) startedAtRef.current = Date.now()
       tapFeedback()
-      restTimer.start(parseRestSeconds(ex.rest), ex.name)
+      if (session?.id !== "runFootA") {
+        restTimer.start(parseRestSeconds(ex.rest), ex.name)
+      }
     }
+  }
+
+  /** Marca todas as séries de um exercício em 1 toque (checklist rápido). */
+  const completeExercise = (ex: ExercisePrescription) => {
+    if (!startedAtRef.current) startedAtRef.current = Date.now()
+    tapFeedback()
+    dirtyRef.current = true
+    setRows((current) => ({
+      ...current,
+      [ex.id]: (current[ex.id] ?? []).map((row) => ({
+        ...row,
+        reps: row.reps.trim() ? row.reps : String(ex.repsMin),
+        done: true,
+      })),
+    }))
+  }
+
+  /** Conclui todos os 6 exercícios da Rotina A de uma vez em 1 toque. */
+  const completeAllFootA = () => {
+    if (!startedAtRef.current) startedAtRef.current = Date.now()
+    tapFeedback()
+    dirtyRef.current = true
+    setRows((current) => {
+      const next: Record<string, SetRow[]> = { ...current }
+      for (const ex of activeExercises) {
+        next[ex.id] = (current[ex.id] ?? []).map((row) => ({
+          ...row,
+          reps: row.reps.trim() ? row.reps : String(ex.repsMin),
+          done: true,
+        }))
+      }
+      return next
+    })
   }
 
   /**
@@ -999,7 +1132,41 @@ export default function TreinoPage() {
       })
       .filter((e) => e.sets.length > 0)
 
-    const cardios = cardioRowsToBlocks(cardioRows, { forceZone2: session.id === "engineZ2" })
+    const baseCardios = cardioRowsToBlocks(cardioRows, {
+      forceZone2: session.id === "engineZ2",
+    })
+    let segmentTimeSec: number | undefined
+    if (session.id === "runSession" && runSegmentClock.trim()) {
+      const match = runSegmentClock.trim().match(/^(\d{1,2}):(\d{2})$/)
+      const mins = match ? parseInt(match[1], 10) : NaN
+      const secs = match ? parseInt(match[2], 10) : NaN
+      if (!match || secs >= 60 || mins * 60 + secs <= 0) {
+        setSaveError("Tempo do segmento inválido. Use mm:ss (ex.: 16:28).")
+        return
+      }
+      segmentTimeSec = mins * 60 + secs
+    }
+    const parsedDistanceKm =
+      session.id === "runSession" && runDistanceKm.trim()
+        ? parseFloat(runDistanceKm.replace(",", "."))
+        : NaN
+    const cardios =
+      session.id === "runSession" && baseCardios.length > 0
+        ? baseCardios.map((block, index) =>
+            index === 0
+              ? {
+                  ...block,
+                  runStageId,
+                  ...(runPainScore !== null ? { painScore: runPainScore } : {}),
+                  ...(runUseCorreMax ? { shoe: RUNNING_SHOE_NAME } : {}),
+                  ...(Number.isFinite(parsedDistanceKm) && parsedDistanceKm > 0
+                    ? { distanceKm: Number(parsedDistanceKm.toFixed(2)) }
+                    : {}),
+                  ...(segmentTimeSec !== undefined ? { segmentTimeSec } : {}),
+                }
+              : block
+          )
+        : baseCardios
     const cardioMinutes = cardios.reduce((sum, block) => sum + block.minutes, 0)
 
     if (session.kind === "mixed" && entries.length === 0 && cardios.length === 0) {
@@ -1121,13 +1288,46 @@ export default function TreinoPage() {
         ? "Cardio avulso"
         : "Cardio"
   const enginePhase = program === "engine" ? enginePhaseFor(today) : null
+  const runningView =
+    program === "running" || session.id.startsWith("run")
+      ? runningTodayView(data.workouts, today)
+      : null
+  const selectRunStage = (stageId: RunStageId) => {
+    const stage = RUN_STAGE_BY_ID[stageId]
+    setRunStageId(stageId)
+    dirtyRef.current = true
+    tapFeedback()
+    setCardioRows((current) => {
+      const nextMode = stageId === "walk-sub" ? "Caminhada" : "Corrida"
+      if (current.length === 0) {
+        return [{ minutes: String(stage.targetMinutes), bpm: "", mode: nextMode, purpose: "zone2" }]
+      }
+      return current.map((row, idx) =>
+        idx === 0
+          ? {
+              ...row,
+              minutes: String(stage.targetMinutes),
+              mode: nextMode,
+            }
+          : row
+      )
+    })
+  }
   /** sessão que o programa pede hoje — marcada no seletor mesmo se você mudar */
   const suggestedSessionId =
-    program === "engine"
-      ? nextEngineSession(data.workouts, today)
-      : program === "performance"
-        ? nextPerformanceSession(data.workouts, today)
-        : cycleSug?.sessionId ?? null
+    program === "running" && runningView
+      ? runningView.restDayRecommended &&
+        runningView.strengthBGuidance.recommended &&
+        !runningView.strengthBDoneToday
+        ? "runStrengthB"
+        : !runningView.runDoneToday
+          ? "runSession"
+          : "runFootA"
+      : program === "engine"
+        ? nextEngineSession(data.workouts, today)
+        : program === "performance"
+          ? nextPerformanceSession(data.workouts, today)
+          : cycleSug?.sessionId ?? null
   /** registro retroativo (?data=): salva na data escolhida, não em hoje */
   const backdated = toDateKey(today) !== toDateKey(operationalDay(new Date()))
 
@@ -1219,6 +1419,34 @@ export default function TreinoPage() {
             </span>
           </div>
           <p className="mt-1 text-xs leading-relaxed text-steel">{enginePhase.guidance}</p>
+        </div>
+      )}
+
+      {session.id === "runStrengthB" && runningView && !saved && (
+        <div
+          className={cn(
+            "rise mb-3 rounded-lg border px-3 py-2.5",
+            runningView.strengthBGuidance.recommended
+              ? "border-zone/30 bg-zone/5"
+              : "border-gold/30 bg-gold/5"
+          )}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <p
+              className={cn(
+                "text-xs font-semibold uppercase tracking-wider",
+                runningView.strengthBGuidance.recommended ? "text-zone" : "text-gold"
+              )}
+            >
+              {runningView.strengthBGuidance.label}
+            </p>
+            <span className="shrink-0 font-mono text-[10px] text-steel-dim">
+              {runningView.strengthBGuidance.setsAdvice}
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-steel">
+            {runningView.strengthBGuidance.note}
+          </p>
         </div>
       )}
 
@@ -1611,6 +1839,27 @@ export default function TreinoPage() {
         </div>
       )}
 
+      {isLift && session.id === "runFootA" && activeExercises.length > 0 && !saved && (
+        <Card className="rise mb-3 border-l-4 border-l-zone">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-bone">Checklist diário descalço (~8 min)</p>
+              <p className="mt-0.5 text-xs text-steel-dim">
+                Marque os exercícios ou conclua toda a rotina em 1 toque e clique em Salvar.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={completeAllFootA}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded bg-zone px-3 py-2 text-xs font-bold uppercase tracking-wider text-coal transition-colors hover:bg-teal-300"
+              style={{ fontFamily: "var(--font-condensed)" }}
+            >
+              <Check size={14} strokeWidth={3} /> Tudo feito
+            </button>
+          </div>
+        </Card>
+      )}
+
       {isLift && activeExercises.length === 0 && (
         <Card className="rise mb-3 border-dashed">
           <p className="text-center text-sm text-steel-dim">
@@ -1684,6 +1933,16 @@ export default function TreinoPage() {
                 <p className="font-mono text-[10px] text-steel-dim">{ex.nameEn}</p>
               </div>
               <div className="flex shrink-0 gap-1.5">
+                {(session.id === "runFootA" || session.id === "runStrengthB") && !exComplete && (
+                  <button
+                    type="button"
+                    onClick={() => completeExercise(ex)}
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-zone/40 bg-zone/10 px-2 font-mono text-[10px] font-bold uppercase tracking-wide text-zone transition-colors hover:bg-zone/20"
+                    aria-label={`Concluir todas as séries de ${ex.name}`}
+                  >
+                    <Check size={12} strokeWidth={3} /> Feito
+                  </button>
+                )}
                 <button
                   onClick={() => openExercisePicker(ex.id)}
                   className={cn(ICON_BTN, "hover:border-ember/50 hover:text-bone")}
@@ -2003,7 +2262,7 @@ export default function TreinoPage() {
                   )}
 
                   {/* RIR — reps em reserva, 1 tap depois de concluir a série */}
-                  {row.done && ex.unit === "reps" && (
+                  {row.done && ex.unit === "reps" && session.id !== "runFootA" && (
                     <div className="mt-2 flex items-center gap-1.5 border-t border-seam pt-2">
                       <span className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
                         RIR
@@ -2069,6 +2328,177 @@ export default function TreinoPage() {
 
       {/* cardio — um bloco por estímulo: bike, corrida, caminhada de volta… */}
       <SectionTitle accent="zone">{cardioSectionTitle}</SectionTitle>
+
+      {session.id === "runSession" && (
+        <div className="rise rise-2 mb-3 space-y-3">
+          <Card className="border-l-4 border-l-zone">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-zone">
+                  Estágio da corrida · Plano 5 km
+                </p>
+                <p className="mt-0.5 text-xs text-steel-dim">
+                  {RUN_STAGE_BY_ID[runStageId].note}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStravaInTreino((prev) => !prev)}
+                className="shrink-0 rounded border border-zone/40 bg-zone/10 px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-zone transition-colors hover:bg-zone/20"
+              >
+                {showStravaInTreino ? "Fechar CSV" : "Colar Strava"}
+              </button>
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {RUN_STAGES.map((stage) => {
+                const selected = runStageId === stage.id
+                const isSuggested = runningView?.nextStage.id === stage.id
+                const alreadyDone = runningView?.completedStageIds.includes(stage.id)
+                return (
+                  <button
+                    key={stage.id}
+                    type="button"
+                    onClick={() => selectRunStage(stage.id)}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-colors",
+                      selected
+                        ? "border-zone bg-zone/20 text-zone"
+                        : isSuggested
+                          ? "border-gold/50 bg-gold/10 text-gold"
+                          : "border-seam bg-coal text-steel hover:text-bone"
+                    )}
+                    aria-pressed={selected}
+                  >
+                    {alreadyDone && <Check size={11} strokeWidth={3} />}
+                    <span>{stage.shortLabel}</span>
+                    {isSuggested && !selected && (
+                      <span className="font-mono text-[9px] uppercase">sugerido</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[10px] uppercase text-steel-dim">
+                  Distância (km)
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={runDistanceKm}
+                  onChange={(event) => {
+                    dirtyRef.current = true
+                    setRunDistanceKm(event.target.value)
+                  }}
+                  placeholder="ex.: 4,59"
+                  className="rounded-md border border-seam bg-coal px-2.5 py-2 font-mono text-sm text-bone outline-none focus:border-zone"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="font-mono text-[10px] uppercase text-steel-dim">
+                  Seg. 1,64 km (mm:ss)
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={runSegmentClock}
+                  onChange={(event) => {
+                    dirtyRef.current = true
+                    setRunSegmentClock(event.target.value)
+                  }}
+                  placeholder="ex.: 16:28"
+                  className="rounded-md border border-seam bg-coal px-2.5 py-2 font-mono text-sm text-bone outline-none focus:border-zone"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-steel">
+                  Dor na sola / canela (0–10)
+                </span>
+                {runPainScore !== null && (
+                  <button
+                    type="button"
+                    onClick={() => setRunPainScore(null)}
+                    className="font-mono text-[10px] text-steel-dim hover:text-bone"
+                  >
+                    limpar
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 grid grid-cols-6 gap-1 sm:grid-cols-11">
+                {Array.from({ length: 11 }, (_, score) => {
+                  const selected = runPainScore === score
+                  const highPain = score > RUNNING_PAIN_THRESHOLD
+                  return (
+                    <button
+                      key={score}
+                      type="button"
+                      onClick={() => setRunPainScore(selected ? null : score)}
+                      className={cn(
+                        "rounded border py-1.5 font-mono text-xs font-semibold transition-colors",
+                        selected
+                          ? highPain
+                            ? "border-gold bg-gold/20 text-gold"
+                            : "border-zone bg-zone/20 text-zone"
+                          : "border-seam bg-coal text-steel hover:text-bone"
+                      )}
+                      aria-pressed={selected}
+                    >
+                      {score}
+                    </button>
+                  )
+                })}
+              </div>
+              {runPainScore !== null && runPainScore > RUNNING_PAIN_THRESHOLD && (
+                <p className="mt-1.5 text-[11px] text-gold">
+                  Dor &gt; 3/10 trava avanço para o próximo estágio e sugere repetir ou caminhar 30 min.
+                </p>
+              )}
+            </div>
+
+            <label className="mt-3 flex items-center gap-2 rounded border border-seam bg-coal px-2.5 py-2 text-xs text-bone">
+              <input
+                type="checkbox"
+                checked={runUseCorreMax}
+                onChange={(event) => setRunUseCorreMax(event.target.checked)}
+                className="accent-zone"
+              />
+              <span>Tênis: {RUNNING_SHOE_NAME}</span>
+            </label>
+
+            {totalCardioMin > 0 && isOverVolumeCeiling(runStageId, totalCardioMin) && (
+              <p className="mt-2.5 flex items-center gap-1.5 rounded border border-gold/30 bg-gold/5 px-2.5 py-2 text-xs text-gold">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>
+                  {totalCardioMin} min ultrapassa o teto de {RUN_STAGE_BY_ID[runStageId].ceilingMinutes} min para {RUN_STAGE_BY_ID[runStageId].shortLabel} — você pode salvar normalmente, mas priorize recuperação amanhã.
+                </span>
+              </p>
+            )}
+          </Card>
+
+          {showStravaInTreino && data && (
+            <StravaImporter
+              workouts={data.workouts}
+              body={data.body}
+              addWorkout={addWorkout}
+              compact
+              title="Importar corrida direto do CSV do Strava"
+              subtitle="Mesma ferramenta do Histórico, já preenchendo seu estágio e dor."
+              runningOptions={{
+                defaultStageId: runStageId,
+                defaultShoe: runUseCorreMax ? RUNNING_SHOE_NAME : undefined,
+              }}
+              onSaved={() => setShowStravaInTreino(false)}
+            />
+          )}
+        </div>
+      )}
+
       <Card className="rise rise-2 mb-3 border-l-4 border-l-zone">
         {session.id === "engineZ2" && (
           <p className="mb-3 rounded border border-zone/20 bg-zone/5 px-2.5 py-2 text-xs text-zone">

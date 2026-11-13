@@ -29,13 +29,16 @@ const HYPERTROPHY_WEEKLY_TARGET = 5
  * terceira.
  */
 const PERFORMANCE_WEEKLY_TARGET = 5
+const RUNNING_WEEKLY_TARGET = 5
 
 /**
  * Alvo semanal do programa ativo. No ciclo de motor o alvo vem do bloco em
  * que a semana cai ("5", "6" ou "5–6"): a faixa é lida pelo piso, porque o
- * mínimo é o que define se a semana foi cumprida.
+ * mínimo é o que define se a semana foi cumprida. Na corrida 5 km o alvo
+ * combina 3 corridas + 2 fortalecimentos principais.
  */
 export function weeklySessionTarget(program: TrainingProgram, monday: Date): number {
+  if (program === "running") return RUNNING_WEEKLY_TARGET
   if (program === "performance") return PERFORMANCE_WEEKLY_TARGET
   if (program !== "engine") return HYPERTROPHY_WEEKLY_TARGET
   const parsed = Number.parseInt(enginePhaseFor(monday).weeklySessions, 10)

@@ -31,11 +31,17 @@ export type SessionId =
   | "competitionZ2"
   /** Container diário de caminhadas/corridas importadas do Strava. */
   | "strava"
+  /** Corrida / caminhada-trote adaptativa do plano de 5 km. */
+  | "runSession"
+  /** Rotina A diária de arco, sola e mobilidade de pé (descalço). */
+  | "runFootA"
+  /** Rotina B de fortalecimento pé/canela/quadril para corrida. */
+  | "runStrengthB"
   | "free"
   | "sport"
   | "rest"
 
-export type TrainingProgram = "performance" | "engine" | "hypertrophy"
+export type TrainingProgram = "running" | "performance" | "engine" | "hypertrophy"
 
 export type SessionKind = "lift" | "cardio" | "sport" | "rest" | "mixed"
 
@@ -194,6 +200,11 @@ export interface CardioLog {
   steps?: number
   elevationGainM?: number
   location?: string
+  /** Metadados opcionais do bloco de corrida (estágio, dor 0-10, tênis, segmento). */
+  runStageId?: string
+  painScore?: number
+  shoe?: string
+  segmentTimeSec?: number
 }
 
 /** Linha de cardio na UI de registro (strings cruas dos inputs) */

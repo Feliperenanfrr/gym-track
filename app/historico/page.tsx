@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, FileUp, Minus, Pencil, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
+import { StravaImporter } from "@/components/strava-importer"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isEngineSession } from "@/lib/engine-plan"
 import {
@@ -15,13 +16,23 @@ import {
 } from "@/lib/cardio"
 import { legacyProgramOf } from "@/lib/legacy-plan"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
+import {
+  RUNNING_PAIN_THRESHOLD,
+  RUNNING_SHOE_NAME,
+  RUN_STAGES,
+  RUN_STAGE_BY_ID,
+  RunStageId,
+  formatPace,
+  isOverVolumeCeiling,
+  isRunningActivityLog,
+  runDistanceKm,
+  runDurationMinutes,
+  runDurationSeconds,
+  runExplicitStageId,
+  runPainScore,
+} from "@/lib/running-plan"
 import { EXERCISES_BY_ID, PLAN_BY_ID } from "@/lib/plan"
 import { useGymData } from "@/lib/store"
-import {
-  formatActivityDuration,
-  parseStravaCsv,
-  toStravaCardioLog,
-} from "@/lib/strava"
 import { CardioLog, CardioPurpose, ExerciseLog, ExerciseUnit, MuscleGroup, WorkoutLog } from "@/lib/types"
 import { measureInfo, measureOf, workoutVolume } from "@/lib/measure"
 import { inputToKg, LoadUnit, loadForInput } from "@/lib/units"
@@ -62,6 +73,7 @@ interface EditableCardio {
   bpm: string
   mode: string
   purpose: CardioPurpose
+  runStageId?: RunStageId
   /** Preserva distância/passos/elevação do Strava ao editar campos básicos. */
   original?: CardioLog
 }
@@ -72,6 +84,9 @@ function editableCardioFrom(log: WorkoutLog): EditableCardio[] {
     bpm: block.avgBpm !== undefined ? String(block.avgBpm) : "",
     mode: block.mode,
     purpose: cardioPurposeOf(block, log.sessionId),
+    ...(block.runStageId && block.runStageId in RUN_STAGE_BY_ID
+      ? { runStageId: block.runStageId as RunStageId }
+      : {}),
     original: block,
   }))
 }
@@ -145,17 +160,9 @@ export default function Historico() {
   const [editNotes, setEditNotes] = useState("")
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [painOpenId, setPainOpenId] = useState<string | null>(null)
   /** data escolhida para registrar um treino esquecido */
   const [backfillDate, setBackfillDate] = useState("")
-  const [stravaText, setStravaText] = useState("")
-  const [stravaSaving, setStravaSaving] = useState(false)
-  const [stravaError, setStravaError] = useState<string | null>(null)
-  const [stravaSavedCount, setStravaSavedCount] = useState(0)
-
-  const stravaParse = useMemo(
-    () => (stravaText.trim() ? parseStravaCsv(stravaText) : null),
-    [stravaText]
-  )
 
   const workouts = useMemo(() => {
     if (!data) return []
@@ -273,90 +280,6 @@ export default function Historico() {
     ])
   }
 
-  const loadStravaFile = async (file: File | undefined) => {
-    if (!file) return
-    setStravaError(null)
-    try {
-      setStravaText(await file.text())
-    } catch {
-      setStravaError("Não foi possível ler o arquivo CSV.")
-    }
-  }
-
-  const saveStravaActivities = async () => {
-    if (!data) return
-    if (!stravaParse || stravaParse.activities.length === 0 || stravaParse.errors.length > 0) {
-      setStravaError("Revise os campos do CSV antes de salvar.")
-      return
-    }
-
-    const incomingByDate = new Map<string, CardioLog[]>()
-    for (const activity of stravaParse.activities) {
-      const blocks = incomingByDate.get(activity.date) ?? []
-      blocks.push(toStravaCardioLog(activity))
-      incomingByDate.set(activity.date, blocks)
-    }
-
-    const pending: WorkoutLog[] = []
-    let inserted = 0
-    for (const [date, incoming] of incomingByDate) {
-      const existing = data.workouts.find(
-        (workout) => workout.date === date && workout.sessionId === "strava"
-      )
-      const previousBlocks = existing ? cardioBlocks(existing) : []
-      const knownIds = new Set(previousBlocks.map((block) => block.sourceId).filter(Boolean))
-      const fresh = incoming.filter((block) => !block.sourceId || !knownIds.has(block.sourceId))
-      if (fresh.length === 0) continue
-
-      const blocks = [...previousBlocks, ...fresh].sort((a, b) =>
-        (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99")
-      )
-      const durationMin = Math.max(
-        1,
-        Math.round(
-          blocks.reduce(
-            (sum, block) =>
-              sum +
-              (block.durationSeconds !== undefined
-                ? block.durationSeconds / 60
-                : block.minutes),
-            0
-          )
-        )
-      )
-      pending.push({
-        ...(existing ?? {
-          id: `strava-${date}-${Date.now()}`,
-          date,
-          sessionId: "strava" as const,
-          entries: [],
-        }),
-        durationMin,
-        cardio: blocks[0],
-        cardios: blocks,
-      })
-      inserted += fresh.length
-    }
-
-    if (inserted === 0) {
-      setStravaError("Todas essas atividades já foram importadas.")
-      return
-    }
-
-    setStravaSaving(true)
-    setStravaError(null)
-    try {
-      await Promise.all(pending.map((workout) => addWorkout(workout)))
-      setStravaText("")
-      setStravaSavedCount(inserted)
-      window.setTimeout(() => setStravaSavedCount(0), 3500)
-    } catch (e) {
-      setStravaError(e instanceof Error ? e.message : "Erro ao salvar atividades do Strava")
-    } finally {
-      setStravaSaving(false)
-    }
-  }
-
   const removeEditableCardio = (index: number) => {
     setEditCardio((prev) => prev.filter((_, i) => i !== index))
   }
@@ -378,6 +301,7 @@ export default function Historico() {
         avgBpm: parseInt(row.bpm) || undefined,
         mode: row.mode.trim(),
         purpose: row.purpose,
+        ...(row.runStageId ? { runStageId: row.runStageId } : {}),
       }
     })
 
@@ -448,6 +372,36 @@ export default function Historico() {
     addWorkout({ ...w, ...(value === null ? { srpe: undefined } : { srpe: value }) }).catch(() => {
       setActionError("Não foi possível salvar o esforço — verifique a conexão.")
     })
+  }
+
+  /** Grava/limpa dor 0–10 no último bloco de cardio da corrida sem sair do Histórico. */
+  const rateRunPain = async (w: WorkoutLog, score: number | null) => {
+    const blocks = cardioBlocks(w)
+    const nextBlocks: CardioLog[] =
+      blocks.length > 0
+        ? blocks.map((block, idx) => {
+            if (idx !== blocks.length - 1) return block
+            const { painScore: _old, ...rest } = block
+            return score !== null ? { ...rest, painScore: score } : rest
+          })
+        : [
+            {
+              minutes: w.durationMin ?? 30,
+              mode: "Corrida",
+              purpose: "zone2",
+              ...(score !== null ? { painScore: score } : {}),
+            },
+          ]
+    try {
+      await addWorkout({
+        ...w,
+        cardio: nextBlocks[0],
+        cardios: nextBlocks,
+      })
+      setPainOpenId(null)
+    } catch {
+      setActionError("Não foi possível salvar a dor — verifique a conexão.")
+    }
   }
 
   /** diálogo confirmou: exclui e arma o desfazer */
@@ -532,150 +486,12 @@ export default function Historico() {
       </Card>
 
       {/* importação determinística das caminhadas/corridas exportadas do Strava */}
-      <Card className="rise mb-4 border-l-4 border-l-zone">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-bone">Importar atividades do Strava</p>
-            <p className="mt-0.5 text-xs text-steel-dim">
-              Envie o CSV ou cole o conteúdo. Aceita caminhada/corrida em tabela ou
-              no formato vertical da balança.
-            </p>
-          </div>
-          <FileUp size={19} className="mt-0.5 shrink-0 text-zone" />
-        </div>
-
-        <label className="mt-3 flex flex-col gap-1">
-          <span className="font-mono text-[10px] uppercase text-steel-dim">Arquivo CSV</span>
-          <input
-            type="file"
-            accept=".csv,text/csv,text/plain"
-            onChange={(event) => loadStravaFile(event.target.files?.[0])}
-            className="w-full rounded border border-seam bg-coal px-2 py-2 text-xs text-steel file:mr-3 file:rounded file:border-0 file:bg-zone file:px-3 file:py-1.5 file:font-semibold file:text-coal"
-          />
-        </label>
-
-        <label className="mt-3 flex flex-col gap-1">
-          <span className="font-mono text-[10px] uppercase text-steel-dim">
-            Ou cole o CSV
-          </span>
-          <textarea
-            value={stravaText}
-            onChange={(event) => {
-              setStravaText(event.target.value)
-              setStravaError(null)
-            }}
-            rows={7}
-            placeholder={
-              "Data;Hora;Tipo;Título;Distância (km);Tempo;Passos;Ganho de elevação (m);Local\n" +
-              "05/08/2026;08:48;Caminhada;Caminhada matinal;5,62;1h 3min;6870;;Campina Grande, Paraíba"
-            }
-            className="w-full resize-y rounded border border-seam bg-coal px-2.5 py-2 font-mono text-xs text-bone outline-none focus:border-zone"
-          />
-        </label>
-
-        {stravaParse && (
-          <div className="mt-3 space-y-2">
-            {stravaParse.activities.map((activity) => {
-              const block = toStravaCardioLog(activity)
-              const previewWorkout: WorkoutLog = {
-                id: activity.sourceId,
-                date: activity.date,
-                sessionId: "strava",
-                durationMin: block.minutes,
-                entries: [],
-                cardio: block,
-                cardios: [block],
-              }
-              const kcal = sessionKcal(
-                previewWorkout,
-                weightKgOn(data.body, activity.date)
-              )
-              return (
-                <div
-                  key={activity.sourceId}
-                  className="rounded border border-seam bg-coal/70 px-3 py-2.5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-bone">
-                        {activity.title}
-                      </p>
-                      <p className="mt-0.5 font-mono text-[10px] text-steel-dim">
-                        {fromDateKey(activity.date).toLocaleDateString("pt-BR")}
-                        {activity.startTime ? ` · ${activity.startTime}` : ""}
-                        {activity.location ? ` · ${activity.location}` : ""}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase text-zone">
-                      {activity.type === "walk" ? "caminhada" : "corrida"}
-                    </span>
-                  </div>
-                  <p className="mt-2 font-mono text-[11px] text-steel">
-                    {activity.distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} km
-                    {" · "}{formatActivityDuration(activity.durationSeconds)}
-                    {activity.steps !== undefined
-                      ? ` · ${activity.steps.toLocaleString("pt-BR")} passos`
-                      : ""}
-                    {activity.elevationGainM !== undefined
-                      ? ` · +${Math.round(activity.elevationGainM)} m`
-                      : ""}
-                    {kcal ? (
-                      <span className="text-gold">
-                        {" · "}≈{kcal.mid.toLocaleString("pt-BR")} kcal
-                        <span className="text-steel-dim"> ({kcal.low}–{kcal.high})</span>
-                      </span>
-                    ) : (
-                      <span className="text-gold"> · registre seu peso para calcular kcal</span>
-                    )}
-                  </p>
-                </div>
-              )
-            })}
-
-            {stravaParse.warnings.map((warning, index) => (
-              <p key={index} className="text-xs text-gold">{warning}</p>
-            ))}
-            {stravaParse.errors.length > 0 && (
-              <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
-                {stravaParse.errors.map((message, index) => <p key={index}>{message}</p>)}
-              </div>
-            )}
-          </div>
-        )}
-
-        <button
-          onClick={saveStravaActivities}
-          disabled={
-            stravaSaving ||
-            !stravaParse ||
-            stravaParse.activities.length === 0 ||
-            stravaParse.errors.length > 0
-          }
-          className={cn(
-            "mt-3 flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40",
-            stravaSavedCount > 0
-              ? "bg-zone text-coal"
-              : "bg-ember text-coal hover:bg-ember-hot"
-          )}
-          style={{ fontFamily: "var(--font-condensed)" }}
-        >
-          {stravaSavedCount > 0 ? <Check size={15} /> : <FileUp size={15} />}
-          {stravaSaving
-            ? "Salvando…"
-            : stravaSavedCount > 0
-              ? `${stravaSavedCount} atividade(s) salva(s)`
-              : `Salvar ${stravaParse?.activities.length ?? 0} atividade(s)`}
-        </button>
-        {stravaError && (
-          <p className="mt-2 rounded border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400">
-            {stravaError}
-          </p>
-        )}
-        <p className="mt-2.5 text-[11px] leading-relaxed text-steel-dim">
-          Calorias usam seu peso na data, duração precisa, ritmo, passos e elevação
-          disponíveis. É uma estimativa com faixa — não uma medição metabólica.
-        </p>
-      </Card>
+      <StravaImporter
+        workouts={data.workouts}
+        body={data.body}
+        addWorkout={addWorkout}
+        className="mb-4"
+      />
 
       {/* filtros por tipo */}
       <div className="rise -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -728,6 +544,18 @@ export default function Historico() {
             const cardioSummary = describeCardio(w)
             const kcalEst = sessionKcal(w, weightKgOn(data.body, w.date))
             const legacyProgram = legacyProgramOf(w.sessionId)
+            const isRunLog = isRunningActivityLog(w)
+            const runStageId = isRunLog ? runExplicitStageId(w) : undefined
+            const runPain = isRunLog ? runPainScore(w) : undefined
+            const runPace = isRunLog ? formatPace(runDurationSeconds(w), runDistanceKm(w)) : null
+            const runDur = isRunLog ? runDurationMinutes(w) : 0
+            const runOverCeiling =
+              isRunLog &&
+              (runStageId
+                ? isOverVolumeCeiling(runStageId, runDur)
+                : runDur > 45 && w.date < "2026-11-28")
+            const hasCorreMax =
+              isRunLog && cardioBlocks(w).some((block) => block.shoe === RUNNING_SHOE_NAME)
 
             return (
               <Card key={w.id} className={cn("rise", `rise-${Math.min(6, i + 1)}`, "relative overflow-hidden")}>
@@ -739,22 +567,94 @@ export default function Historico() {
                     <h3 className="stencil mt-1 text-xl text-bone">
                       {session?.title || "Sessão Desconhecida"}
                     </h3>
-                    {isEngineSession(w.sessionId) && (
-                      <span className="mt-1 inline-flex rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zone">
-                        motor
-                      </span>
-                    )}
-                    {legacyProgram && (
-                      <span
-                        className={cn(
-                          "mt-1 inline-flex rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
-                          legacyProgram === "jiu-jitsu"
-                            ? "border border-gold/30 bg-gold/5 text-gold"
-                            : "border border-seam bg-iron-2 text-steel-dim"
-                        )}
-                      >
-                        {legacyProgram === "jiu-jitsu" ? "jiu-jitsu" : "flag football"}
-                      </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {isEngineSession(w.sessionId) && (
+                        <span className="inline-flex rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zone">
+                          motor
+                        </span>
+                      )}
+                      {w.sessionId.startsWith("run") && (
+                        <span className="inline-flex rounded-full border border-zone/30 bg-zone/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zone">
+                          corrida 5 km
+                        </span>
+                      )}
+                      {runStageId && (
+                        <span className="inline-flex rounded-full border border-zone/40 bg-zone/10 px-2 py-0.5 font-mono text-[10px] text-zone">
+                          {RUN_STAGE_BY_ID[runStageId].shortLabel}
+                        </span>
+                      )}
+                      {runPace && (
+                        <span className="inline-flex rounded-full border border-seam bg-coal px-2 py-0.5 font-mono text-[10px] text-steel">
+                          {runPace}
+                        </span>
+                      )}
+                      {runPain !== undefined && (
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full border px-2 py-0.5 font-mono text-[10px]",
+                            runPain > RUNNING_PAIN_THRESHOLD
+                              ? "border-gold/40 bg-gold/10 text-gold"
+                              : "border-zone/30 bg-zone/5 text-zone"
+                          )}
+                        >
+                          dor {runPain}/10
+                        </span>
+                      )}
+                      {runOverCeiling && (
+                        <span className="inline-flex rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 font-mono text-[10px] text-gold">
+                          acima do teto
+                        </span>
+                      )}
+                      {hasCorreMax && (
+                        <span className="inline-flex rounded-full border border-seam bg-coal px-2 py-0.5 font-mono text-[10px] text-steel-dim">
+                          Corre Max 2
+                        </span>
+                      )}
+                      {isRunLog && runPain === undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setPainOpenId(painOpenId === w.id ? null : w.id)}
+                          className="inline-flex rounded-full border border-dashed border-zone/40 px-2 py-0.5 font-mono text-[10px] text-zone hover:bg-zone/10"
+                        >
+                          + dor 0–10
+                        </button>
+                      )}
+                      {legacyProgram && (
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+                            legacyProgram === "jiu-jitsu"
+                              ? "border border-gold/30 bg-gold/5 text-gold"
+                              : "border border-seam bg-iron-2 text-steel-dim"
+                          )}
+                        >
+                          {legacyProgram === "jiu-jitsu" ? "jiu-jitsu" : "flag football"}
+                        </span>
+                      )}
+                    </div>
+                    {isRunLog && painOpenId === w.id && (
+                      <div className="mt-2 rounded border border-zone/30 bg-zone/5 p-2">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-zone">
+                          Dor sola/canela pós-corrida (0–10)
+                        </p>
+                        <div className="mt-1.5 grid grid-cols-6 gap-1 sm:grid-cols-11">
+                          {Array.from({ length: 11 }, (_, score) => (
+                            <button
+                              key={score}
+                              type="button"
+                              onClick={() => void rateRunPain(w, score)}
+                              className={cn(
+                                "rounded border py-1 font-mono text-xs font-semibold transition-colors",
+                                score > RUNNING_PAIN_THRESHOLD
+                                  ? "border-gold/30 bg-coal text-gold hover:bg-gold/15"
+                                  : "border-seam bg-coal text-steel hover:border-zone/50 hover:text-zone"
+                              )}
+                            >
+                              {score}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                     <p className="mt-1 font-mono text-xs text-steel-dim">
                       {w.entries.length} exercícios {volume > 0 && `· ${formatKg(volume)} total`}{" "}
@@ -1030,6 +930,31 @@ export default function Historico() {
                           <p className="mt-1 text-[11px] text-steel-dim">
                             {PURPOSE_OPTIONS.find((o) => o.id === row.purpose)?.hint}
                           </p>
+                          {isRunLog && (
+                            <label className="mt-2 flex flex-col gap-1">
+                              <span className="font-mono text-[10px] uppercase text-steel-dim">
+                                Estágio do plano 5 km
+                              </span>
+                              <select
+                                value={row.runStageId ?? ""}
+                                onChange={(e) =>
+                                  updateEditableCardio(ci, {
+                                    runStageId: e.target.value
+                                      ? (e.target.value as RunStageId)
+                                      : undefined,
+                                  })
+                                }
+                                className="rounded border border-seam bg-coal px-2 py-1.5 text-xs text-bone outline-none focus:border-zone"
+                              >
+                                <option value="">Sem estágio marcado</option>
+                                {RUN_STAGES.map((stage) => (
+                                  <option key={stage.id} value={stage.id}>
+                                    {stage.label} · {stage.weekLabel}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1040,6 +965,34 @@ export default function Historico() {
                       <Plus size={11} /> Bloco de cardio
                     </button>
                     </div>
+
+                    {isRunLog && (
+                      <div className="border-t border-seam pt-2.5">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+                          Dor sola/canela pós-corrida (0–10)
+                          {runPain !== undefined ? ` · atual ${runPain}/10` : " · não avaliada"}
+                        </p>
+                        <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-11">
+                          {Array.from({ length: 11 }, (_, score) => (
+                            <button
+                              key={score}
+                              type="button"
+                              onClick={() => void rateRunPain(w, runPain === score ? null : score)}
+                              className={cn(
+                                "h-8 rounded border font-mono text-xs transition-colors",
+                                runPain === score
+                                  ? score > RUNNING_PAIN_THRESHOLD
+                                    ? "border-gold bg-gold font-bold text-coal"
+                                    : "border-zone bg-zone font-bold text-coal"
+                                  : "border-seam text-steel hover:text-bone"
+                              )}
+                            >
+                              {score}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* sRPE retroativo — salva na hora, sem passar por "Salvar alterações" */}
                     <div className="border-t border-seam pt-2.5">

@@ -73,6 +73,20 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   "goblet-squat": "Quadríceps",
   "db-row": "Costas",
   pushup: "Peito",
+  /* corrida 5 km — Rotina A & Rotina B */
+  "foot-short": "Panturrilha",
+  "foot-toe-yoga": "Panturrilha",
+  "foot-towel-curl": "Panturrilha",
+  "foot-single-balance": "Panturrilha",
+  "foot-plantar-stretch": "Panturrilha",
+  "foot-calf-stretch": "Panturrilha",
+  "run-calf-towel": "Panturrilha",
+  "run-calf-ball": "Panturrilha",
+  "run-calf-bent": "Panturrilha",
+  "run-tibial-wall": "Panturrilha",
+  "wall-sit-iso": "Quadríceps",
+  "side-hip-abduction": "Posterior/Glúteo",
+  "band-foot-inversion": "Panturrilha",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */
