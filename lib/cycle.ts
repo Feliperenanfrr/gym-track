@@ -81,10 +81,12 @@ function dateKeyDaysAgo(today: Date, days: number): string {
 /**
  * Uma sessão com séries registradas É musculação, venha ela da fila
  * Upper/Lower, do avulso ou do ciclo de motor. Sessões de sala prescritas
- * contam pela própria natureza, mesmo sem séries digitadas. Cardio, esporte e
- * importações do Strava ficam de fora: fadiga de sala é outra coisa.
+ * contam pela própria natureza, mesmo sem séries digitadas. Cardio, esporte,
+ * importações do Strava e a rotina diária descalça do pé (`runFootA`) ficam
+ * de fora: fadiga de sala é outra coisa.
  */
 export function isStrengthLog(workout: WorkoutLog): boolean {
+  if (workout.sessionId === "runFootA") return false
   if (PLAN_BY_ID[workout.sessionId]?.kind === "lift") return true
   return workout.entries.some((entry) => entry.sets.length > 0)
 }

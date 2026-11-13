@@ -2,33 +2,32 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { PERFORMANCE_START_DATE } from "./performance-plan"
+import { RUNNING_START_DATE } from "./running-plan"
 import { TrainingProgram } from "./types"
 import { toDateKey } from "./utils"
 
-const PROGRAMS: TrainingProgram[] = ["performance", "engine", "hypertrophy"]
+const PROGRAMS: TrainingProgram[] = ["running", "performance", "engine", "hypertrophy"]
 
 function isProgram(value: unknown): value is TrainingProgram {
   return typeof value === "string" && PROGRAMS.includes(value as TrainingProgram)
 }
 
 /**
- * v4: as chaves anteriores guardavam a escolha feita durante o flag football,
- * a preparação para jiu-jitsu e o ciclo de motor. Versionar faz o padrão do
- * ciclo novo valer uma vez, sem carregar uma preferência que era de outro
- * objetivo.
+ * v5: incorpora o plano de corrida 5 km como padrão a partir de 07/11/2026,
+ * mantendo as versões anteriores isoladas por objetivo.
  */
-const PROGRAM_KEY = "gym-track:training-program:v4"
+const PROGRAM_KEY = "gym-track:training-program:v5"
 const PROGRAM_EVENT = "gym-track:training-program-change"
 
 /**
- * A pré-temporada de grappling é o objetivo padrão a partir de 21/09/2026: é
- * ela que abre o app enquanto o usuário não escolher outro programa. Antes
- * dessa data o padrão continua sendo o ciclo de motor, que era o objetivo
- * vigente — histórico aberto no app não pode mudar de prescrição por causa de
- * um deploy.
+ * A preparação de corrida 5 km assume o padrão a partir de 07/11/2026; entre
+ * 21/09 e 06/11 vale a pré-temporada de grappling e, antes disso, o ciclo de
+ * motor — assim histórico antigo não muda de prescrição com um deploy.
  */
 function defaultProgramFor(date: Date): TrainingProgram {
-  return toDateKey(date) >= PERFORMANCE_START_DATE ? "performance" : "engine"
+  const key = toDateKey(date)
+  if (key >= RUNNING_START_DATE) return "running"
+  return key >= PERFORMANCE_START_DATE ? "performance" : "engine"
 }
 
 export function getTrainingProgram(date = new Date()): TrainingProgram {

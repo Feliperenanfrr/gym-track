@@ -1,6 +1,7 @@
 import { ENGINE_PLAN, ENGINE_SESSION_IDS } from "./engine-plan"
 import { LEGACY_SESSIONS } from "./legacy-plan"
 import { PERFORMANCE_PLAN, PERFORMANCE_SESSION_IDS } from "./performance-plan"
+import { RUNNING_PLAN, RUNNING_SESSION_IDS } from "./running-plan"
 import { SessionId, SessionPlan, TrainingProgram } from "./types"
 
 export { ENGINE_PLAN } from "./engine-plan"
@@ -145,7 +146,12 @@ export const PLAN: SessionPlan[] = [
 ]
 
 /** Sessões vivas: alimentam seleção, templates persistidos e catálogo. */
-export const ALL_PLAN_SESSIONS = [...PLAN, ...ENGINE_PLAN, ...PERFORMANCE_PLAN]
+export const ALL_PLAN_SESSIONS = [
+  ...PLAN,
+  ...ENGINE_PLAN,
+  ...PERFORMANCE_PLAN,
+  ...RUNNING_PLAN,
+]
 
 /**
  * Sessão apenas de histórico. Um registro por dia contém todos os blocos
@@ -185,6 +191,7 @@ const PERFORMANCE_PLAN_IDS: SessionId[] = [
   "free",
   "sport",
 ]
+const RUNNING_PLAN_IDS: SessionId[] = [...RUNNING_SESSION_IDS, "free", "sport"]
 
 export function planForProgram(
   program: TrainingProgram,
@@ -192,11 +199,13 @@ export function planForProgram(
 ): SessionPlan[] {
   const byId = new Map(templates.map((session) => [session.id, session]))
   const ids =
-    program === "hypertrophy"
-      ? HYPERTROPHY_PLAN_IDS
-      : program === "engine"
-        ? ENGINE_PLAN_IDS
-        : PERFORMANCE_PLAN_IDS
+    program === "running"
+      ? RUNNING_PLAN_IDS
+      : program === "hypertrophy"
+        ? HYPERTROPHY_PLAN_IDS
+        : program === "engine"
+          ? ENGINE_PLAN_IDS
+          : PERFORMANCE_PLAN_IDS
   return ids.map((id) => byId.get(id) ?? PLAN_BY_ID[id])
 }
 
@@ -242,6 +251,9 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   "perfFull",
   "perfZ2",
   "perfIntervals",
+  // corrida 5 km (Rotina A é mobilidade diária de 8 min e fica fora da meta semanal)
+  "runSession",
+  "runStrengthB",
   // protocolo aposentado: continua contando no histórico já registrado
   "bjjPull",
   "bjjBase",
@@ -288,15 +300,28 @@ const PERFORMANCE_TARGET_SESSION_IDS = new Set<SessionId>([
 ])
 
 /**
+ * No plano de corrida 5 km contam a corrida prescrita, importações do Strava,
+ * o fortalecimento pé/canela (Rotina B) e avulsos. A Rotina A (~8 min descalço)
+ * é checklist diário de prevenção e não infla a meta de sessões principais.
+ */
+const RUNNING_TARGET_SESSION_IDS = new Set<SessionId>([
+  "runSession",
+  "runStrengthB",
+  "strava",
+  "free",
+])
+
+/**
  * Frequência exibida no painel: 5 sessões na hipertrofia, 5–6 no ciclo de
- * motor, 5 na pré-temporada. Avulso conta nos três — é academia registrada
- * fora da prescrição. Esporte fica fora: jogo e tatame são medidos em minutos,
- * não em sessões.
+ * motor, 5 na pré-temporada, 5 no plano de corrida 5 km. Avulso conta — é
+ * treino registrado fora da prescrição. Esporte fica fora: jogo e tatame são
+ * medidos em minutos, não em sessões.
  */
 export function countsTowardProgramTarget(
   sessionId: SessionId,
   program: TrainingProgram
 ): boolean {
+  if (program === "running") return RUNNING_TARGET_SESSION_IDS.has(sessionId)
   if (program === "engine") return ENGINE_TARGET_SESSION_IDS.has(sessionId)
   if (program === "performance") return PERFORMANCE_TARGET_SESSION_IDS.has(sessionId)
   return HYPERTROPHY_TARGET_SESSION_IDS.has(sessionId)
