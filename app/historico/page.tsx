@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowLeft, Check, Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog, UndoToast } from "@/components/dialogs"
+import { GpxTelemetryCard } from "@/components/gpx-telemetry-card"
 import { StravaImporter } from "@/components/strava-importer"
 import { Card, PageHeader, Skeleton } from "@/components/ui"
 import { isEngineSession } from "@/lib/engine-plan"
@@ -161,6 +162,7 @@ export default function Historico() {
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [painOpenId, setPainOpenId] = useState<string | null>(null)
+  const [expandedGpxId, setExpandedGpxId] = useState<string | null>(null)
   /** data escolhida para registrar um treino esquecido */
   const [backfillDate, setBackfillDate] = useState("")
 
@@ -556,6 +558,10 @@ export default function Historico() {
                 : runDur > 45 && w.date < "2026-11-28")
             const hasCorreMax =
               isRunLog && cardioBlocks(w).some((block) => block.shoe === RUNNING_SHOE_NAME)
+            const gpxBlocks = cardioBlocks(w).flatMap((block) =>
+              block.gpx ? [block.gpx] : []
+            )
+            const gpxExpanded = expandedGpxId === w.id
 
             return (
               <Card key={w.id} className={cn("rise", `rise-${Math.min(6, i + 1)}`, "relative overflow-hidden")}>
@@ -710,6 +716,29 @@ export default function Historico() {
                     </button>
                   </div>
                 </div>
+
+                {gpxBlocks.length > 0 && (
+                  <div className="mt-3 space-y-2 border-t border-seam pt-3">
+                    {gpxBlocks.map((gpx, index) => (
+                      <div key={index} className="space-y-1.5">
+                        <GpxTelemetryCard gpx={gpx} compact={!gpxExpanded} />
+                        {gpx.splits.length > 0 && index === 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedGpxId(gpxExpanded ? null : w.id)
+                            }
+                            className="font-mono text-[10px] uppercase tracking-wider text-zone hover:underline"
+                          >
+                            {gpxExpanded
+                              ? "Recolher parciais por km"
+                              : `Ver parciais por km (${gpx.splits.length})`}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* editor inline — corrige séries e cardio sem apagar o treino */}
                 {editing && (

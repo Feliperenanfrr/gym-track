@@ -188,6 +188,27 @@ export function RunningPlanView({
         </div>
 
         <div className="mt-3 border-t border-seam pt-3">
+          {view.benchmarks.best5kFromGpx && (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded border border-zone/30 bg-zone/5 px-3 py-2 text-xs">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-zone">
+                  Melhor trecho contínuo de 5 km (GPX)
+                </p>
+                <p className="mt-0.5 text-steel-dim">
+                  Extraído em{" "}
+                  {new Date(`${view.benchmarks.best5kFromGpx.date}T12:00:00`).toLocaleDateString("pt-BR")}
+                </p>
+              </div>
+              <div className="text-right font-mono">
+                <p className="font-semibold text-bone">
+                  {formatDurationClock(view.benchmarks.best5kFromGpx.durationSec)}
+                </p>
+                <p className="text-[10px] text-zone">
+                  {view.benchmarks.best5kFromGpx.paceLabel ?? ""}
+                </p>
+              </div>
+            </div>
+          )}
           <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
             Cenários de ritmo na prova
           </p>

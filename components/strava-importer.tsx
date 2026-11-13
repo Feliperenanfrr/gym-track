@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Check, FileUp } from "lucide-react"
+import { AlertTriangle, Check, FileUp, X } from "lucide-react"
+import { GpxTelemetryCard } from "@/components/gpx-telemetry-card"
 import { Card } from "@/components/ui"
 import { cardioBlocks } from "@/lib/cardio"
+import { ParsedGpxActivity, gpxToCardioLog, isGpxContent, parseGpxXml } from "@/lib/gpx"
 import { sessionKcal, weightKgOn } from "@/lib/insights"
 import {
   RUNNING_PAIN_THRESHOLD,
@@ -47,6 +49,75 @@ function parseClockToSeconds(raw: string): number | undefined {
   return total > 0 ? total : undefined
 }
 
+function parseClockToMinutes(clock: string | undefined): number | undefined {
+  if (!clock) return undefined
+  const match = clock.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return undefined
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10)
+}
+
+function shouldMergeBlock(existing: CardioLog, incoming: CardioLog): boolean {
+  if (existing.sourceId && incoming.sourceId && existing.sourceId === incoming.sourceId) {
+    return true
+  }
+  const oneIsGpxEnrichment = Boolean(incoming.gpx && !existing.gpx) || Boolean(existing.gpx && !incoming.gpx)
+  if (!oneIsGpxEnrichment) return false
+  if (existing.distanceKm !== undefined && incoming.distanceKm !== undefined) {
+    if (Math.abs(existing.distanceKm - incoming.distanceKm) <= 0.45) return true
+  }
+  const mA = parseClockToMinutes(existing.startTime)
+  const mB = parseClockToMinutes(incoming.startTime)
+  return mA !== undefined && mB !== undefined && Math.abs(mA - mB) <= 30
+}
+
+function mergeStravaBlocks(previous: CardioLog[], incoming: CardioLog[]): {
+  blocks: CardioLog[]
+  changedCount: number
+} {
+  const next = [...previous]
+  let changedCount = 0
+
+  for (const item of incoming) {
+    const matchIndex = next.findIndex((existing) => shouldMergeBlock(existing, item))
+    if (matchIndex === -1) {
+      next.push(item)
+      changedCount += 1
+      continue
+    }
+
+    const current = next[matchIndex]
+    const merged: CardioLog = {
+      ...current,
+      ...item,
+      startTime: item.startTime ?? current.startTime,
+      steps: item.steps ?? current.steps,
+      avgBpm: item.avgBpm ?? current.avgBpm,
+      location: item.location ?? current.location,
+      gpx: item.gpx ?? current.gpx,
+      sourceId: current.gpx ? current.sourceId : item.sourceId ?? current.sourceId,
+      runStageId: current.runStageId ?? item.runStageId,
+      painScore: item.painScore ?? current.painScore,
+      shoe: current.shoe ?? item.shoe,
+      segmentTimeSec: item.segmentTimeSec ?? current.segmentTimeSec,
+    }
+
+    const gainedGpx = !current.gpx && Boolean(merged.gpx)
+    const gainedPain = merged.painScore !== undefined && merged.painScore !== current.painScore
+    const gainedStage = merged.runStageId !== undefined && merged.runStageId !== current.runStageId
+    const gainedShoe = merged.shoe !== undefined && merged.shoe !== current.shoe
+    const gainedSegment =
+      merged.segmentTimeSec !== undefined && merged.segmentTimeSec !== current.segmentTimeSec
+
+    if (gainedGpx || gainedPain || gainedStage || gainedShoe || gainedSegment) {
+      next[matchIndex] = merged
+      changedCount += 1
+    }
+  }
+
+  next.sort((a, b) => (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99"))
+  return { blocks: next, changedCount }
+}
+
 export function StravaImporter({
   workouts,
   body,
@@ -54,11 +125,13 @@ export function StravaImporter({
   runningOptions,
   compact = false,
   title = "Importar atividades do Strava",
-  subtitle = "Envie o CSV ou cole o conteúdo. Aceita caminhada/corrida em tabela ou no formato vertical da balança.",
+  subtitle = "Envie arquivos .GPX / .CSV ou cole o conteúdo direto aqui.",
   className,
   onSaved,
 }: StravaImporterProps) {
   const [stravaText, setStravaText] = useState("")
+  const [uploadedGpx, setUploadedGpx] = useState<ParsedGpxActivity[]>([])
+  const [gpxDateOverrides, setGpxDateOverrides] = useState<Record<string, string>>({})
   const [stravaSaving, setStravaSaving] = useState(false)
   const [stravaError, setStravaError] = useState<string | null>(null)
   const [stravaSavedCount, setStravaSavedCount] = useState(0)
@@ -77,24 +150,86 @@ export function StravaImporter({
     }
   }, [runningOptions?.defaultStageId])
 
-  const stravaParse = useMemo(
-    () => (stravaText.trim() ? parseStravaCsv(stravaText) : null),
-    [stravaText]
-  )
+  const textParse = useMemo(() => {
+    const trimmed = stravaText.trim()
+    if (!trimmed) {
+      return { csv: null, pastedGpx: null as ParsedGpxActivity | null, gpxError: null as string | null }
+    }
+    if (isGpxContent(trimmed)) {
+      try {
+        return { csv: null, pastedGpx: parseGpxXml(trimmed), gpxError: null }
+      } catch (e) {
+        return {
+          csv: null,
+          pastedGpx: null,
+          gpxError: e instanceof Error ? e.message : "GPX inválido.",
+        }
+      }
+    }
+    return { csv: parseStravaCsv(trimmed), pastedGpx: null, gpxError: null }
+  }, [stravaText])
 
-  const loadStravaFile = async (file: File | undefined) => {
-    if (!file) return
+  const gpxItems = useMemo(() => {
+    const byId = new Map<string, ParsedGpxActivity>()
+    for (const item of uploadedGpx) byId.set(item.sourceId, item)
+    if (textParse.pastedGpx) byId.set(textParse.pastedGpx.sourceId, textParse.pastedGpx)
+    return [...byId.values()].sort((a, b) =>
+      `${a.date} ${a.startTime ?? ""}`.localeCompare(`${b.date} ${b.startTime ?? ""}`)
+    )
+  }, [uploadedGpx, textParse.pastedGpx])
+
+  const stravaParse = textParse.csv
+  const hasAnyParsed =
+    (stravaParse?.activities.length ?? 0) > 0 || gpxItems.length > 0
+  const hasParseErrors =
+    Boolean(textParse.gpxError) || (stravaParse?.errors.length ?? 0) > 0
+
+  const loadStravaFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
     setStravaError(null)
-    try {
-      setStravaText(await file.text())
-    } catch {
-      setStravaError("Não foi possível ler o arquivo CSV.")
+    const files = Array.from(fileList)
+    const parsedGpx: ParsedGpxActivity[] = []
+    const gpxErrors: string[] = []
+    let latestCsv: string | null = null
+
+    for (const file of files) {
+      try {
+        const text = await file.text()
+        if (file.name.toLowerCase().endsWith(".gpx") || isGpxContent(text)) {
+          parsedGpx.push(parseGpxXml(text))
+        } else {
+          latestCsv = text
+        }
+      } catch (e) {
+        gpxErrors.push(`${file.name}: ${e instanceof Error ? e.message : "erro ao ler"}`)
+      }
+    }
+
+    if (parsedGpx.length > 0) {
+      setUploadedGpx((prev) => {
+        const map = new Map(prev.map((item) => [item.sourceId, item]))
+        for (const item of parsedGpx) map.set(item.sourceId, item)
+        return [...map.values()]
+      })
+    }
+    if (latestCsv !== null) {
+      setStravaText(latestCsv)
+    }
+    if (gpxErrors.length > 0) {
+      setStravaError(gpxErrors.join(" · "))
+    }
+  }
+
+  const removeUploadedGpx = (sourceId: string) => {
+    setUploadedGpx((prev) => prev.filter((item) => item.sourceId !== sourceId))
+    if (textParse.pastedGpx?.sourceId === sourceId) {
+      setStravaText("")
     }
   }
 
   const saveStravaActivities = async () => {
-    if (!stravaParse || stravaParse.activities.length === 0 || stravaParse.errors.length > 0) {
-      setStravaError("Revise os campos do CSV antes de salvar.")
+    if (!hasAnyParsed || hasParseErrors) {
+      setStravaError("Revise os arquivos/campos antes de salvar.")
       return
     }
 
@@ -104,24 +239,30 @@ export function StravaImporter({
       return
     }
 
+    const applyRunningMetadata = (baseBlock: CardioLog, targetDate: string): CardioLog => {
+      if (!runningOptions || targetDate < RUNNING_START_DATE) return baseBlock
+      return {
+        ...baseBlock,
+        runStageId: stageId,
+        ...(painScore !== null ? { painScore } : {}),
+        ...(useCorreMax
+          ? { shoe: runningOptions.defaultShoe ?? RUNNING_SHOE_NAME }
+          : {}),
+        ...(segmentTimeSec !== undefined ? { segmentTimeSec } : {}),
+      }
+    }
+
     const incomingByDate = new Map<string, CardioLog[]>()
-    for (const activity of stravaParse.activities) {
+    for (const activity of stravaParse?.activities ?? []) {
       const blocks = incomingByDate.get(activity.date) ?? []
-      const baseBlock = toStravaCardioLog(activity)
-      const enriched: CardioLog =
-        runningOptions && activity.date >= RUNNING_START_DATE
-          ? {
-              ...baseBlock,
-              runStageId: stageId,
-              ...(painScore !== null ? { painScore } : {}),
-              ...(useCorreMax
-                ? { shoe: runningOptions.defaultShoe ?? RUNNING_SHOE_NAME }
-                : {}),
-              ...(segmentTimeSec !== undefined ? { segmentTimeSec } : {}),
-            }
-          : baseBlock
-      blocks.push(enriched)
+      blocks.push(applyRunningMetadata(toStravaCardioLog(activity), activity.date))
       incomingByDate.set(activity.date, blocks)
+    }
+    for (const gpx of gpxItems) {
+      const targetDate = gpxDateOverrides[gpx.sourceId] || gpx.date
+      const blocks = incomingByDate.get(targetDate) ?? []
+      blocks.push(applyRunningMetadata(gpxToCardioLog(gpx), targetDate))
+      incomingByDate.set(targetDate, blocks)
     }
 
     const pending: WorkoutLog[] = []
@@ -131,13 +272,9 @@ export function StravaImporter({
         (workout) => workout.date === date && workout.sessionId === "strava"
       )
       const previousBlocks = existing ? cardioBlocks(existing) : []
-      const knownIds = new Set(previousBlocks.map((block) => block.sourceId).filter(Boolean))
-      const fresh = incoming.filter((block) => !block.sourceId || !knownIds.has(block.sourceId))
-      if (fresh.length === 0) continue
+      const { blocks, changedCount } = mergeStravaBlocks(previousBlocks, incoming)
+      if (changedCount === 0) continue
 
-      const blocks = [...previousBlocks, ...fresh].sort((a, b) =>
-        (a.startTime ?? "99:99").localeCompare(b.startTime ?? "99:99")
-      )
       const durationMin = Math.max(
         1,
         Math.round(
@@ -153,7 +290,7 @@ export function StravaImporter({
       )
       pending.push({
         ...(existing ?? {
-          id: `strava-${date}-${Date.now()}`,
+          id: `strava-${date}-${Date.now()}-${pending.length}`,
           date,
           sessionId: "strava" as const,
           entries: [],
@@ -162,11 +299,11 @@ export function StravaImporter({
         cardio: blocks[0],
         cardios: blocks,
       })
-      inserted += fresh.length
+      inserted += changedCount
     }
 
     if (inserted === 0) {
-      setStravaError("Todas essas atividades já foram importadas.")
+      setStravaError("Todas essas atividades/GPX já foram importadas.")
       return
     }
 
@@ -175,6 +312,8 @@ export function StravaImporter({
     try {
       await Promise.all(pending.map((workout) => addWorkout(workout)))
       setStravaText("")
+      setUploadedGpx([])
+      setGpxDateOverrides({})
       setPainScore(null)
       setSegmentClock("")
       setStravaSavedCount(inserted)
@@ -198,18 +337,24 @@ export function StravaImporter({
       </div>
 
       <label className="mt-3 flex flex-col gap-1">
-        <span className="font-mono text-[10px] uppercase text-steel-dim">Arquivo CSV</span>
+        <span className="font-mono text-[10px] uppercase text-steel-dim">
+          Arquivos (.GPX ou .CSV — pode selecionar vários)
+        </span>
         <input
           type="file"
-          accept=".csv,text/csv,text/plain"
-          onChange={(event) => loadStravaFile(event.target.files?.[0])}
+          multiple
+          accept=".gpx,.csv,.xml,application/gpx+xml,text/csv,text/plain"
+          onChange={(event) => {
+            void loadStravaFiles(event.target.files)
+            event.target.value = ""
+          }}
           className="w-full rounded border border-seam bg-coal px-2 py-2 text-xs text-steel file:mr-3 file:rounded file:border-0 file:bg-zone file:px-3 file:py-1.5 file:font-semibold file:text-coal"
         />
       </label>
 
       <label className="mt-3 flex flex-col gap-1">
         <span className="font-mono text-[10px] uppercase text-steel-dim">
-          Ou cole o CSV
+          Ou cole o CSV / XML do GPX
         </span>
         <textarea
           value={stravaText}
@@ -217,7 +362,7 @@ export function StravaImporter({
             setStravaText(event.target.value)
             setStravaError(null)
           }}
-          rows={compact ? 4 : 7}
+          rows={compact ? 3 : 6}
           placeholder={
             "Data;Hora;Tipo;Título;Distância (km);Tempo;Passos;Ganho de elevação (m);Local\n" +
             "07/11/2026;06:15;Corrida;Trote 1/2 x 8;4,59;43min 6s;5310;;Campina Grande, Paraíba"
@@ -226,7 +371,7 @@ export function StravaImporter({
         />
       </label>
 
-      {runningOptions && stravaParse && stravaParse.activities.length > 0 && (
+      {runningOptions && hasAnyParsed && (
         <div className="mt-3 space-y-2.5 rounded-lg border border-zone/25 bg-zone/5 p-3">
           <div className="flex flex-col gap-1">
             <span className="font-mono text-[10px] uppercase tracking-wider text-zone">
@@ -313,6 +458,111 @@ export function StravaImporter({
         </div>
       )}
 
+      {gpxItems.length > 0 && (
+        <div className="mt-3 space-y-2.5">
+          {gpxItems.map((gpx) => {
+            const effectiveDate = gpxDateOverrides[gpx.sourceId] || gpx.date
+            const existingOnDate = workouts.find(
+              (workout) => workout.date === effectiveDate && workout.sessionId === "strava"
+            )
+            const block = gpxToCardioLog(gpx)
+            const previewWorkout: WorkoutLog = {
+              id: gpx.sourceId,
+              date: effectiveDate,
+              sessionId: "strava",
+              durationMin: block.minutes,
+              entries: [],
+              cardio: block,
+              cardios: [block],
+            }
+            const kcal = sessionKcal(previewWorkout, weightKgOn(body, effectiveDate))
+            const overCeiling =
+              runningOptions &&
+              effectiveDate >= RUNNING_START_DATE &&
+              isOverVolumeCeiling(stageId, block.minutes)
+
+            return (
+              <div
+                key={gpx.sourceId}
+                className="rounded border border-zone/35 bg-coal/80 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-bone">
+                      {gpx.title}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[10px] text-steel-dim">
+                      {fromDateKey(effectiveDate).toLocaleDateString("pt-BR")}
+                      {gpx.startTime ? ` · ${gpx.startTime}` : ""}
+                      {" · "}GPX Strava
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="rounded-full border border-zone/30 bg-zone/10 px-2 py-0.5 font-mono text-[10px] uppercase text-zone">
+                      {gpx.type === "walk" ? "caminhada" : "corrida"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedGpx(gpx.sourceId)}
+                      className="rounded p-1 text-steel-dim hover:bg-iron-2 hover:text-bone"
+                      aria-label="Remover GPX da fila"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-steel">
+                  <span className="font-mono">
+                    {gpx.distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} km
+                    {" · "}{formatActivityDuration(gpx.durationSeconds)}
+                    {gpx.elevationGainM > 0 ? ` · +${gpx.elevationGainM} m` : ""}
+                    {kcal && (
+                      <span className="text-gold"> · ≈{kcal.mid.toLocaleString("pt-BR")} kcal</span>
+                    )}
+                  </span>
+                  <label className="flex items-center gap-1.5 font-mono text-[10px] text-steel-dim">
+                    Data:
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={(event) =>
+                        setGpxDateOverrides((prev) => ({
+                          ...prev,
+                          [gpx.sourceId]: event.target.value,
+                        }))
+                      }
+                      className="rounded border border-seam bg-coal px-1.5 py-0.5 font-mono text-[10px] text-bone outline-none focus:border-zone"
+                    />
+                  </label>
+                </div>
+
+                {existingOnDate && (
+                  <p className="mt-1.5 font-mono text-[10px] text-zone">
+                    Vai mesclar no registro Strava de {fromDateKey(effectiveDate).toLocaleDateString("pt-BR")} (preserva passos/FC).
+                  </p>
+                )}
+
+                <GpxTelemetryCard gpx={gpx.telemetry} compact className="mt-2.5" />
+
+                {overCeiling && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-gold">
+                    <AlertTriangle size={12} className="shrink-0" />
+                    Acima do teto recomendado para {stageId} — salve e priorize recuperação amanhã.
+                  </p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {textParse.gpxError && (
+        <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
+          {textParse.gpxError}
+        </p>
+      )}
+
       {stravaParse && (
         <div className="mt-3 space-y-2">
           {stravaParse.activities.map((activity) => {
@@ -397,12 +647,7 @@ export function StravaImporter({
 
       <button
         onClick={saveStravaActivities}
-        disabled={
-          stravaSaving ||
-          !stravaParse ||
-          stravaParse.activities.length === 0 ||
-          stravaParse.errors.length > 0
-        }
+        disabled={stravaSaving || !hasAnyParsed || hasParseErrors}
         className={cn(
           "mt-3 flex items-center gap-1.5 rounded px-4 py-2 text-sm font-bold uppercase tracking-wider transition-colors disabled:opacity-40",
           stravaSavedCount > 0
