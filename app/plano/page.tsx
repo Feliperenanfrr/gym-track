@@ -5,10 +5,12 @@ import { AlertTriangle, Pencil } from "lucide-react"
 import { EnginePlanView } from "@/components/engine-plan-view"
 import { PerformancePlanView } from "@/components/performance-plan-view"
 import { ProgramTabs } from "@/components/program-tabs"
+import { RunningPlanView } from "@/components/running-plan-view"
 import { TemplateEditor } from "@/components/template-editor"
 import { Card, PageHeader, SectionTitle, Skeleton } from "@/components/ui"
 import { formatPrescription } from "@/lib/measure"
 import { GOLDEN_RULES, NUTRITION_GUIDELINES, planForProgram, TIMELINE } from "@/lib/plan"
+import { useGymData } from "@/lib/store"
 import { SessionId } from "@/lib/types"
 import { useTrainingProgram } from "@/lib/use-training-program"
 import { useOperationalDay } from "@/lib/use-operational-day"
@@ -18,6 +20,7 @@ import { cn } from "@/lib/utils"
 const WEEKDAY_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 export default function PlanoPage() {
+  const { data } = useGymData()
   const { program, selectProgram } = useTrainingProgram()
   const today = useOperationalDay()
   const { templates, templateById, exerciseCatalog, error, saveTemplate } =
@@ -34,6 +37,9 @@ export default function PlanoPage() {
     )
   }
 
+  const runningPlan = planForProgram("running", templates).filter((session) =>
+    session.id.startsWith("run")
+  )
   const hypertrophyPlan = planForProgram("hypertrophy", templates)
   const enginePlan = planForProgram("engine", templates).filter((session) =>
     session.id.startsWith("engine")
@@ -52,6 +58,27 @@ export default function PlanoPage() {
       onSave={saveTemplate}
     />
   )
+
+  if (program === "running") {
+    return (
+      <main>
+        <PageHeader kicker="CORRIDA BENEFICENTE · 28/11/2026" title="O Plano" />
+        <ProgramTabs value={program} onChange={selectProgram} className="rise" />
+        {error && (
+          <Card className="mt-3 border-l-4 border-l-ember text-xs text-steel">
+            Templates em modo local: {error}
+          </Card>
+        )}
+        <RunningPlanView
+          today={today}
+          sessions={runningPlan}
+          workouts={data?.workouts ?? []}
+          onEditTemplate={(session) => setEditingId(session.id)}
+        />
+        {editor}
+      </main>
+    )
+  }
 
   if (program === "performance") {
     return (
