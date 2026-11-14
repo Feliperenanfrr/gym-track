@@ -188,6 +188,7 @@ export default function TreinoPage() {
   const startedAtRef = useRef<number | null>(null)
   const sessionPickedRef = useRef(false)
   const requestedSessionRef = useRef<SessionId | null>(null)
+  const requestedStageRef = useRef<RunStageId | null>(null)
   const cycleInitRef = useRef(false)
   /** data|sessão do último pré-preenchimento, p/ não remontar o form salvo */
   const prefillKeyRef = useRef("")
@@ -238,6 +239,10 @@ export default function TreinoPage() {
       sessionPickedRef.current = true
       setSessionId(targetId)
     }
+    const requestedStage = params.get("estagio")
+    if (requestedStage && requestedStage in RUN_STAGE_BY_ID) {
+      requestedStageRef.current = requestedStage as RunStageId
+    }
     setToday(day)
   }, [])
 
@@ -286,8 +291,18 @@ export default function TreinoPage() {
     cycleInitRef.current = true
     if (program === "running") {
       const rv = runningTodayView(data.workouts, today)
-      if (rv.restDayRecommended && !rv.strengthBDoneToday && rv.strengthBGuidance.recommended) {
+      const cDoneToday =
+        rv.nextStrengthC === "runStrengthC1" ? rv.strengthC1DoneToday : rv.strengthC2DoneToday
+      const strengthDay = rv.restDayRecommended || Boolean(rv.todayPlan?.needsStrengthB)
+      if (strengthDay && !rv.strengthBDoneToday && rv.strengthBGuidance.recommended) {
         setSessionId("runStrengthB")
+      } else if (
+        strengthDay &&
+        rv.strengthCGuidance.recommended &&
+        !cDoneToday &&
+        rv.todayPlan?.strengthCType
+      ) {
+        setSessionId(rv.todayPlan.strengthCType)
       } else if (!rv.runDoneToday) {
         setSessionId("runSession")
       } else if (!rv.footADoneToday) {
@@ -593,11 +608,28 @@ export default function TreinoPage() {
     }
     if (session.id === "runSession" && data) {
       const rv = runningTodayView(data.workouts, today)
-      setRunStageId(rv.nextStage.id)
+      const reqStage = requestedStageRef.current
+      requestedStageRef.current = null
+      const initialStage = reqStage ?? rv.nextStage.id
+      setRunStageId(initialStage)
       setRunPainScore(null)
       setRunDistanceKm("")
       setRunSegmentClock("")
       setRunShoe(RUNNING_SHOE_NAME)
+      if (reqStage) {
+        const target = RUN_STAGE_BY_ID[reqStage]
+        setCardioRows((prev) =>
+          prev.map((row, idx) =>
+            idx === 0
+              ? {
+                  ...row,
+                  minutes: String(target.targetMinutes),
+                  mode: reqStage === "walk-sub" ? "Caminhada" : "Corrida",
+                }
+              : row
+          )
+        )
+      }
     }
     setActiveExercises(session.exercises)
     applyPrefill(buildPrefill(session, lastLog))
@@ -1317,13 +1349,22 @@ export default function TreinoPage() {
   /** sessão que o programa pede hoje — marcada no seletor mesmo se você mudar */
   const suggestedSessionId =
     program === "running" && runningView
-      ? runningView.restDayRecommended &&
+      ? (runningView.restDayRecommended || Boolean(runningView.todayPlan?.needsStrengthB)) &&
         runningView.strengthBGuidance.recommended &&
         !runningView.strengthBDoneToday
         ? "runStrengthB"
-        : !runningView.runDoneToday
-          ? "runSession"
-          : "runFootA"
+        : (runningView.restDayRecommended || Boolean(runningView.todayPlan?.needsStrengthB)) &&
+            runningView.strengthCGuidance.recommended &&
+            runningView.todayPlan?.strengthCType &&
+            !(
+              runningView.todayPlan.strengthCType === "runStrengthC1"
+                ? runningView.strengthC1DoneToday
+                : runningView.strengthC2DoneToday
+            )
+          ? runningView.todayPlan.strengthCType
+          : !runningView.runDoneToday
+            ? "runSession"
+            : "runFootA"
       : program === "engine"
         ? nextEngineSession(data.workouts, today)
         : program === "performance"
@@ -1447,6 +1488,37 @@ export default function TreinoPage() {
           </div>
           <p className="mt-1 text-xs leading-relaxed text-steel">
             {runningView.strengthBGuidance.note}
+          </p>
+        </div>
+      )}
+
+      {(session.id === "runStrengthC1" || session.id === "runStrengthC2") && runningView && !saved && (
+        <div
+          className={cn(
+            "rise mb-3 rounded-lg border px-3 py-2.5",
+            runningView.strengthCGuidance.recommended
+              ? "border-ember/30 bg-ember/5"
+              : "border-gold/30 bg-gold/5"
+          )}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <p
+              className={cn(
+                "text-xs font-semibold uppercase tracking-wider",
+                runningView.strengthCGuidance.recommended ? "text-ember-hot" : "text-gold"
+              )}
+            >
+              {runningView.strengthCGuidance.label}
+            </p>
+            <span className="shrink-0 font-mono text-[10px] text-steel-dim">
+              {runningView.strengthCGuidance.setsAdvice}
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-bone">
+            {runningView.strengthCGuidance.loadAdvice}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-steel">
+            {runningView.strengthCGuidance.note}
           </p>
         </div>
       )}
@@ -1934,7 +2006,11 @@ export default function TreinoPage() {
                 <p className="font-mono text-[10px] text-steel-dim">{ex.nameEn}</p>
               </div>
               <div className="flex shrink-0 gap-1.5">
-                {(session.id === "runFootA" || session.id === "runStrengthB") && !exComplete && (
+                {(session.id === "runFootA" ||
+                  session.id === "runStrengthB" ||
+                  session.id === "runStrengthC1" ||
+                  session.id === "runStrengthC2") &&
+                  !exComplete && (
                   <button
                     type="button"
                     onClick={() => completeExercise(ex)}
@@ -2350,6 +2426,25 @@ export default function TreinoPage() {
                 {showStravaInTreino ? "Fechar CSV" : "Colar Strava"}
               </button>
             </div>
+
+            {runningView && (runningView.repeatReason === "pain" || runningView.fastTroteAlert) && (
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded border border-gold/40 bg-gold/10 px-2.5 py-2 text-xs text-gold">
+                <span className="min-w-0 flex-1 leading-snug">
+                  {runningView.repeatReason === "pain"
+                    ? "Dor > 3/10 na última sessão: mantenha o degrau sem forçar. Se doer caminhando, troque para Caminhada 30′."
+                    : `Último GPX teve ${runningView.fastTroteAlert?.minutes} min abaixo de 7:30/km — hoje mire 8:00–8:30/km (ritmo de conversa).`}
+                </span>
+                {runStageId !== "walk-sub" && (
+                  <button
+                    type="button"
+                    onClick={() => selectRunStage("walk-sub")}
+                    className="shrink-0 rounded border border-gold/50 bg-coal px-2 py-1 font-mono text-[10px] font-semibold uppercase text-gold hover:bg-gold/15"
+                  >
+                    Ir p/ Caminhada 30′
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {RUN_STAGES.map((stage) => {

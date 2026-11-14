@@ -8,7 +8,7 @@ export const RUNNING_START_DATE = "2026-11-06"
 /** Dia da prova alvo (Corrida Beneficente 5 km · sábado). */
 export const RUNNING_RACE_DATE = "2026-11-28"
 
-export const RUNNING_PLAN_VERSION = "running-v1"
+export const RUNNING_PLAN_VERSION = "running-v2"
 
 export const RUNNING_SHOE_NAME = "Olympikus Corre Max 2"
 export const RUNNING_ALT_SHOE_NAME = "Fila Lite Progress"
@@ -163,8 +163,8 @@ export const RUN_STAGES: RunStage[] = [
     ceilingMinutes: 60,
     transitions: 8,
     inLadder: true,
-    weekLabel: "Semana 3 · Simulado",
-    note: "Completar os 5 km no Açude Velho (~45–55 min) sem forçar sprint e anotar o tempo do segmento.",
+    weekLabel: "Dom 22/11 · Simulado",
+    note: "Domingo 22/11 no Açude Velho (~45–55 min em 4/1) sem forçar sprint e anotando o tempo do segmento.",
   },
   {
     id: "2-1x5-leve",
@@ -232,7 +232,7 @@ export const RUN_STAGE_BY_ID: Record<RunStageId, RunStage> = Object.fromEntries(
 
 export const RUNNING_RACE_PROJECTIONS = [
   { scenario: "Otimista", detail: "4 / 1 com trote ~7:45/km", pace: "~8:15/km", estimate: "~41 min" },
-  { scenario: "Mais provável", detail: "4 / 1 com trote 8:00–8:30/km", pace: "~8:30–8:55/km", estimate: "42–45 min" },
+  { scenario: "Mais provável", detail: "4 / 1 com trote 8:00–8:30/km", pace: "~8:30–8:55/km", estimate: "~42–45 min" },
   { scenario: "Conservador", detail: "1 / 2 completo", pace: "~9:20/km", estimate: "~47 min" },
   { scenario: "Se a sola apertar", detail: "Mais caminhada e passo curto", pace: "~10:30–11:00/km", estimate: "52–55 min" },
 ] as const
@@ -242,14 +242,16 @@ export const RUNNING_TRANSITION_TIPS = [
   "Ritmo de conversa no trote (~7:30–8:30/km), passada curta e perto do corpo",
   "Desacelerar nos últimos 10–15 s antes de voltar a caminhar (sem frear seco)",
   "Primeiros 30–60 s da caminhada com passos curtos e rápidos",
+  "Se ainda queimar na transição: faça o 1º minuto da pausa num trote quase arrastado, em vez de caminhar",
   "Não ultrapassar ~45 min por sessão antes do ensaio (evitar repetições de 80 min)",
 ] as const
 
 export const RUNNING_PREVENTION_RULES = [
+  "Passar por fisioterapeuta/médico do esporte esta semana (bandagem ou palmilha testada no treino/ensaio, nunca na prova)",
   "Sola ou canela com dor > 3/10 no dia seguinte trava avanço: repetir o estágio confortável",
-  "Dor > 3/10 mesmo caminhando → trocar corrida por caminhada leve de 30 min",
-  "Sem corridas em dias seguidos (evitar back-to-back); usar dias sem corrida para Rotina B",
-  "Rotina A diária (~8 min descalço) até a véspera da prova; na semana final cortar Rotina B",
+  "Dor > 3/10 durante o treino: aumente as pausas (ex.: 4/1 vira 2/1); se persistir caminhando, encerre ou troque por caminhada de 30 min",
+  "Sem corridas em dias seguidos (evitar back-to-back); usar dias sem corrida para Rotina B + Rotina C",
+  "Rotina A diária (~8 min descalço) até a véspera da prova; a partir de 22/11 corte agachamento e terra pesados na musculação",
 ] as const
 
 export const RUNNING_RACE_DAY_CHECKLIST = [
@@ -344,7 +346,7 @@ export const RUN_EXERCISES_B: ExercisePrescription[] = [
     repsMax: 12,
     unit: "reps",
     rest: "60 s",
-    note: "Toalha enrolada sob os dedos (ativa arco); suba controlado e desça devagar (3 s).",
+    note: "Toalha enrolada sob os dedos (ativa arco); a partir da Semana 2 (14/11), faça com um pé de cada vez. Desça em 3 s.",
     muscleGroup: "Panturrilha",
   },
   {
@@ -421,6 +423,180 @@ export const RUN_EXERCISES_B: ExercisePrescription[] = [
   },
 ]
 
+export const RUN_EXERCISES_C1: ExercisePrescription[] = [
+  {
+    id: "run-c1-goblet",
+    name: "Agachamento goblet com pausa",
+    nameEn: "Paused Goblet Squat",
+    sets: 3,
+    repsMin: 10,
+    repsMax: 10,
+    unit: "reps",
+    rest: "60 s",
+    note: "Segure 2 s embaixo; desça em 3 s mantendo 3 reps na reserva. Se joelho doer > 3/10, reduza a amplitude ou troque pelo isométrico.",
+    muscleGroup: "Quadríceps",
+  },
+  {
+    id: "run-c1-rdl-uni",
+    name: "Terra romeno unilateral",
+    nameEn: "Single-Leg Romanian Deadlift",
+    sets: 3,
+    repsMin: 8,
+    repsMax: 8,
+    unit: "reps",
+    rest: "60 s",
+    note: "8 reps por perna; quadril alinhado sem rodar, descida em 3 s. Pode apoiar levemente o pé livre para equilíbrio.",
+    muscleGroup: "Posterior/Glúteo",
+  },
+  {
+    id: "run-c1-rev-lunge",
+    name: "Afundo para trás",
+    nameEn: "Dumbbell Reverse Lunge",
+    sets: 3,
+    repsMin: 8,
+    repsMax: 8,
+    unit: "reps",
+    rest: "60 s",
+    note: "8 reps por perna; passo controlado para trás poupando o joelho da frente. Se incomodar > 3/10, encurte o passo.",
+    muscleGroup: "Quadríceps",
+  },
+  {
+    id: "run-c1-glute-bridge-uni",
+    name: "Ponte de glúteo unilateral",
+    nameEn: "Single-Leg Glute Bridge",
+    sets: 3,
+    repsMin: 12,
+    repsMax: 12,
+    unit: "reps",
+    rest: "45 s",
+    note: "12 reps por perna; halter sobre o quadril, pause 1 s no topo sem arquear a lombar.",
+    muscleGroup: "Posterior/Glúteo",
+  },
+  {
+    id: "run-c1-calf-uni",
+    name: "Panturrilha unilateral com halter",
+    nameEn: "Single-Leg Dumbbell Calf Raise",
+    sets: 3,
+    repsMin: 12,
+    repsMax: 12,
+    unit: "reps",
+    rest: "45 s",
+    note: "12 reps por perna (descida em 3 s). Se a sola reclamar em pé num pé só, faça de tênis ou passe para versão deitada.",
+    muscleGroup: "Panturrilha",
+  },
+  {
+    id: "run-c1-soleus-seated",
+    name: "Sóleo sentado",
+    nameEn: "Seated Single-Leg Calf Raise",
+    sets: 3,
+    repsMin: 15,
+    repsMax: 15,
+    unit: "reps",
+    rest: "45 s",
+    note: "15 reps por perna; joelho a ~90° com halter apoiado acima do joelho, controle total na descida (3 s).",
+    muscleGroup: "Panturrilha",
+  },
+  {
+    id: "run-c1-suitcase-carry",
+    name: "Caminhada da mala",
+    nameEn: "Suitcase Carry",
+    sets: 3,
+    repsMin: 30,
+    repsMax: 30,
+    unit: "seconds",
+    rest: "45 s",
+    note: "30 s cada lado segurando o halter com o tronco firme, sem inclinar a coluna.",
+    muscleGroup: "Core",
+  },
+]
+
+export const RUN_EXERCISES_C2: ExercisePrescription[] = [
+  {
+    id: "run-c2-hip-abd",
+    name: "Abdução de quadril deitado",
+    nameEn: "Ankle-Weight Side Hip Abduction",
+    sets: 3,
+    repsMin: 15,
+    repsMax: 15,
+    unit: "reps",
+    rest: "45 s",
+    note: "15 reps por lado; caneleira 2,5 kg na semana inicial (5 kg quando 15 reps ficarem fáceis). Ponta do pé neutra.",
+    muscleGroup: "Posterior/Glúteo",
+  },
+  {
+    id: "run-c2-march",
+    name: "Marcha em pé",
+    nameEn: "Standing High-Knee March (Ankle Weight)",
+    sets: 3,
+    repsMin: 12,
+    repsMax: 12,
+    unit: "reps",
+    rest: "45 s",
+    note: "12 elevações de joelho por perna com controle de quadril e sem tombar o tronco.",
+    muscleGroup: "Quadríceps",
+  },
+  {
+    id: "run-c2-kickback",
+    name: "Coice em quatro apoios",
+    nameEn: "Quadruped Glute Kickback",
+    sets: 3,
+    repsMin: 15,
+    repsMax: 15,
+    unit: "reps",
+    rest: "45 s",
+    note: "15 reps por lado com caneleira; estenda o quadril mantendo abdômen firme sem balançar a lombar.",
+    muscleGroup: "Posterior/Glúteo",
+  },
+  {
+    id: "run-c2-leg-curl-stand",
+    name: "Flexão de joelho em pé",
+    nameEn: "Standing Hamstring Curl (Ankle Weight)",
+    sets: 3,
+    repsMin: 15,
+    repsMax: 15,
+    unit: "reps",
+    rest: "45 s",
+    note: "15 reps por perna trazendo o calcanhar ao glúteo; descida lenta em 3 s.",
+    muscleGroup: "Posterior/Glúteo",
+  },
+  {
+    id: "run-c2-leg-ext-iso",
+    name: "Extensão de joelho isométrica",
+    nameEn: "Seated Isometric Knee Extension",
+    sets: 4,
+    repsMin: 45,
+    repsMax: 45,
+    unit: "seconds",
+    rest: "60 s",
+    note: "45 s cada perna sentado; pode usar caneleira de 5 kg desde 16/11 (sem carga se joelho reclamar).",
+    muscleGroup: "Quadríceps",
+  },
+  {
+    id: "run-c2-tibialis-band",
+    name: "Tibial com caneleira",
+    nameEn: "Seated Ankle-Weight Tibialis Raise",
+    sets: 3,
+    repsMin: 15,
+    repsMax: 15,
+    unit: "reps",
+    rest: "45 s",
+    note: "15 reps por pé sentado com a caneleira sobre o dorso do pé; puxe a ponta para cima devagar.",
+    muscleGroup: "Panturrilha",
+  },
+  {
+    id: "run-c2-side-plank-abd",
+    name: "Prancha lateral com abdução",
+    nameEn: "Side Plank with Hip Abduction",
+    sets: 3,
+    repsMin: 10,
+    repsMax: 10,
+    unit: "reps",
+    rest: "45 s",
+    note: "10 reps por lado com joelho de baixo apoiado ou perna estendida; estabilidade pélvica na corrida.",
+    muscleGroup: "Core",
+  },
+]
+
 export const RUNNING_PLAN: SessionPlan[] = [
   {
     id: "runSession",
@@ -452,14 +628,40 @@ export const RUNNING_PLAN: SessionPlan[] = [
   {
     id: "runStrengthB",
     title: "Rotina B · Força Pé/Canela",
-    subtitle: "Dias sem corrida · ~15 min · panturrilha, tibial e quadril",
+    subtitle: "Dias sem corrida · ~15 min · vem antes da Rotina C",
     weekday: 4,
     duration: "~15 min",
     kind: "lift",
     accent: "steel",
     exercises: RUN_EXERCISES_B,
     description:
-      "Fortalecimento específico para absorção de impacto nos 5 km. Reduza para 2 séries leves na semana da prova e suspenda a partir de 24/11.",
+      "Fortalecimento específico para absorção de impacto nos 5 km. Na Semana 2 (14–18/11), faça o ex. 1 (panturrilha com toalha) unilateral; em 21/11 todas as panturrilhas unilaterais; 23/11 apenas 2 séries leves; 24–28/11 só Rotina A.",
+    planVersion: RUNNING_PLAN_VERSION,
+  },
+  {
+    id: "runStrengthC1",
+    title: "Rotina C1 · Força Halteres",
+    subtitle: "Complemento de força geral (~20 min) · dias sem corrida (14 e 18/11)",
+    weekday: 6,
+    duration: "~20 min",
+    kind: "lift",
+    accent: "ember",
+    exercises: RUN_EXERCISES_C1,
+    description:
+      "Halteres após a Rotina B: 3 reps na reserva e descida em 3 s. Se apertar o tempo, priorize a Rotina B; não fazer a partir de 23/11.",
+    planVersion: RUNNING_PLAN_VERSION,
+  },
+  {
+    id: "runStrengthC2",
+    title: "Rotina C2 · Força Caneleiras",
+    subtitle: "Quadril, tibial e joelho (~20 min) · caneleiras 2,5 e 5 kg (16 e 21/11)",
+    weekday: 1,
+    duration: "~20 min",
+    kind: "lift",
+    accent: "gold",
+    exercises: RUN_EXERCISES_C2,
+    description:
+      "Caneleiras após a Rotina B: comece com 2,5 kg (5 kg só no isométrico de joelho). Em 21/11 faça apenas 2 séries longe da falha; a partir de 23/11 cortar.",
     planVersion: RUNNING_PLAN_VERSION,
   },
 ]
@@ -574,8 +776,8 @@ export function strengthBPhaseFor(today = new Date()): StrengthBPhaseGuidance {
   if (key >= "2026-11-24") {
     return {
       id: "rest-only-a",
-      label: "Semana da prova · só Rotina A",
-      setsAdvice: "Sem Rotina B (poupar panturrilha/sóleo)",
+      label: "Reta final (24–28/11) · só Rotina A",
+      setsAdvice: "Sem Rotina B (só rotina diária do pé)",
       recommended: false,
       note: "De 24/11 até a prova, manter apenas a Rotina A diária descalço (~8 min).",
     }
@@ -583,8 +785,8 @@ export function strengthBPhaseFor(today = new Date()): StrengthBPhaseGuidance {
   if (key === "2026-11-23") {
     return {
       id: "taper-light",
-      label: "Polimento · 2 séries leves",
-      setsAdvice: "2 séries leves, sem carga",
+      label: "23/11 · 2 séries leves",
+      setsAdvice: "2 séries de cada · sem carga, longe da falha",
       recommended: true,
       note: "Última Rotina B antes da prova: apenas estimular circulação sem fadigar.",
     }
@@ -592,16 +794,25 @@ export function strengthBPhaseFor(today = new Date()): StrengthBPhaseGuidance {
   if (key >= "2026-11-21") {
     return {
       id: "unilateral",
-      label: "Semana 3 · foco unilateral leve",
-      setsAdvice: "2–3 séries controladas (isometria 4×45 s)",
+      label: "21/11 · volume completo + panturrilhas unilaterais",
+      setsAdvice: "Volume completo · panturrilhas com um pé de cada vez",
       recommended: true,
-      note: "Consolidar estabilidade para o ensaio e a prova; parar se panturrilha pesar.",
+      note: "Consolidar estabilidade para o ensaio de domingo (22/11); parar se a panturrilha pesar.",
+    }
+  }
+  if (key >= "2026-11-14") {
+    return {
+      id: "build",
+      label: "Semana 2 (14–18/11) · ex. 1 unilateral",
+      setsAdvice: "Volume completo · ex. 1 (panturrilha com toalha) com um pé de cada vez",
+      recommended: true,
+      note: "Faça primeiro a Rotina B (volume completo e ex. 1 unilateral) e depois a Rotina C do dia, se o tempo e a sola permitirem.",
     }
   }
   if (key >= "2026-11-12") {
     return {
       id: "build",
-      label: "Fase principal · 3 séries completas",
+      label: "Semana 2 · 3 séries completas",
       setsAdvice: "3 séries completas · isometria 4×45 s",
       recommended: true,
       note: "Volume completo em dias sem corrida; pare se a panturrilha travar antes da próxima sessão.",
@@ -610,10 +821,197 @@ export function strengthBPhaseFor(today = new Date()): StrengthBPhaseGuidance {
   return {
     id: "adapt",
     label: "Semana 1 · 2 séries",
-    setsAdvice: "2 séries · isometria 3×30 s",
+    setsAdvice: "2 séries · isometria 3×30 s · peso corporal, dois pés",
     recommended: true,
     note: "Entrada gradual para não sobrecarregar a panturrilha junto com as primeiras corridas.",
   }
+}
+
+export interface StrengthCPhaseGuidance {
+  sessionId: "runStrengthC1" | "runStrengthC2"
+  label: string
+  setsAdvice: string
+  loadAdvice: string
+  recommended: boolean
+  note: string
+}
+
+export const RUNNING_C_LOAD_SCHEDULE = [
+  {
+    date: "2026-11-14",
+    dateLabel: "14/11 (Sáb)",
+    combo: "B + C1",
+    loadNote: "Halteres leves, para aprender os movimentos unilaterais (3 reps na reserva, 3 s na descida).",
+  },
+  {
+    date: "2026-11-16",
+    dateLabel: "16/11 (Seg)",
+    combo: "B + C2",
+    loadNote: "Caneleira de 2,5 kg em tudo; 5 kg só na extensão de joelho isométrica.",
+  },
+  {
+    date: "2026-11-18",
+    dateLabel: "18/11 (Qua)",
+    combo: "B + C1",
+    loadNote: "Suba a carga do halter só se sobraram mais de 3 repetições com boa forma.",
+  },
+  {
+    date: "2026-11-21",
+    dateLabel: "21/11 (Sáb)",
+    combo: "B + C2 (2 séries)",
+    loadNote: "5 kg onde 15 reps com 2,5 kg ficaram fáceis; só 2 séries por véspera do ensaio, longe da falha.",
+  },
+  {
+    date: "2026-11-23",
+    dateLabel: "23–28/11",
+    combo: "Sem Rotina C",
+    loadNote: "Corte Rotina C1/C2 para chegar ao ensaio e à prova com pernas descansadas.",
+  },
+] as const
+
+export function strengthCPhaseFor(
+  today = new Date(),
+  workouts: WorkoutLog[] = []
+): StrengthCPhaseGuidance {
+  const key = toDateKey(today)
+  if (key >= "2026-11-23") {
+    return {
+      sessionId: "runStrengthC2",
+      label: "23–28/11 · sem Rotina C",
+      setsAdvice: "Sem Rotina C1/C2 (pernas descansadas)",
+      loadAdvice: "Apenas Rotina A (e Rotina B leve em 23/11).",
+      recommended: false,
+      note: "A partir de 23/11, corte a Rotina C para garantir pernas frescas para a prova de 28/11.",
+    }
+  }
+  if (key >= "2026-11-20") {
+    return {
+      sessionId: "runStrengthC2",
+      label: "21/11 · B + C2 (só 2 séries)",
+      setsAdvice: "Só 2 séries · longe da falha (véspera do ensaio)",
+      loadAdvice: "Caneleira de 5 kg onde 15 reps com 2,5 kg ficaram fáceis.",
+      recommended: true,
+      note: "Véspera do ensaio de domingo: faça 2 séries bem longe da falha após a Rotina B.",
+    }
+  }
+  if (key === "2026-11-18" || key === "2026-11-19") {
+    return {
+      sessionId: "runStrengthC1",
+      label: "18/11 · B + C1 (Halteres)",
+      setsAdvice: "3 séries completas · 3 reps na reserva · 3 s descida",
+      loadAdvice: "Suba a carga do halter se sobraram > 3 repetições em 14/11.",
+      recommended: true,
+      note: "Rotina B vem sempre primeiro; na C1, reduza amplitude se o joelho passar de 3/10.",
+    }
+  }
+  if (key === "2026-11-16" || key === "2026-11-17") {
+    return {
+      sessionId: "runStrengthC2",
+      label: "16/11 · B + C2 (Caneleiras)",
+      setsAdvice: "3 séries completas (isometria 4×45 s)",
+      loadAdvice: "Caneleira de 2,5 kg em tudo; 5 kg só no isométrico de joelho.",
+      recommended: true,
+      note: "Rotina B vem primeiro. Use tênis ou versão deitada se a sola reclamar em pé.",
+    }
+  }
+  // Antes de 16/11 (ou alternância adaptativa caso já tenha feito C1):
+  const c1Count = workouts.filter((w) => w.sessionId === "runStrengthC1" && w.date <= key).length
+  const c2Count = workouts.filter((w) => w.sessionId === "runStrengthC2" && w.date <= key).length
+  if (c1Count > c2Count) {
+    return {
+      sessionId: "runStrengthC2",
+      label: "C2 · Caneleiras (próxima da alternância)",
+      setsAdvice: "3 séries · 3 reps na reserva",
+      loadAdvice: "Caneleira de 2,5 kg em tudo; 5 kg só no isométrico de joelho.",
+      recommended: true,
+      note: "Alternando C1 → C2 após a Rotina B. Se faltar tempo, priorize só a Rotina B.",
+    }
+  }
+  return {
+    sessionId: "runStrengthC1",
+    label: "14/11 · B + C1 (Halteres leves)",
+    setsAdvice: "3 séries · 3 reps na reserva · 3 s na descida",
+    loadAdvice: "Halteres leves para aprender os movimentos unilaterais.",
+    recommended: true,
+    note: "Faça primeiro a Rotina B. Se o joelho doer > 3/10 no goblet/afundo, reduza amplitude; se a sola doer na panturrilha em pé, faça de tênis.",
+  }
+}
+
+export type RunningScheduleFocus = "run" | "strength" | "rest" | "rehearsal" | "race"
+
+export interface RunningScheduleItem {
+  date: string
+  dayLabel: string
+  weekdayLabel: string
+  focus: RunningScheduleFocus
+  runLabel: string
+  strengthLabel: string
+  stageId?: RunLadderStageId
+  needsFootA: boolean
+  needsStrengthB: boolean
+  strengthCType?: "runStrengthC1" | "runStrengthC2"
+  note?: string
+}
+
+export interface RunningScheduleEntry extends RunningScheduleItem {
+  loggedRun: boolean
+  loggedFootA: boolean
+  loggedStrengthB: boolean
+  loggedStrengthC: boolean
+  isToday: boolean
+  isPast: boolean
+}
+
+export const RUNNING_DAILY_SCHEDULE: RunningScheduleItem[] = [
+  { date: "2026-11-07", dayLabel: "07/11", weekdayLabel: "Sáb", focus: "run", runLabel: "1/2 × 8", strengthLabel: "Rotina A (~8′)", stageId: "1-2x8", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-08", dayLabel: "08/11", weekdayLabel: "Dom", focus: "strength", runLabel: "—", strengthLabel: "A + B (sem. 1)", needsFootA: true, needsStrengthB: true },
+  { date: "2026-11-09", dayLabel: "09/11", weekdayLabel: "Seg", focus: "run", runLabel: "1/2 × 8 (tênis novo)", strengthLabel: "Rotina A (~8′)", stageId: "1-2x8", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-10", dayLabel: "10/11", weekdayLabel: "Ter", focus: "strength", runLabel: "—", strengthLabel: "A + B (sem. 1)", needsFootA: true, needsStrengthB: true },
+  { date: "2026-11-11", dayLabel: "11/11", weekdayLabel: "Qua", focus: "run", runLabel: "2/2 × 6", strengthLabel: "Rotina A (~8′)", stageId: "2-2x6", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-12", dayLabel: "12/11", weekdayLabel: "Qui", focus: "rest", runLabel: "Descanso", strengthLabel: "Rotina A (~8′)", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-13", dayLabel: "13/11", weekdayLabel: "Sex", focus: "run", runLabel: "2/1 × 8", strengthLabel: "Rotina A (~8′)", stageId: "2-1x8", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-14", dayLabel: "14/11", weekdayLabel: "Sáb", focus: "strength", runLabel: "—", strengthLabel: "A + B completa + C1", needsFootA: true, needsStrengthB: true, strengthCType: "runStrengthC1", note: "Se apertar o tempo, Rotina B vem primeiro." },
+  { date: "2026-11-15", dayLabel: "15/11", weekdayLabel: "Dom", focus: "run", runLabel: "3/1 × 7", strengthLabel: "Rotina A (~8′)", stageId: "3-1x7", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-16", dayLabel: "16/11", weekdayLabel: "Seg", focus: "strength", runLabel: "—", strengthLabel: "A + B completa + C2", needsFootA: true, needsStrengthB: true, strengthCType: "runStrengthC2" },
+  { date: "2026-11-17", dayLabel: "17/11", weekdayLabel: "Ter", focus: "run", runLabel: "3/1 × 8", strengthLabel: "Rotina A (~8′)", stageId: "3-1x8", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-18", dayLabel: "18/11", weekdayLabel: "Qua", focus: "strength", runLabel: "—", strengthLabel: "A + B completa + C1", needsFootA: true, needsStrengthB: true, strengthCType: "runStrengthC1" },
+  { date: "2026-11-19", dayLabel: "19/11", weekdayLabel: "Qui", focus: "rest", runLabel: "Descanso", strengthLabel: "Rotina A (~8′)", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-20", dayLabel: "20/11", weekdayLabel: "Sex", focus: "run", runLabel: "4/1 × 6", strengthLabel: "Rotina A (~8′)", stageId: "4-1x6", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-21", dayLabel: "21/11", weekdayLabel: "Sáb", focus: "strength", runLabel: "—", strengthLabel: "A + B unilat. + C2 (2 sér.)", needsFootA: true, needsStrengthB: true, strengthCType: "runStrengthC2" },
+  { date: "2026-11-22", dayLabel: "22/11", weekdayLabel: "Dom", focus: "rehearsal", runLabel: "ENSAIO: 5 km (4/1 Açude Velho)", strengthLabel: "Rotina A · cortar agach./terra pesados", stageId: "ensaio-5k", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-23", dayLabel: "23/11", weekdayLabel: "Seg", focus: "strength", runLabel: "—", strengthLabel: "A + B leve (2 sér., sem carga) · sem C", needsFootA: true, needsStrengthB: true },
+  { date: "2026-11-24", dayLabel: "24/11", weekdayLabel: "Ter", focus: "rest", runLabel: "Descanso", strengthLabel: "Só Rotina A", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-25", dayLabel: "25/11", weekdayLabel: "Qua", focus: "run", runLabel: "2/1 × 5 leve", strengthLabel: "Só Rotina A", stageId: "2-1x5-leve", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-26", dayLabel: "26/11", weekdayLabel: "Qui", focus: "rest", runLabel: "Descanso", strengthLabel: "Só Rotina A", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-27", dayLabel: "27/11", weekdayLabel: "Sex", focus: "rest", runLabel: "Descanso", strengthLabel: "Só Rotina A (opcional)", needsFootA: true, needsStrengthB: false },
+  { date: "2026-11-28", dayLabel: "28/11", weekdayLabel: "Sáb", focus: "race", runLabel: "PROVA 5 km", strengthLabel: "—", stageId: "prova-5k", needsFootA: false, needsStrengthB: false },
+]
+
+export function runningScheduleStatus(
+  workouts: WorkoutLog[],
+  today = new Date()
+): RunningScheduleEntry[] {
+  const todayKey = toDateKey(today)
+  return RUNNING_DAILY_SCHEDULE.map((item) => {
+    const dayLogs = workouts.filter((w) => w.date === item.date)
+    const loggedRun = dayLogs.some((w) => isRunningActivityLog(w))
+    const loggedFootA = dayLogs.some((w) => w.sessionId === "runFootA")
+    const loggedStrengthB = dayLogs.some((w) => w.sessionId === "runStrengthB")
+    const loggedStrengthC = dayLogs.some((w) =>
+      item.strengthCType
+        ? w.sessionId === item.strengthCType
+        : w.sessionId === "runStrengthC1" || w.sessionId === "runStrengthC2"
+    )
+    return {
+      ...item,
+      loggedRun,
+      loggedFootA,
+      loggedStrengthB,
+      loggedStrengthC,
+      isToday: item.date === todayKey,
+      isPast: item.date < todayKey,
+    }
+  })
 }
 
 export function runningShoeCount(workouts: WorkoutLog[], upToDate = toDateKey(new Date())): number {
@@ -653,14 +1051,22 @@ export interface RunningTodayView {
   runDoneToday: boolean
   footADoneToday: boolean
   strengthBDoneToday: boolean
+  strengthC1DoneToday: boolean
+  strengthC2DoneToday: boolean
+  nextStrengthC: "runStrengthC1" | "runStrengthC2"
   restDayRecommended: boolean
   repeatReason: "pain" | "walk-sub" | "over-ceiling" | null
   taperActive: boolean
+  heavyLegCutActive: boolean
   pendingPainCheckIn: boolean
   lastRun: RunHistorySnapshot | null
+  fastTroteAlert: { minutes: number; date: string } | null
   shoeName: string
   shoeSessions: number
   strengthBGuidance: StrengthBPhaseGuidance
+  strengthCGuidance: StrengthCPhaseGuidance
+  todayPlan: RunningScheduleEntry | null
+  schedule: RunningScheduleEntry[]
   totalRuns: number
   totalDistanceKm: number
   benchmarks: {
@@ -803,12 +1209,34 @@ export function runningTodayView(
   const runDoneToday = todayLogs.some((w) => isRunningActivityLog(w))
   const footADoneToday = todayLogs.some((w) => w.sessionId === "runFootA")
   const strengthBDoneToday = todayLogs.some((w) => w.sessionId === "runStrengthB")
+  const strengthC1DoneToday = todayLogs.some((w) => w.sessionId === "runStrengthC1")
+  const strengthC2DoneToday = todayLogs.some((w) => w.sessionId === "runStrengthC2")
 
   const ranYesterday = runLogs.some((w) => w.date === yesterdayKey)
   const restDayRecommended = ranYesterday && !runDoneToday
 
   const lastRun = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
   const pendingPainCheckIn = Boolean(lastRun && lastRun.painScore === undefined)
+
+  let fastTroteAlert: { minutes: number; date: string } | null = null
+  if (lastRun) {
+    const lastWorkout = runLogs.find((w) => w.id === lastRun.workoutId)
+    const fastMinutes = lastWorkout
+      ? runningCardioBlocks(lastWorkout).reduce(
+          (sum, b) => sum + (b.gpx?.runWalk?.fastTroteMinutes ?? 0),
+          0
+        )
+      : 0
+    if (fastMinutes >= 5) {
+      fastTroteAlert = { minutes: Math.round(fastMinutes), date: lastRun.date }
+    }
+  }
+
+  const strengthCGuidance = strengthCPhaseFor(today, workouts)
+  const schedule = runningScheduleStatus(workouts, today)
+  const todayPlan = schedule.find((item) => item.isToday) ?? null
+  const nextStrengthC = todayPlan?.strengthCType ?? strengthCGuidance.sessionId
+  const heavyLegCutActive = todayKey >= "2026-11-22" && todayKey <= RUNNING_RACE_DATE
 
   const rehearsal =
     snapshots.find((s) => s.stageId === "ensaio-5k") ??
@@ -846,14 +1274,22 @@ export function runningTodayView(
     runDoneToday,
     footADoneToday,
     strengthBDoneToday,
+    strengthC1DoneToday,
+    strengthC2DoneToday,
+    nextStrengthC,
     restDayRecommended,
     repeatReason,
     taperActive,
+    heavyLegCutActive,
     pendingPainCheckIn,
     lastRun,
+    fastTroteAlert,
     shoeName: RUNNING_SHOE_NAME,
     shoeSessions: runningShoeCount(workouts, todayKey),
     strengthBGuidance: strengthBPhaseFor(today),
+    strengthCGuidance,
+    todayPlan,
+    schedule,
     totalRuns: snapshots.length,
     totalDistanceKm,
     benchmarks: {
