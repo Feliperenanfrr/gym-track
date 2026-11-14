@@ -16,6 +16,8 @@ import {
   RUNNING_SHOE_OPTIONS,
   RUN_EXERCISES_A,
   RUN_EXERCISES_B,
+  RUN_EXERCISES_C1,
+  RUN_EXERCISES_C2,
   formatPace,
   isOverVolumeCeiling,
   isRunningActivityLog,
@@ -24,6 +26,7 @@ import {
   runningShoeCount,
   runningTodayView,
   strengthBPhaseFor,
+  strengthCPhaseFor,
 } from "../lib/running-plan"
 import { CardioLog, SessionId, WorkoutLog } from "../lib/types"
 import { fromDateKey } from "../lib/utils"
@@ -218,14 +221,26 @@ describe("running-plan · progressão adaptativa", () => {
 describe("integração do programa running no domínio existente", () => {
   it("expõe sessões no plano running sem interferir nos demais programas", () => {
     const ids = planForProgram("running").map((s) => s.id)
-    expect(ids).toEqual(["runSession", "runFootA", "runStrengthB", "free", "sport"])
+    expect(ids).toEqual([
+      "runSession",
+      "runFootA",
+      "runStrengthB",
+      "runStrengthC1",
+      "runStrengthC2",
+      "free",
+      "sport",
+    ])
 
     expect(PLAN_BY_ID.runSession.kind).toBe("cardio")
     expect(PLAN_BY_ID.runFootA.kind).toBe("lift")
     expect(PLAN_BY_ID.runStrengthB.kind).toBe("lift")
+    expect(PLAN_BY_ID.runStrengthC1.kind).toBe("lift")
+    expect(PLAN_BY_ID.runStrengthC2.kind).toBe("lift")
 
     expect(countsTowardProgramTarget("runSession", "running")).toBe(true)
     expect(countsTowardProgramTarget("runStrengthB", "running")).toBe(true)
+    expect(countsTowardProgramTarget("runStrengthC1", "running")).toBe(true)
+    expect(countsTowardProgramTarget("runStrengthC2", "running")).toBe(true)
     expect(countsTowardProgramTarget("strava", "running")).toBe(true)
     expect(countsTowardProgramTarget("runFootA", "running")).toBe(false)
     expect(countsTowardProgramTarget("upperA", "running")).toBe(false)
@@ -246,10 +261,60 @@ describe("integração do programa running no domínio existente", () => {
     expect(isStrengthLog(footWorkout)).toBe(false)
   })
 
-  it("todos os exercícios de Rotina A e B possuem grupo muscular mapeado", () => {
-    for (const exercise of [...RUN_EXERCISES_A, ...RUN_EXERCISES_B]) {
+  it("todos os exercícios de Rotina A, B, C1 e C2 possuem grupo muscular mapeado", () => {
+    for (const exercise of [
+      ...RUN_EXERCISES_A,
+      ...RUN_EXERCISES_B,
+      ...RUN_EXERCISES_C1,
+      ...RUN_EXERCISES_C2,
+    ]) {
       expect(EXERCISE_GROUP[exercise.id]).toBeDefined()
     }
+  })
+
+  it("aplica plano atualizado em 14/11 (dor 5/10 trava 3/1×7, ativa C1/C2 e alerta ritmo < 7:30/km)", () => {
+    const nov14Logs = [
+      makeWorkout("2026-11-14", "runSession", {
+        minutes: 41,
+        durationSeconds: 2475,
+        distanceKm: 4.58,
+        runStageId: "3-1x7",
+        painScore: 5,
+        gpx: {
+          movingSeconds: 2475,
+          elapsedSeconds: 2520,
+          splits: [{ km: 1, label: "1", distanceKm: 1, secPerKm: 487 }],
+          runWalk: {
+            troteMinutes: 19,
+            walkMinutes: 22,
+            fastTroteMinutes: 10,
+            troteBouts: 14,
+            avgTroteSec: 80,
+            longestTroteSec: 210,
+            trotePct: 47,
+          },
+        },
+      }),
+    ]
+
+    const view14 = runningTodayView(nov14Logs, fromDateKey("2026-11-14"))
+    expect(view14.runDoneToday).toBe(true)
+    expect(view14.repeatReason).toBe("pain")
+    expect(view14.nextStage.id).toBe("3-1x7")
+    expect(view14.nextStrengthC).toBe("runStrengthC1")
+    expect(view14.fastTroteAlert).toEqual({ minutes: 10, date: "2026-11-14" })
+    expect(view14.strengthBGuidance.setsAdvice).toContain("ex. 1")
+    expect(view14.todayPlan?.strengthLabel).toContain("C1")
+
+    expect(strengthBPhaseFor(fromDateKey("2026-11-14")).id).toBe("build")
+    expect(strengthCPhaseFor(fromDateKey("2026-11-14")).sessionId).toBe("runStrengthC1")
+    expect(strengthCPhaseFor(fromDateKey("2026-11-16")).sessionId).toBe("runStrengthC2")
+    expect(strengthCPhaseFor(fromDateKey("2026-11-21")).setsAdvice).toContain("2 séries")
+    expect(strengthCPhaseFor(fromDateKey("2026-11-23")).recommended).toBe(false)
+
+    const view22 = runningTodayView(nov14Logs, fromDateKey("2026-11-22"))
+    expect(view22.heavyLegCutActive).toBe(true)
+    expect(view22.todayPlan?.focus).toBe("rehearsal")
   })
 
   it("gera séries semanais, pace/janelas, mix trote-caminhada, dor/tênis e splits GPX em runningChartData", () => {

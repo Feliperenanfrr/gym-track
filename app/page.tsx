@@ -384,33 +384,79 @@ export default function Dashboard() {
       if (program === "running") {
         const nextStage = runningView.nextStage
         const baseRunSession = sessionById("runSession")
-        const suggestedSession: SessionPlan =
-          runningView.restDayRecommended && runningView.strengthBGuidance.recommended && !runningView.strengthBDoneToday
-            ? sessionById("runStrengthB")
-            : {
-                ...baseRunSession,
-                title: nextStage.label,
-                subtitle: `${nextStage.weekLabel} · meta ~${nextStage.targetMinutes} min (teto ${nextStage.ceilingMinutes} min)`,
-                duration: `~${nextStage.targetMinutes} min`,
-              }
+        const cTargetId = runningView.nextStrengthC
+        const cDoneToday =
+          cTargetId === "runStrengthC1"
+            ? runningView.strengthC1DoneToday
+            : runningView.strengthC2DoneToday
+        const strengthDayActive =
+          runningView.restDayRecommended || Boolean(runningView.todayPlan?.needsStrengthB)
+        const cRecommendedToday =
+          runningView.strengthCGuidance.recommended &&
+          Boolean(runningView.todayPlan?.strengthCType || strengthDayActive)
 
-        let note: string | null = nextStage.note
+        const suggestedSession: SessionPlan =
+          strengthDayActive &&
+          runningView.strengthBGuidance.recommended &&
+          !runningView.strengthBDoneToday
+            ? sessionById("runStrengthB")
+            : strengthDayActive && cRecommendedToday && !cDoneToday
+              ? sessionById(cTargetId)
+              : {
+                  ...baseRunSession,
+                  title: nextStage.label,
+                  subtitle: `${nextStage.weekLabel} · meta ~${nextStage.targetMinutes} min (teto ${nextStage.ceilingMinutes} min)`,
+                  duration: `~${nextStage.targetMinutes} min`,
+                }
+
+        const warnings: string[] = []
         if (runningView.repeatReason === "pain") {
-          note = `Dor > ${RUNNING_PAIN_THRESHOLD}/10 na última sessão: repita ${nextStage.label} sem subir degrau.`
+          warnings.push(
+            `Dor > ${RUNNING_PAIN_THRESHOLD}/10 na última sessão: avanço travado em ${nextStage.label} (se doer caminhando, troque por Caminhada 30′).`
+          )
         } else if (runningView.repeatReason === "over-ceiling") {
-          note = `Última corrida passou do teto (${runningView.lastRun?.durationMin} min): consolidando ${nextStage.label} antes de avançar.`
+          warnings.push(
+            `Última corrida passou do teto (${runningView.lastRun?.durationMin} min): consolidando ${nextStage.label}.`
+          )
         } else if (runningView.restDayRecommended) {
-          note = "Você correu ontem — hoje priorize Rotina B + Rotina A ou descanso (evitar back-to-back)."
+          warnings.push(
+            cRecommendedToday
+              ? `Dia sem corrida: priorize Rotina B primeiro e depois ${cTargetId === "runStrengthC1" ? "Rotina C1 (halteres)" : "Rotina C2 (caneleiras)"} + Rotina A.`
+              : "Dia sem corrida: priorize Rotina B + Rotina A ou descanso (evitar back-to-back)."
+          )
         }
+        if (runningView.fastTroteAlert) {
+          warnings.push(
+            `Ritmo alerta: ${runningView.fastTroteAlert.minutes} min abaixo de 7:30/km no último treino — segure o trote em ~8:00–8:30/km.`
+          )
+        }
+        if (runningView.heavyLegCutActive) {
+          warnings.push("A partir de 22/11: corte agachamento e terra pesados na musculação.")
+        }
+
+        const note: string | null =
+          warnings.length > 0 ? warnings.join(" ") : (runningView.todayPlan?.note ?? nextStage.note)
 
         const doneToday =
           runningView.runDoneToday ||
-          (runningView.restDayRecommended && runningView.strengthBDoneToday)
+          (strengthDayActive &&
+            runningView.strengthBDoneToday &&
+            (!cRecommendedToday || cDoneToday))
+
+        const pendingSession = !runningView.footADoneToday
+          ? sessionById("runFootA")
+          : strengthDayActive &&
+              runningView.strengthBGuidance.recommended &&
+              !runningView.strengthBDoneToday
+            ? sessionById("runStrengthB")
+            : strengthDayActive && cRecommendedToday && !cDoneToday
+              ? sessionById(cTargetId)
+              : null
 
         return {
           session: suggestedSession,
           done: doneToday,
-          pendingSession: runningView.footADoneToday ? null : sessionById("runFootA"),
+          pendingSession,
           kicker: runningView.daysUntilRace === 0
             ? "DIA DA PROVA · 5 KM"
             : runningView.daysUntilRace > 0
@@ -738,8 +784,29 @@ export default function Dashboard() {
                   : "border-seam bg-coal text-steel-dim"
               )}
             >
-              Rotina B {view.runningView.strengthBDoneToday ? "✓" : "~15′"}
+              Rotina B {view.runningView.strengthBDoneToday ? "✓" : view.runningView.strengthBGuidance.recommended ? "~15′" : "folga"}
             </span>
+            {(view.runningView.strengthCGuidance.recommended ||
+              view.runningView.strengthC1DoneToday ||
+              view.runningView.strengthC2DoneToday) && (
+              <span
+                className={cn(
+                  "rounded-full border px-2 py-0.5",
+                  (view.runningView.nextStrengthC === "runStrengthC1"
+                    ? view.runningView.strengthC1DoneToday
+                    : view.runningView.strengthC2DoneToday) ||
+                    view.runningView.strengthC1DoneToday ||
+                    view.runningView.strengthC2DoneToday
+                    ? "border-zone/40 bg-zone/15 text-zone"
+                    : "border-seam bg-coal text-steel-dim"
+                )}
+              >
+                {view.runningView.nextStrengthC === "runStrengthC1" ? "Rotina C1" : "Rotina C2"}{" "}
+                {view.runningView.strengthC1DoneToday || view.runningView.strengthC2DoneToday
+                  ? "✓"
+                  : "~20′"}
+              </span>
+            )}
             <span className="rounded-full border border-seam bg-coal px-2 py-0.5 text-steel">
               {view.runningView.shoeName.replace("Olympikus ", "")} · {view.runningView.shoeSessions} sess.
             </span>
@@ -815,6 +882,31 @@ export default function Dashboard() {
               >
                 {view.runningView.strengthBDoneToday ? "✓ Rotina B" : "Rotina B · Força (15′)"}
               </Link>
+              {view.runningView.strengthCGuidance.recommended && (
+                <Link
+                  href={`/treino?sessao=${view.runningView.nextStrengthC}`}
+                  className="inline-flex items-center gap-1.5 rounded border border-seam bg-coal px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-bone transition-colors hover:border-zone/50 hover:text-zone"
+                  style={{ fontFamily: "var(--font-condensed)" }}
+                >
+                  {view.runningView.nextStrengthC === "runStrengthC1"
+                    ? view.runningView.strengthC1DoneToday
+                      ? "✓ Rotina C1"
+                      : "Rotina C1 · Halteres (20′)"
+                    : view.runningView.strengthC2DoneToday
+                      ? "✓ Rotina C2"
+                      : "Rotina C2 · Caneleiras (20′)"}
+                </Link>
+              )}
+              {(view.runningView.repeatReason === "pain" ||
+                (view.runningView.lastRun?.painScore ?? 0) > RUNNING_PAIN_THRESHOLD) && (
+                <Link
+                  href="/treino?sessao=runSession&estagio=walk-sub"
+                  className="inline-flex items-center gap-1.5 rounded border border-gold/40 bg-gold/10 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-gold transition-colors hover:bg-gold/20"
+                  style={{ fontFamily: "var(--font-condensed)" }}
+                >
+                  Caminhada 30′ (dor &gt; 3)
+                </Link>
+              )}
             </div>
           </div>
         ) : !view.headDone && view.headSession.kind === "rest" ? (
@@ -893,7 +985,7 @@ export default function Dashboard() {
                 <p className="font-mono text-[10px] text-steel-dim">
                   {view.runningView.benchmarks.rehearsal?.paceLabel ??
                     view.runningView.benchmarks.best5kFromGpx?.paceLabel ??
-                    "Sem. 3 Açude"}
+                    "Dom 22/11 · Açude"}
                 </p>
               </div>
               <div className="rounded border border-seam bg-coal/60 p-2">

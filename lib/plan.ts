@@ -254,6 +254,8 @@ const TRAINING_TARGET_SESSION_IDS = new Set<SessionId>([
   // corrida 5 km (Rotina A é mobilidade diária de 8 min e fica fora da meta semanal)
   "runSession",
   "runStrengthB",
+  "runStrengthC1",
+  "runStrengthC2",
   // protocolo aposentado: continua contando no histórico já registrado
   "bjjPull",
   "bjjBase",
@@ -307,6 +309,8 @@ const PERFORMANCE_TARGET_SESSION_IDS = new Set<SessionId>([
 const RUNNING_TARGET_SESSION_IDS = new Set<SessionId>([
   "runSession",
   "runStrengthB",
+  "runStrengthC1",
+  "runStrengthC2",
   "strava",
   "free",
 ])

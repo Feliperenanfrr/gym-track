@@ -87,6 +87,21 @@ export const EXERCISE_GROUP: Record<string, MuscleGroup> = {
   "wall-sit-iso": "Quadríceps",
   "side-hip-abduction": "Posterior/Glúteo",
   "band-foot-inversion": "Panturrilha",
+  /* corrida 5 km — Rotina C1 (halteres) & Rotina C2 (caneleiras) */
+  "run-c1-goblet": "Quadríceps",
+  "run-c1-rdl-uni": "Posterior/Glúteo",
+  "run-c1-rev-lunge": "Quadríceps",
+  "run-c1-glute-bridge-uni": "Posterior/Glúteo",
+  "run-c1-calf-uni": "Panturrilha",
+  "run-c1-soleus-seated": "Panturrilha",
+  "run-c1-suitcase-carry": "Core",
+  "run-c2-hip-abd": "Posterior/Glúteo",
+  "run-c2-march": "Quadríceps",
+  "run-c2-kickback": "Posterior/Glúteo",
+  "run-c2-leg-curl-stand": "Posterior/Glúteo",
+  "run-c2-leg-ext-iso": "Quadríceps",
+  "run-c2-tibialis-band": "Panturrilha",
+  "run-c2-side-plank-abd": "Core",
 }
 
 /** Volume (kg) por grupo muscular de um conjunto de treinos */

@@ -1,10 +1,12 @@
 import {
   Activity,
   Award,
+  Calendar,
   Check,
   Footprints,
   Pencil,
   ShieldAlert,
+  Stethoscope,
   Timer,
 } from "lucide-react"
 import { formatPrescription } from "@/lib/measure"
@@ -12,6 +14,7 @@ import {
   RUN_LADDER,
   RUN_STAGE_BY_ID,
   RUNNING_BASE_BENCHMARK,
+  RUNNING_C_LOAD_SCHEDULE,
   RUNNING_PLAN,
   RUNNING_PREVENTION_RULES,
   RUNNING_RACE_DAY_CHECKLIST,
@@ -41,7 +44,11 @@ export function RunningPlanView({
   const view = runningTodayView(workouts, today)
   const completedSet = new Set(view.completedStageIds)
   const routineSessions = sessions.filter(
-    (s) => s.id === "runFootA" || s.id === "runStrengthB"
+    (s) =>
+      s.id === "runFootA" ||
+      s.id === "runStrengthB" ||
+      s.id === "runStrengthC1" ||
+      s.id === "runStrengthC2"
   )
 
   return (
@@ -146,6 +153,106 @@ export function RunningPlanView({
         </div>
       </Card>
 
+      {/* ---------- calendário dia a dia (07/11–28/11) ---------- */}
+      <SectionTitle accent="zone">Calendário dia a dia · 07/11 a 28/11</SectionTitle>
+      <Card className="rise mb-3 border-l-4 border-l-zone p-0">
+        {view.schedule.map((entry, idx) => (
+          <div
+            key={entry.date}
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-xs",
+              idx < view.schedule.length - 1 && "border-b border-seam",
+              entry.isToday && "bg-zone/10",
+              (entry.focus === "rehearsal" || entry.focus === "race") && !entry.isToday && "bg-gold/5"
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Calendar size={11} className="shrink-0 text-steel-dim" />
+                <span className="font-mono font-semibold text-bone">
+                  {entry.dayLabel} · {entry.weekdayLabel}
+                </span>
+                {entry.isToday && (
+                  <span className="rounded-full border border-zone/40 bg-zone/20 px-1.5 py-0.5 font-mono text-[9px] uppercase text-zone">
+                    Hoje
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "font-semibold",
+                    entry.focus === "race" || entry.focus === "rehearsal"
+                      ? "text-gold"
+                      : entry.focus === "run"
+                        ? "text-zone"
+                        : entry.focus === "strength"
+                          ? "text-ember-hot"
+                          : "text-steel-dim"
+                  )}
+                >
+                  {entry.runLabel !== "—" ? entry.runLabel : entry.strengthLabel}
+                </span>
+              </div>
+              {entry.runLabel !== "—" && (
+                <p className="mt-0.5 pl-4 font-mono text-[10px] text-steel-dim">
+                  Força/Pé: {entry.strengthLabel}
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-1 font-mono text-[10px]">
+              {(entry.focus === "run" || entry.focus === "rehearsal" || entry.focus === "race") && (
+                <span
+                  className={cn(
+                    "rounded-full border px-1.5 py-0.5",
+                    entry.loggedRun
+                      ? "border-zone/40 bg-zone/15 text-zone"
+                      : "border-seam bg-coal text-steel-dim"
+                  )}
+                >
+                  Corrida {entry.loggedRun ? "✓" : "·"}
+                </span>
+              )}
+              {entry.needsFootA && (
+                <span
+                  className={cn(
+                    "rounded-full border px-1.5 py-0.5",
+                    entry.loggedFootA
+                      ? "border-zone/40 bg-zone/15 text-zone"
+                      : "border-seam bg-coal text-steel-dim"
+                  )}
+                >
+                  A {entry.loggedFootA ? "✓" : "·"}
+                </span>
+              )}
+              {entry.needsStrengthB && (
+                <span
+                  className={cn(
+                    "rounded-full border px-1.5 py-0.5",
+                    entry.loggedStrengthB
+                      ? "border-zone/40 bg-zone/15 text-zone"
+                      : "border-seam bg-coal text-steel-dim"
+                  )}
+                >
+                  B {entry.loggedStrengthB ? "✓" : "·"}
+                </span>
+              )}
+              {entry.strengthCType && (
+                <span
+                  className={cn(
+                    "rounded-full border px-1.5 py-0.5",
+                    entry.loggedStrengthC
+                      ? "border-zone/40 bg-zone/15 text-zone"
+                      : "border-seam bg-coal text-steel-dim"
+                  )}
+                >
+                  {entry.strengthCType === "runStrengthC1" ? "C1" : "C2"}{" "}
+                  {entry.loggedStrengthC ? "✓" : "·"}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </Card>
+
       {/* ---------- marcos & projeções ---------- */}
       <SectionTitle accent="gold">Marcos & projeção 5 km</SectionTitle>
       <Card className="rise mb-3 border-l-4 border-l-gold">
@@ -164,14 +271,14 @@ export function RunningPlanView({
             </p>
           </div>
           <div className="rounded border border-seam bg-coal/60 p-2.5">
-            <p className="font-mono text-[10px] text-steel-dim">Ensaio 5 km (Açude Velho)</p>
+            <p className="font-mono text-[10px] text-steel-dim">Ensaio 5 km · Dom 22/11</p>
             <p className="mt-0.5 text-sm font-semibold text-bone">
               {view.benchmarks.rehearsal
                 ? `${view.benchmarks.rehearsal.distanceKm.toLocaleString("pt-BR")} km · ${formatDurationClock(view.benchmarks.rehearsal.durationSec)}`
-                : "A registrar (Sem. 3)"}
+                : "4 / 1 no Açude Velho"}
             </p>
             <p className="font-mono text-[11px] text-steel">
-              {view.benchmarks.rehearsal?.paceLabel ?? "Comparar mesmo segmento 1,64 km"}
+              {view.benchmarks.rehearsal?.paceLabel ?? "Comparar segmento 1,64 km"}
             </p>
           </div>
           <div className="rounded border border-seam bg-coal/60 p-2.5">
@@ -271,13 +378,57 @@ export function RunningPlanView({
         </div>
       </Card>
 
-      {/* ---------- rotinas A e B ---------- */}
+      {/* ---------- prioridade & rotinas A, B e C ---------- */}
       <SectionTitle accent="ember">Rotinas complementares (Pé & Força)</SectionTitle>
-      <Card className="rise mb-3 border-l-4 border-l-steel">
-        <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-steel">
-          <Activity size={12} /> Fase atual da Rotina B · {view.strengthBGuidance.label}
+      <Card className="rise mb-3 border-l-4 border-l-gold">
+        <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-gold">
+          <Stethoscope size={12} /> Prioridade desta semana · Avaliação clínica
         </p>
-        <p className="mt-1 text-xs text-steel-dim">{view.strengthBGuidance.note}</p>
+        <p className="mt-1 text-xs leading-relaxed text-steel">
+          Passar por fisioterapeuta ou médico do esporte esta semana se o incômodo na sola ou
+          canela continuar; bandagem ou palmilha só entram na prova se já tiverem sido testadas no
+          treino ou no ensaio de domingo (22/11).
+        </p>
+      </Card>
+
+      <Card className="rise mb-3 border-l-4 border-l-steel space-y-2.5">
+        <div>
+          <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-steel">
+            <Activity size={12} /> Rotina B · {view.strengthBGuidance.label}
+          </p>
+          <p className="mt-1 text-xs text-steel-dim">{view.strengthBGuidance.note}</p>
+        </div>
+        <div className="border-t border-seam pt-2.5">
+          <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-ember-hot">
+            <Activity size={12} /> Rotina C1/C2 · {view.strengthCGuidance.label}
+          </p>
+          <p className="mt-1 text-xs text-bone">{view.strengthCGuidance.loadAdvice}</p>
+          <p className="mt-0.5 text-xs text-steel-dim">{view.strengthCGuidance.note}</p>
+        </div>
+        <div className="border-t border-seam pt-2.5">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-steel-dim">
+            Progressão de cargas B + C1/C2 (dias sem corrida)
+          </p>
+          <div className="mt-1.5 space-y-1.5">
+            {RUNNING_C_LOAD_SCHEDULE.map((row) => (
+              <div
+                key={row.date}
+                className="flex items-start justify-between gap-3 rounded border border-seam bg-coal/60 px-2.5 py-1.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <span className="font-mono font-semibold text-bone">{row.dateLabel}</span>
+                  <span className="ml-2 font-semibold text-ember-hot">{row.combo}</span>
+                  <p className="mt-0.5 text-[11px] text-steel-dim">{row.loadNote}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-steel-dim">
+            Regras de segurança: 3 reps na reserva e 3 s na descida; se apertar o tempo, a Rotina B
+            vem sempre primeiro; cortar agachamento e terra pesados na musculação a partir de
+            22/11.
+          </p>
+        </div>
       </Card>
 
       {routineSessions.map((session) => (

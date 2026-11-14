@@ -37,6 +37,10 @@ export type SessionId =
   | "runFootA"
   /** Rotina B de fortalecimento pé/canela/quadril para corrida. */
   | "runStrengthB"
+  /** Rotina C1 de força unilateral/corrida com halteres (em casa). */
+  | "runStrengthC1"
+  /** Rotina C2 de força unilateral/corrida com caneleiras de 2,5 e 5 kg. */
+  | "runStrengthC2"
   | "free"
   | "sport"
   | "rest"
